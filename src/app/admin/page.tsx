@@ -34,26 +34,33 @@ export default function AdminRecruiterPage() {
 
   const loadData = async () => {
     try {
-      await fetchApi("/health/");
-      setBackendOnline(true);
-
       const jobsData = await fetchApi<Job[]>("/jobs/");
       setJobs(jobsData);
+      try { sessionStorage.setItem("tm_cached_jobs", JSON.stringify(jobsData)); } catch {}
+      setBackendOnline(true);
+      setLoading(false);
 
       const appsData = await fetchApi<Application[]>("/applications/");
       setApplications(appsData);
+      try { sessionStorage.setItem("tm_cached_apps", JSON.stringify(appsData)); } catch {}
     } catch (err) {
       console.error("Data load error:", err);
       setBackendOnline(false);
-    } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
     if (currentUser) {
+      try {
+        const cachedJobs = sessionStorage.getItem("tm_cached_jobs");
+        const cachedApps = sessionStorage.getItem("tm_cached_apps");
+        if (cachedJobs) setJobs(JSON.parse(cachedJobs));
+        if (cachedApps) setApplications(JSON.parse(cachedApps));
+        if (cachedJobs || cachedApps) setLoading(false);
+      } catch {}
       loadData();
-      const interval = setInterval(loadData, 10000);
+      const interval = setInterval(loadData, 15000);
       return () => clearInterval(interval);
     } else {
       setLoading(false);

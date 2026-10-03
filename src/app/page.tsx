@@ -26,14 +26,26 @@ export default function HomePage() {
   const [backendOnline, setBackendOnline] = useState(false);
 
   useEffect(() => {
+    try {
+      const cachedJobs = sessionStorage.getItem("tm_cached_jobs");
+      const cachedApps = sessionStorage.getItem("tm_cached_apps");
+      if (cachedJobs) setJobs(JSON.parse(cachedJobs));
+      if (cachedApps) setApplications(JSON.parse(cachedApps));
+    } catch {}
+
     const loadStats = async () => {
       try {
-        await fetchApi("/health/");
+        const [jobsData, appsData] = await Promise.all([
+          fetchApi<Job[]>("/jobs/"),
+          fetchApi<Application[]>("/applications/"),
+        ]);
         setBackendOnline(true);
-        const j = await fetchApi<Job[]>("/jobs/");
-        setJobs(j);
-        const a = await fetchApi<Application[]>("/applications/");
-        setApplications(a);
+        setJobs(jobsData);
+        setApplications(appsData);
+        try {
+          sessionStorage.setItem("tm_cached_jobs", JSON.stringify(jobsData));
+          sessionStorage.setItem("tm_cached_apps", JSON.stringify(appsData));
+        } catch {}
       } catch {
         setBackendOnline(false);
       }

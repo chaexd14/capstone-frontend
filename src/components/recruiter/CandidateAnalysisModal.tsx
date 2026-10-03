@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   X,
   Sparkles,
@@ -35,6 +35,32 @@ export function CandidateAnalysisModal({
   const [updating, setUpdating] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
   const [showRawText, setShowRawText] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && application) {
+      const match = application.match_result;
+      const explanation = match?.explanation || "";
+      const isAiEvaluated =
+        explanation.includes("Candidate Alignment & Strengths") ||
+        explanation.includes("Gaps & Missing Requirements") ||
+        explanation.includes("Recruiter Summary");
+
+      console.group(`[TALENTMATCH EVALUATION] Candidate: ${application.candidate_code}`);
+      console.log(`Job Position:`, application.job_title);
+      console.log(`Evaluated by AI (Gemini):`, isAiEvaluated ? "✅ YES (Gemini AI)" : "⚙️ NO (Rule-based Fallback)");
+      console.log(`Overall Match Score:`, `${match?.match_score ?? 0}%`);
+      console.log(`Detailed Scores:`, {
+        skills: `${match?.skill_match_score ?? 0}%`,
+        experience: `${match?.experience_match_score ?? 0}%`,
+        education: `${match?.education_match_score ?? 0}%`,
+        semantic: `${match?.semantic_match_score ?? 0}%`,
+      });
+      console.log(`Matched Skills:`, match?.matched_skills);
+      console.log(`Missing Skills:`, match?.missing_skills);
+      console.log(`Raw Explanation:`, explanation);
+      console.groupEnd();
+    }
+  }, [isOpen, application]);
 
   if (!isOpen || !application) return null;
 
@@ -129,30 +155,17 @@ export function CandidateAnalysisModal({
             </div>
           </div>
 
-          {/* Sub Score Breakdown (Philippines Market Weighting) */}
+          {/* Sub Score Breakdown (Bias-Reduced 5-Component Rubric) */}
           <div className="md:col-span-2 p-5 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-2.5 justify-center flex flex-col">
             <div className="text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center justify-between">
-              <span>Deterministic Weights (PH Market)</span>
-              <span className="text-[10px] text-indigo-400 font-mono">40% Exp · 35% Skills · 15% Semantic · 10% Edu</span>
+              <span>Rubric Weights</span>
+              <span className="text-[10px] text-indigo-400 font-mono">40% Req Skills · 25% Exp · 15% Edu · 10% Pref · 10% Projects</span>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <div>
-                <div className="flex justify-between text-xs text-slate-400 mb-1">
-                  <span>Experience Fit (40% weight)</span>
-                  <span className="font-mono text-teal-300">{match?.experience_match_score || 0}%</span>
-                </div>
-                <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
-                  <div
-                    className="h-full bg-teal-500 rounded-full transition-all duration-500"
-                    style={{ width: `${match?.experience_match_score || 0}%` }}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <div className="flex justify-between text-xs text-slate-400 mb-1">
-                  <span>Skill Alignment (35% weight)</span>
+                <div className="flex justify-between text-xs text-slate-400 mb-0.5">
+                  <span>Required (Must-Have) Skills (40%)</span>
                   <span className="font-mono text-indigo-300">{match?.skill_match_score || 0}%</span>
                 </div>
                 <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
@@ -164,21 +177,21 @@ export function CandidateAnalysisModal({
               </div>
 
               <div>
-                <div className="flex justify-between text-xs text-slate-400 mb-1">
-                  <span>Semantic & Role Fit (15% weight)</span>
-                  <span className="font-mono text-sky-300">{match?.semantic_match_score || 0}%</span>
+                <div className="flex justify-between text-xs text-slate-400 mb-0.5">
+                  <span>Relevant Experience Fit (25%)</span>
+                  <span className="font-mono text-teal-300">{match?.experience_match_score || 0}%</span>
                 </div>
                 <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
                   <div
-                    className="h-full bg-sky-500 rounded-full transition-all duration-500"
-                    style={{ width: `${match?.semantic_match_score || 0}%` }}
+                    className="h-full bg-teal-500 rounded-full transition-all duration-500"
+                    style={{ width: `${match?.experience_match_score || 0}%` }}
                   />
                 </div>
               </div>
 
               <div>
-                <div className="flex justify-between text-xs text-slate-400 mb-1">
-                  <span>Education & Credentials (10% weight)</span>
+                <div className="flex justify-between text-xs text-slate-400 mb-0.5">
+                  <span>Education & Professional Fit (15%)</span>
                   <span className="font-mono text-violet-300">{match?.education_match_score || 0}%</span>
                 </div>
                 <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
@@ -188,6 +201,41 @@ export function CandidateAnalysisModal({
                   />
                 </div>
               </div>
+
+              <div className="grid grid-cols-2 gap-2 pt-0.5">
+                <div>
+                  <div className="flex justify-between text-[11px] text-slate-400 mb-0.5">
+                    <span>Preferred Skills (10%)</span>
+                    <span className="font-mono text-amber-300">{match?.preferred_skill_match_score || 0}%</span>
+                  </div>
+                  <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                    <div
+                      className="h-full bg-amber-500 rounded-full transition-all duration-500"
+                      style={{ width: `${match?.preferred_skill_match_score || 0}%` }}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-[11px] text-slate-400 mb-0.5">
+                    <span>Projects & Achievements (10%)</span>
+                    <span className="font-mono text-emerald-300">{match?.project_match_score || 0}%</span>
+                  </div>
+                  <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                    <div
+                      className="h-full bg-emerald-500 rounded-full transition-all duration-500"
+                      style={{ width: `${match?.project_match_score || 0}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {match?.semantic_match_score !== undefined && match.semantic_match_score > 0 && (
+                <div className="pt-1 text-[11px] text-slate-400 flex items-center justify-between border-t border-slate-800/60 mt-1">
+                  <span>Contextual Duty & Responsibility Fit:</span>
+                  <span className="font-mono text-sky-400 font-semibold">{match.semantic_match_score}%</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -256,7 +304,7 @@ export function CandidateAnalysisModal({
           <div className="flex items-start gap-2">
             <GraduationCap className="h-4 w-4 text-violet-400 shrink-0 mt-0.5" />
             <div>
-              <div className="text-slate-400 font-medium">Extracted Education:</div>
+              <div className="text-slate-400 font-medium">Extracted Education & Credentials:</div>
               <div className="text-slate-200 mt-0.5">
                 {resume?.extracted_education && resume.extracted_education.length > 0
                   ? resume.extracted_education.join(", ")
@@ -266,20 +314,140 @@ export function CandidateAnalysisModal({
           </div>
         </div>
 
-        {/* Explanation / Gemini Insights */}
-        {match?.explanation && (
+        {/* Grounded AI Recruiter Insights Card */}
+        {match?.ai_insights && (match.ai_insights.summary || (match.ai_insights.strengths && match.ai_insights.strengths.length > 0)) ? (
+          <div className="mt-4 p-5 rounded-xl bg-slate-950/90 border border-indigo-500/30 text-xs space-y-4">
+            <div className="font-semibold text-indigo-300 flex items-center justify-between border-b border-slate-800 pb-2">
+              <div className="flex items-center gap-1.5">
+                <Sparkles className="h-4 w-4 text-indigo-400" />
+                <span>AI Recruiter Insights (Evidence-Grounded)</span>
+              </div>
+              <span className="text-[10px] text-slate-400 bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded">
+                Section 10 Validated
+              </span>
+            </div>
+
+            {/* Summary */}
+            {match.ai_insights.summary && (
+              <div className="p-3 rounded-lg bg-indigo-950/20 border border-indigo-500/20 text-slate-200 leading-relaxed italic">
+                "{match.ai_insights.summary}"
+              </div>
+            )}
+
+            {/* Strengths with quoted evidence */}
+            {match.ai_insights.strengths && match.ai_insights.strengths.length > 0 && (
+              <div>
+                <div className="text-slate-300 font-semibold uppercase tracking-wider text-[11px] mb-2 flex items-center gap-1">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                  Evidence-Grounded Strengths
+                </div>
+                <div className="space-y-2">
+                  {match.ai_insights.strengths.map((st, sIdx) => (
+                    <div
+                      key={sIdx}
+                      className="p-3 rounded-lg bg-slate-900/80 border border-slate-800 text-slate-300 space-y-1"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-white">{st.skill}</span>
+                        <div className="flex items-center gap-1.5">
+                          {st.matched_requirement && (
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+                              Matches: {st.matched_requirement}
+                            </span>
+                          )}
+                          {st.source && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
+                              [{st.source}]
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {st.evidence && (
+                        <div className="text-slate-400 text-[11px] bg-slate-950/70 p-2 rounded border border-slate-800/60 font-mono">
+                          Evidence: <span className="text-emerald-300/90 font-sans italic">"{st.evidence}"</span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Gaps / Missing */}
+            {match.ai_insights.gaps && match.ai_insights.gaps.length > 0 && (
+              <div>
+                <div className="text-slate-300 font-semibold uppercase tracking-wider text-[11px] mb-2 flex items-center gap-1">
+                  <XCircle className="h-3.5 w-3.5 text-rose-400" />
+                  Gaps & Missing Requirements
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {match.ai_insights.gaps.map((gp, gIdx) => (
+                    <div
+                      key={gIdx}
+                      className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800/80 flex items-start gap-2"
+                    >
+                      <span
+                        className={`text-[9px] uppercase font-bold px-1.5 py-0.5 rounded mt-0.5 ${
+                          gp.type === "must_have"
+                            ? "bg-rose-500/10 text-rose-400 border border-rose-500/20"
+                            : "bg-slate-800 text-slate-400"
+                        }`}
+                      >
+                        {gp.type === "must_have" ? "Must-Have" : "Preferred"}
+                      </span>
+                      <div>
+                        <div className="font-semibold text-slate-200">{gp.skill}</div>
+                        <div className="text-[11px] text-slate-400">{gp.note || "No mention found in resume"}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Interview focus */}
+            {match.ai_insights.interview_focus && match.ai_insights.interview_focus.length > 0 && (
+              <div>
+                <div className="text-slate-300 font-semibold uppercase tracking-wider text-[11px] mb-1.5">
+                  Interview Probe Recommendations
+                </div>
+                <ul className="list-disc list-inside space-y-1 text-slate-300 text-[11px]">
+                  {match.ai_insights.interview_focus.map((focus, fIdx) => (
+                    <li key={fIdx}>{focus}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Fairness & Transparency Disclosure */}
+            <div className="p-3 rounded-lg bg-slate-900/50 border border-slate-800 text-[11px] text-slate-400 space-y-1">
+              <div className="flex items-center gap-1 font-semibold text-indigo-400">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Fairness & Bias-Reduction Disclosure
+              </div>
+              <div>
+                <span className="text-slate-300">Data Evaluated:</span>{" "}
+                {match.ai_insights.fields_used?.join(", ") || "Skills, work responsibilities, education level, certifications, projects"}
+              </div>
+              <div>
+                <span className="text-slate-300">Excluded From Scoring:</span>{" "}
+                {match.ai_insights.fields_excluded?.join(", ") || "Name, gender, age, address, school prestige, employer prestige"}
+              </div>
+            </div>
+          </div>
+        ) : match?.explanation ? (
           <div className="mt-4 p-4 rounded-xl bg-slate-950/80 border border-indigo-500/20 text-xs">
             <div className="font-semibold text-indigo-300 mb-2 flex items-center gap-1.5 border-b border-slate-800 pb-1.5">
               <Sparkles className="h-3.5 w-3.5 text-indigo-400" />
-              AI Recruiter Insights & Grounded Evidence
+              AI Recruiter Insights
             </div>
             <div className="font-sans text-slate-300 whitespace-pre-line leading-relaxed text-xs space-y-1">
               {match.explanation}
             </div>
           </div>
-        )}
+        ) : null}
 
-        {/* Resume Actions & Raw Text Toggle */}
+        {/* Resume Actions & Text Toggles */}
         <div className="mt-4 pt-4 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-2">
             {resume?.file_url && (
@@ -299,7 +467,7 @@ export function CandidateAnalysisModal({
               className="px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 flex items-center gap-1.5 transition"
             >
               <FileText className="h-3.5 w-3.5 text-slate-400" />
-              <span>{showRawText ? "Hide Extracted Text" : "View Extracted Text"}</span>
+              <span>{showRawText ? "Hide Resume Text" : "View Extracted & Redacted Text"}</span>
             </button>
 
             <button
@@ -351,10 +519,16 @@ export function CandidateAnalysisModal({
           </div>
         </div>
 
-        {/* Raw Text Drawer */}
+        {/* Text Drawer with Redacted vs Raw tabs */}
         {showRawText && (
-          <div className="mt-4 p-4 rounded-xl bg-slate-950 border border-slate-800 max-h-48 overflow-y-auto font-mono text-[11px] text-slate-400 whitespace-pre-wrap">
-            {resume?.extracted_text || "No extracted text available."}
+          <div className="mt-4 p-4 rounded-xl bg-slate-950 border border-slate-800 text-[11px] space-y-2">
+            <div className="flex items-center gap-2 text-xs font-semibold text-slate-300 border-b border-slate-800 pb-2">
+              <ShieldCheck className="h-4 w-4 text-emerald-400" />
+              <span>Sanitized Data Fed to Scorer (PII & Demographics Masked):</span>
+            </div>
+            <div className="max-h-48 overflow-y-auto font-mono text-slate-400 whitespace-pre-wrap">
+              {resume?.redacted_text || resume?.extracted_text || "No text available."}
+            </div>
           </div>
         )}
       </div>

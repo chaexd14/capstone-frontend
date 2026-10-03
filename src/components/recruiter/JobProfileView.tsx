@@ -439,21 +439,21 @@ export function JobProfileView({
                             )}
                           </td>
 
-                          {/* Score Breakdown (Exp, Skills, Semantic, Edu) */}
+                          {/* Score Breakdown (Exp Duties, Exp Tenure, Skills, Edu) */}
                           <td className="px-4 py-3.5">
                             {app.match_result ? (
                               <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] font-mono">
+                                <span className="text-sky-400">
+                                  Duties (35%): {app.match_result.semantic_match_score}%
+                                </span>
                                 <span className="text-teal-400">
-                                  Exp (40%): {app.match_result.experience_match_score}%
+                                  Tenure (25%): {app.match_result.experience_match_score}%
                                 </span>
                                 <span className="text-indigo-400">
-                                  Skill (35%): {app.match_result.skill_match_score}%
-                                </span>
-                                <span className="text-sky-400">
-                                  Sem (15%): {app.match_result.semantic_match_score}%
+                                  Skills (25%): {app.match_result.skill_match_score}%
                                 </span>
                                 <span className="text-violet-400">
-                                  Edu (10%): {app.match_result.education_match_score}%
+                                  Edu (15%): {app.match_result.education_match_score}%
                                 </span>
                               </div>
                             ) : (

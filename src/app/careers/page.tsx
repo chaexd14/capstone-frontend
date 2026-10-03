@@ -16,25 +16,33 @@ export default function CareersPage() {
 
   const loadData = async () => {
     try {
-      await fetchApi("/health/");
-      setBackendOnline(true);
-
+      // 1. Fetch jobs immediately to render positions without delay
       const jobsData = await fetchApi<Job[]>("/jobs/");
       setJobs(jobsData);
+      try { sessionStorage.setItem("tm_cached_jobs", JSON.stringify(jobsData)); } catch {}
+      setBackendOnline(true);
+      setLoading(false);
 
+      // 2. Fetch applicant submissions in the background
       const appsData = await fetchApi<Application[]>("/applications/");
       setApplications(appsData);
     } catch (err) {
       console.error("Data load error:", err);
       setBackendOnline(false);
-    } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
+    try {
+      const cached = sessionStorage.getItem("tm_cached_jobs");
+      if (cached) {
+        setJobs(JSON.parse(cached));
+        setLoading(false);
+      }
+    } catch {}
     loadData();
-    const interval = setInterval(loadData, 10000);
+    const interval = setInterval(loadData, 15000);
     return () => clearInterval(interval);
   }, []);
 

@@ -9,6 +9,36 @@ export type ApplicationStatus =
 
 export type ResumeProcessingStatus = "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";
 
+export interface GroundedStrength {
+  skill: string;
+  matched_requirement?: string;
+  evidence: string;
+  source?: string;
+  confidence?: "high" | "medium" | "low" | string;
+}
+
+export interface GroundedGap {
+  skill: string;
+  type: "must_have" | "nice_to_have" | string;
+  note: string;
+}
+
+export interface AiInsights {
+  summary?: string;
+  strengths?: GroundedStrength[];
+  gaps?: GroundedGap[];
+  interview_focus?: string[];
+  score_breakdown?: {
+    required_skills?: number;
+    experience?: number;
+    education?: number;
+    preferred_skills?: number;
+    projects?: number;
+  };
+  fields_used?: string[];
+  fields_excluded?: string[];
+}
+
 export interface MatchResult {
   id: number;
   match_score: number;
@@ -16,8 +46,11 @@ export interface MatchResult {
   experience_match_score: number;
   education_match_score: number;
   semantic_match_score: number;
+  preferred_skill_match_score?: number;
+  project_match_score?: number;
   matched_skills: string[];
   missing_skills: string[];
+  ai_insights?: AiInsights;
   explanation: string;
   created_at: string;
   updated_at: string;
@@ -36,6 +69,8 @@ export interface Resume {
   extracted_skills: string[];
   extracted_education: string[];
   extracted_experience_years?: number | null;
+  redacted_text?: string;
+  redacted_data?: Record<string, any>;
   uploaded_at: string;
   processed_at?: string | null;
 }
