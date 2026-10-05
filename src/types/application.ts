@@ -9,6 +9,44 @@ export type ApplicationStatus =
 
 export type ResumeProcessingStatus = "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";
 
+export type MatchBand = "Strong" | "Good" | "Partial" | "Weak";
+export type ReviewPriority = "High" | "Medium" | "Low";
+
+export interface SkillEvidenceItem {
+  skill: string;
+  status: "met" | "unclear" | "not found" | string;
+  evidence?: string;
+  source?: string;
+  note?: string;
+}
+
+export interface CandidateLogistics {
+  notice_period?: string;
+  work_arrangement?: string;
+  location?: string;
+  expected_salary?: string;
+  shift_availability?: string;
+}
+
+export interface CandidatePinpoint {
+  headline: string;
+  evidence: string;
+  impact_metric?: string;
+  source?: string;
+}
+
+export interface MustHaveCheckItem {
+  criterion: string;
+  status: "MET" | "MISSING" | "PARTIAL" | string;
+  evidence?: string;
+}
+
+export interface InterviewProbe {
+  question: string;
+  probe_reason?: string;
+  target_signal?: string;
+}
+
 export interface GroundedStrength {
   skill: string;
   matched_requirement?: string;
@@ -23,10 +61,46 @@ export interface GroundedGap {
   note: string;
 }
 
+export interface ReferenceScoreItem {
+  component: string;
+  description?: string;
+  score: number;
+  weight: number;
+  contribution: number;
+}
+
+export interface ReferenceScoreCalculation {
+  preset_name: string;
+  items: ReferenceScoreItem[];
+  raw_score: number;
+  penalty_multiplier: number;
+  penalty_description?: string;
+  final_match: number;
+  final_band: string;
+}
+
 export interface AiInsights {
+  band?: MatchBand | string;
+  review_priority?: ReviewPriority | string;
+  why_this_score?: string;
+  penalty_note?: string;
+  action_needed?: string | null;
+  hard_requirement_status?: string;
+  flags?: string[];
+  must_haves_summary?: string;
+  must_have_breakdown?: SkillEvidenceItem[];
+  preferred_breakdown?: SkillEvidenceItem[];
+  other_evidence?: string[];
+  screening_questions?: string[];
+  logistics?: CandidateLogistics;
+  executive_headline?: string;
+  fit_level?: "HIGH_ALIGNMENT" | "MODERATE_FIT" | "REQUIRES_REVIEW" | "GATED_MISSING_MUST_HAVE" | string;
   summary?: string;
+  must_have_checklist?: MustHaveCheckItem[];
+  key_pinpoints?: CandidatePinpoint[];
   strengths?: GroundedStrength[];
   gaps?: GroundedGap[];
+  interview_guide?: InterviewProbe[];
   interview_focus?: string[];
   score_breakdown?: {
     required_skills?: number;
@@ -35,8 +109,10 @@ export interface AiInsights {
     preferred_skills?: number;
     projects?: number;
   };
+  reference_calculation?: ReferenceScoreCalculation;
   fields_used?: string[];
   fields_excluded?: string[];
+  config_version?: string;
 }
 
 export interface MatchResult {
@@ -70,7 +146,7 @@ export interface Resume {
   extracted_education: string[];
   extracted_experience_years?: number | null;
   redacted_text?: string;
-  redacted_data?: Record<string, any>;
+  redacted_data?: Record<string, unknown>;
   uploaded_at: string;
   processed_at?: string | null;
 }

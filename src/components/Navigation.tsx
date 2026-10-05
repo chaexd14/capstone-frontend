@@ -1,9 +1,11 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Sparkles, UserCheck, Briefcase, Shield, Home } from "lucide-react";
+import { Sparkles, UserCheck, Briefcase, Shield, Sun, Moon } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
 interface NavigationProps {
   anonymize?: boolean;
@@ -19,81 +21,118 @@ export function Navigation({
   const pathname = usePathname();
   const isRecruiter = pathname.startsWith("/admin") || pathname.startsWith("/recruiter");
   const isCareers = pathname.startsWith("/careers");
-  const isHome = pathname === "/";
+  const [isDark, setIsDark] = useState(false);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("talentmatch_theme");
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      const initialDark = saved ? saved === "dark" : prefersDark;
+      if (initialDark) {
+        document.documentElement.classList.add("dark");
+      } else {
+        document.documentElement.classList.remove("dark");
+      }
+      requestAnimationFrame(() => setIsDark(initialDark));
+    } catch {}
+  }, []);
+
+  const toggleTheme = () => {
+    const next = !isDark;
+    setIsDark(next);
+    try {
+      if (next) {
+        document.documentElement.classList.add("dark");
+        localStorage.setItem("talentmatch_theme", "dark");
+      } else {
+        document.documentElement.classList.remove("dark");
+        localStorage.setItem("talentmatch_theme", "light");
+      }
+    } catch {}
+  };
 
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-slate-800/80 bg-slate-950/85 backdrop-blur-xl">
+    <header className="sticky top-0 z-40 w-full border-b border-border bg-background/95 backdrop-blur-md">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         {/* Logo & Brand */}
         <Link href="/" className="flex items-center gap-3 group">
-          <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-violet-500 flex items-center justify-center shadow-lg shadow-indigo-500/25 group-hover:scale-105 transition-transform">
-            <Sparkles className="h-5 w-5 text-white" />
+          <div className="h-9 w-9 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shadow-xs transition-transform group-hover:scale-105">
+            <Sparkles className="h-5 w-5" />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-lg tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-300 bg-clip-text text-transparent">
-                TalentMatch
-              </span>
-              <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                AI Platform
-              </span>
-            </div>
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-base sm:text-lg tracking-tight text-foreground">
+              TalentMatch
+            </span>
+            <Badge variant="outline" className="hidden sm:inline-flex text-xs font-normal">
+              AI Engine
+            </Badge>
           </div>
         </Link>
 
-        {/* Portal Route Navigation */}
-        <div className="flex items-center gap-3">
+        {/* Portal Navigation & Controls */}
+        <div className="flex items-center gap-2 sm:gap-3">
           {/* Anonymize Toggle for Recruiters */}
           {isRecruiter && onToggleAnonymize && (
-            <button
+            <Button
+              variant={anonymize ? "secondary" : "outline"}
+              size="sm"
               onClick={() => onToggleAnonymize(!anonymize)}
-              className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                anonymize
-                  ? "bg-violet-950/60 border-violet-700/80 text-violet-300 shadow-sm shadow-violet-900/30"
-                  : "bg-slate-900/80 border-slate-800 text-slate-400 hover:text-slate-200"
-              }`}
-              title="Toggle Candidate Anonymization (Bias Reduction)"
+              className="text-xs sm:text-sm font-medium gap-1.5 h-9"
+              title="Toggle Candidate Anonymization (Demographic Bias Reduction)"
             >
-              <Shield className="h-3.5 w-3.5 text-violet-400" />
-              <span>Anonymized View: {anonymize ? "ON" : "OFF"}</span>
-            </button>
+              <Shield className={`h-4 w-4 ${anonymize ? "text-primary" : "text-muted-foreground"}`} />
+              <span className="hidden md:inline">Anonymized View:</span>
+              <span className="font-bold">{anonymize ? "ON" : "OFF"}</span>
+            </Button>
           )}
 
-          {/* Route Switcher Links */}
-          <nav className="bg-slate-900/90 p-1 rounded-xl border border-slate-800 flex items-center gap-1">
+          {/* Route Navigation Segmented Switcher */}
+          <nav className="flex items-center rounded-xl border border-border p-1 bg-muted/50">
             <Link
               href="/careers"
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all ${
                 isCareers
-                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+                  ? "bg-background text-foreground shadow-xs font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              <UserCheck className="h-3.5 w-3.5" />
-              <span>Careers / Applicant</span>
+              <UserCheck className="h-4 w-4" />
+              <span>Careers</span>
             </Link>
 
             <Link
               href="/admin"
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-all ${
                 isRecruiter
-                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+                  ? "bg-background text-foreground shadow-xs font-semibold"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
-              <Briefcase className="h-3.5 w-3.5" />
-              <span>Recruiter Admin</span>
+              <Briefcase className="h-4 w-4" />
+              <span>Recruiter</span>
             </Link>
           </nav>
 
+          {/* Theme Toggle Button */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleTheme}
+            title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+            aria-label="Toggle theme"
+            className="text-muted-foreground hover:text-foreground h-9 w-9"
+          >
+            {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </Button>
+
           {/* API Health Status Indicator */}
-          <div className="hidden md:flex items-center gap-1.5 text-[11px] text-slate-400 pl-2">
-            <div
-              className={`h-2 w-2 rounded-full ${
-                backendOnline ? "bg-emerald-400 animate-pulse" : "bg-rose-400"
+          <div className="hidden lg:flex items-center gap-2 pl-1 text-xs text-muted-foreground">
+            <span
+              className={`h-2.5 w-2.5 rounded-full ${
+                backendOnline ? "bg-emerald-500" : "bg-rose-500"
               }`}
             />
-            <span>{backendOnline ? "API Online" : "API Offline"}</span>
+            <span className="font-medium">{backendOnline ? "Live" : "Offline"}</span>
           </div>
         </div>
       </div>

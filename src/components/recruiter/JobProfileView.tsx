@@ -1,11 +1,10 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Job } from "@/types/job";
 import { Application, ApplicationStatus } from "@/types/application";
 import {
   ArrowLeft,
-  Briefcase,
   MapPin,
   Clock,
   GraduationCap,
@@ -14,19 +13,38 @@ import {
   Mail,
   Phone,
   CheckCircle2,
-  XCircle,
   Trophy,
   Users,
   ShieldCheck,
-  User,
-  Download,
   Filter,
-  ArrowUpDown,
   FileText,
-  BadgeCheck,
+  Zap,
+  ChevronUp,
+  ChevronDown,
+  List,
+  Keyboard,
+  Check,
+  X,
+  ExternalLink,
+  AlertCircle,
 } from "lucide-react";
 import { CandidateAnalysisModal } from "./CandidateAnalysisModal";
+import { CandidatePinpointDossier } from "./CandidatePinpointDossier";
 import { fetchApi } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface JobProfileViewProps {
   job: Job;
@@ -44,8 +62,13 @@ export function JobProfileView({
   onApplicationUpdated,
 }: JobProfileViewProps) {
   const [activeTab, setActiveTab] = useState<"rankings" | "all">("rankings");
+  const [viewMode, setViewMode] = useState<"table" | "split">("table");
+  const [activeCandidateId, setActiveCandidateId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [bandFilter, setBandFilter] = useState<string>("ALL");
+  const [hasFlagsOnly, setHasFlagsOnly] = useState<boolean>(false);
+  const [needsVerifyOnly, setNeedsVerifyOnly] = useState<boolean>(false);
   const [selectedApplication, setSelectedApplication] = useState<Application | null>(null);
   const [isAnalysisOpen, setIsAnalysisOpen] = useState(false);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
@@ -56,15 +79,18 @@ export function JobProfileView({
   // Compute metrics
   const totalCount = jobApplications.length;
   const shortlistedCount = jobApplications.filter((a) => a.status === "SHORTLISTED").length;
-  const underReviewCount = jobApplications.filter(
-    (a) => a.status === "UNDER_REVIEW" || a.status === "SUBMITTED" || a.status === "PROCESSING"
-  ).length;
 
   const validScores = jobApplications
     .map((a) => a.match_result?.match_score)
     .filter((s): s is number => typeof s === "number");
   const avgScore = validScores.length > 0 ? Math.round(validScores.reduce((a, b) => a + b, 0) / validScores.length) : 0;
   const topScore = validScores.length > 0 ? Math.max(...validScores) : 0;
+
+  const isRegulatedRole = [
+    "nurse", "nursing", "physician", "doctor", "medical", "healthcare", "hospital",
+    "pharmacist", "pharmacy", "accountant", "cpa", "civil engineer", "mechanical engineer",
+    "electrical engineer", "attorney", "lawyer", "teacher", "lpt"
+  ].some(kw => (job.title || "").toLowerCase().includes(kw) || (job.department || "").toLowerCase().includes(kw));
 
   // Filtered and Sorted Applicants
   const filteredApps = jobApplications.filter((app) => {
@@ -74,7 +100,18 @@ export function JobProfileView({
       (app.email && app.email.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (app.phone && app.phone.includes(searchQuery));
     const matchesStatus = statusFilter === "ALL" || app.status === statusFilter;
-    return matchesSearch && matchesStatus;
+
+    const score = app.match_result?.match_score ?? 0;
+    const band = app.match_result?.ai_insights?.band || (score >= 85 ? "Strong" : score >= 70 ? "Good" : score >= 50 ? "Partial" : "Weak");
+    const matchesBand = bandFilter === "ALL" || band === bandFilter;
+
+    const flags = app.match_result?.ai_insights?.flags || [];
+    const matchesFlags = !hasFlagsOnly || flags.length > 0;
+
+    const hardReq = app.match_result?.ai_insights?.hard_requirement_status || "";
+    const matchesVerify = !needsVerifyOnly || hardReq === "Stated, verify document";
+
+    return matchesSearch && matchesStatus && matchesBand && matchesFlags && matchesVerify;
   });
 
   // AI Leaderboard: sorted strictly descending by match score
@@ -89,8 +126,8 @@ export function JobProfileView({
     return new Date(b.applied_at).getTime() - new Date(a.applied_at).getTime();
   });
 
-  const handleQuickStatusChange = async (app: Application, newStatus: ApplicationStatus, e: React.MouseEvent) => {
-    e.stopPropagation();
+  // Direct status update handler (works for button clicks or keyboard shortcuts)
+  const handleDirectStatusChange = useCallback(async (app: Application, newStatus: ApplicationStatus) => {
     setUpdatingId(app.id);
     try {
       const updated = await fetchApi<Application>(`/applications/${app.id}/status/`, {
@@ -103,192 +140,287 @@ export function JobProfileView({
     } finally {
       setUpdatingId(null);
     }
+  }, [onApplicationUpdated]);
+
+  const handleQuickStatusChange = async (app: Application, newStatus: ApplicationStatus, e: React.MouseEvent) => {
+    e.stopPropagation();
+    await handleDirectStatusChange(app, newStatus);
   };
+
+  // Keyboard navigation for high-velocity screening in Split Mode
+  useEffect(() => {
+    if (viewMode !== "split" || rankedApplicants.length === 0) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't intercept when user is typing in inputs or selects
+      const target = e.target as HTMLElement;
+      if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.tagName === "SELECT" ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+
+      const currentIndex = rankedApplicants.findIndex(
+        (a) => a.id === (activeCandidateId || rankedApplicants[0]?.id)
+      );
+      if (currentIndex === -1) return;
+
+      if (e.key === "ArrowDown" || e.key === "j" || e.key === "J") {
+        e.preventDefault();
+        const nextIndex = Math.min(currentIndex + 1, rankedApplicants.length - 1);
+        setActiveCandidateId(rankedApplicants[nextIndex].id);
+      } else if (e.key === "ArrowUp" || e.key === "k" || e.key === "K") {
+        e.preventDefault();
+        const prevIndex = Math.max(currentIndex - 1, 0);
+        setActiveCandidateId(rankedApplicants[prevIndex].id);
+      } else if (e.key === "s" || e.key === "S") {
+        e.preventDefault();
+        const currentApp = rankedApplicants[currentIndex];
+        if (currentApp) handleDirectStatusChange(currentApp, "SHORTLISTED");
+      } else if (e.key === "r" || e.key === "R") {
+        e.preventDefault();
+        const currentApp = rankedApplicants[currentIndex];
+        if (currentApp) handleDirectStatusChange(currentApp, "REJECTED");
+      } else if (e.key === "u" || e.key === "U") {
+        e.preventDefault();
+        const currentApp = rankedApplicants[currentIndex];
+        if (currentApp) handleDirectStatusChange(currentApp, "UNDER_REVIEW");
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [viewMode, rankedApplicants, activeCandidateId, handleDirectStatusChange]);
 
   const openAnalysis = (app: Application) => {
     setSelectedApplication(app);
     setIsAnalysisOpen(true);
   };
 
+  const activeCandidate = rankedApplicants.find((a) => a.id === activeCandidateId) || rankedApplicants[0] || null;
+
+  const getStatusBadgeVariant = (status: string): "success" | "destructive" | "info" | "secondary" => {
+    switch (status) {
+      case "SHORTLISTED":
+        return "success";
+      case "REJECTED":
+        return "destructive";
+      case "UNDER_REVIEW":
+      case "PROCESSING":
+        return "info";
+      default:
+        return "secondary";
+    }
+  };
+
   return (
-    <div className="space-y-8 animate-in fade-in duration-200">
+    <div className="space-y-6">
       {/* Top Breadcrumb & Job Header */}
-      <div className="rounded-2xl bg-slate-900/80 border border-slate-800 p-6 sm:p-8 backdrop-blur-xl space-y-6 shadow-xl">
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-5">
-          <button
-            onClick={onBack}
-            className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition group shadow-sm"
-          >
-            <ArrowLeft className="h-4 w-4 text-indigo-400 group-hover:-translate-x-0.5 transition-transform" />
-            <span>Back to All Jobs</span>
-          </button>
+      <Card className="bg-card">
+        <CardContent className="p-6 sm:p-8 space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-border">
+            <Button
+              variant="outline"
+              size="default"
+              onClick={onBack}
+              className="gap-2 font-medium"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              <span>Back to Positions</span>
+            </Button>
 
-          <div className="flex items-center gap-2">
-            <span className="px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 flex items-center gap-1.5">
-              <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-              Active Job Profile
-            </span>
-            {anonymize && (
-              <span className="px-3 py-1 rounded-full text-xs font-semibold bg-violet-500/10 text-violet-300 border border-violet-500/20 flex items-center gap-1.5">
-                <ShieldCheck className="h-3.5 w-3.5" />
-                Blind Screening Active
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Job Title & Meta Info */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-3">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold uppercase tracking-wider px-2.5 py-1 rounded-md bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
-                {job.department}
-              </span>
-              <span className="text-xs text-slate-400">· Posted {new Date(job.created_at).toLocaleDateString()}</span>
-            </div>
-
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-              {job.title}
-            </h1>
-
-            <div className="flex flex-wrap items-center gap-4 text-xs text-slate-300 pt-1">
-              <span className="flex items-center gap-1.5">
-                <MapPin className="h-4 w-4 text-slate-400" />
-                {job.location} ({job.employment_type})
-              </span>
-              <span className="flex items-center gap-1.5">
-                <Clock className="h-4 w-4 text-teal-400" />
-                Experience: {job.minimum_experience}
-              </span>
-              <span className="flex items-center gap-1.5">
-                <GraduationCap className="h-4 w-4 text-violet-400" />
-                Education: {job.education_requirement}
-              </span>
+            <div className="flex items-center gap-2.5">
+              <Badge variant="outline" className="gap-1.5 py-1 text-xs font-semibold">
+                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                Active Benchmark
+              </Badge>
+              {anonymize && (
+                <Badge variant="secondary" className="gap-1.5 py-1 text-xs text-primary font-semibold">
+                  <ShieldCheck className="h-4 w-4" />
+                  Demographics Masked
+                </Badge>
+              )}
             </div>
           </div>
 
-          {/* Quick Metrics Badge Card */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-2 gap-3 p-4 rounded-xl bg-slate-950/60 border border-slate-800/80">
-            <div className="text-center p-2 rounded-lg bg-slate-900/50">
-              <div className="text-[11px] text-slate-400 font-medium">Total Applicants</div>
-              <div className="text-xl font-extrabold text-white font-mono mt-0.5">{totalCount}</div>
-            </div>
-            <div className="text-center p-2 rounded-lg bg-slate-900/50">
-              <div className="text-[11px] text-emerald-400 font-medium">Top Match</div>
-              <div className="text-xl font-extrabold text-emerald-300 font-mono mt-0.5">{topScore}%</div>
-            </div>
-            <div className="text-center p-2 rounded-lg bg-slate-900/50">
-              <div className="text-[11px] text-sky-400 font-medium">Avg Score</div>
-              <div className="text-xl font-extrabold text-sky-300 font-mono mt-0.5">{avgScore}%</div>
-            </div>
-            <div className="text-center p-2 rounded-lg bg-slate-900/50">
-              <div className="text-[11px] text-violet-400 font-medium">Shortlisted</div>
-              <div className="text-xl font-extrabold text-violet-300 font-mono mt-0.5">{shortlistedCount}</div>
-            </div>
-          </div>
-        </div>
+          {/* Job Title & Meta Info */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 space-y-3">
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="text-xs font-semibold">
+                  {job.department}
+                </Badge>
+                <span className="text-sm text-muted-foreground">· Posted on {new Date(job.created_at).toLocaleDateString()}</span>
+              </div>
 
-        {/* Job Specifications & Requirements Collapse/Expand */}
-        <div className="p-4 sm:p-5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-4 text-xs">
-          <div>
-            <span className="font-semibold text-slate-200 uppercase tracking-wider text-[11px]">
-              Job Description & Responsibilities:
-            </span>
-            <p className="text-slate-300 leading-relaxed mt-1 whitespace-pre-line">
-              {job.description}
-            </p>
-          </div>
+              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
+                {job.title}
+              </h1>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-800/80">
-            <div>
-              <span className="font-semibold text-indigo-300 uppercase tracking-wider text-[11px] flex items-center gap-1">
-                <CheckCircle2 className="h-3.5 w-3.5 text-indigo-400" />
-                Required Skills & Licensure:
-              </span>
-              <div className="flex flex-wrap gap-1.5 mt-2">
-                {job.required_skills && job.required_skills.length > 0 ? (
-                  job.required_skills.map((skill, idx) => (
-                    <span
-                      key={idx}
-                      className="px-2.5 py-1 rounded-md bg-indigo-500/15 text-indigo-200 border border-indigo-500/30 text-xs font-medium"
-                    >
-                      {skill}
-                    </span>
-                  ))
-                ) : (
-                  <span className="text-slate-500">None specified</span>
-                )}
+              <div className="flex flex-wrap items-center gap-5 text-sm text-muted-foreground pt-1">
+                <span className="flex items-center gap-1.5 font-medium text-foreground">
+                  <MapPin className="h-4 w-4 text-primary" />
+                  {job.location} ({job.employment_type})
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <Clock className="h-4 w-4 text-primary" />
+                  Experience: <strong className="text-foreground">{job.minimum_experience}</strong>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <GraduationCap className="h-4 w-4 text-primary" />
+                  Education: <strong className="text-foreground">{job.education_requirement}</strong>
+                </span>
               </div>
             </div>
 
-            <div>
-              <span className="font-semibold text-slate-400 uppercase tracking-wider text-[11px] flex items-center gap-1">
-                <Sparkles className="h-3.5 w-3.5 text-violet-400" />
-                Preferred Skills:
-              </span>
-              <div className="flex flex-wrap gap-1.5 mt-2">
-                {job.preferred_skills && job.preferred_skills.length > 0 ? (
-                  job.preferred_skills.map((skill, idx) => (
-                    <span
-                      key={idx}
-                      className="px-2.5 py-1 rounded-md bg-slate-800 text-slate-300 border border-slate-700 text-xs font-medium"
-                    >
-                      {skill}
-                    </span>
-                  ))
-                ) : (
-                  <span className="text-slate-500">None specified</span>
-                )}
+            {/* Quick Metrics Badge Card */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-2 gap-3 p-4 rounded-xl border border-border bg-muted/30">
+              <div className="text-center p-2.5 rounded-lg bg-background">
+                <div className="text-xs text-muted-foreground font-medium">Total Applicants</div>
+                <div className="text-xl sm:text-2xl font-extrabold font-mono text-foreground mt-0.5">{totalCount}</div>
+              </div>
+              <div className="text-center p-2.5 rounded-lg bg-background">
+                <div className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold">Top Match</div>
+                <div className="text-xl sm:text-2xl font-extrabold font-mono text-emerald-600 dark:text-emerald-400 mt-0.5">{topScore}%</div>
+              </div>
+              <div className="text-center p-2.5 rounded-lg bg-background">
+                <div className="text-xs text-muted-foreground font-medium">Avg Score</div>
+                <div className="text-xl sm:text-2xl font-extrabold font-mono text-foreground mt-0.5">{avgScore}%</div>
+              </div>
+              <div className="text-center p-2.5 rounded-lg bg-background">
+                <div className="text-xs text-muted-foreground font-medium">Shortlisted</div>
+                <div className="text-xl sm:text-2xl font-extrabold font-mono text-foreground mt-0.5">{shortlistedCount}</div>
               </div>
             </div>
           </div>
-        </div>
-      </div>
+
+          {/* Job Specifications & Requirements */}
+          <div className="p-5 rounded-xl border border-border bg-muted/20 space-y-4 text-sm">
+            <div>
+              <span className="font-bold text-foreground uppercase tracking-wider text-xs">
+                Job Description & Scope:
+              </span>
+              <p className="text-muted-foreground leading-relaxed mt-1.5 whitespace-pre-line text-sm">
+                {job.description}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 pt-3 border-t border-border">
+              <div>
+                <span className="font-bold text-foreground uppercase tracking-wider text-xs flex items-center gap-1.5">
+                  <CheckCircle2 className="h-4 w-4 text-primary" />
+                  Required Qualifications & Licensure:
+                </span>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {job.required_skills && job.required_skills.length > 0 ? (
+                    job.required_skills.map((skill, idx) => (
+                      <Badge
+                        key={idx}
+                        variant="secondary"
+                        className="text-xs font-medium px-3 py-1"
+                      >
+                        {skill}
+                      </Badge>
+                    ))
+                  ) : (
+                    <span className="text-muted-foreground">None specified</span>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <span className="font-bold text-muted-foreground uppercase tracking-wider text-xs flex items-center gap-1.5">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  Preferred Assets:
+                </span>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {job.preferred_skills && job.preferred_skills.length > 0 ? (
+                    job.preferred_skills.map((skill, idx) => (
+                      <Badge
+                        key={idx}
+                        variant="outline"
+                        className="text-xs font-normal px-3 py-1"
+                      >
+                        {skill}
+                      </Badge>
+                    ))
+                  ) : (
+                    <span className="text-muted-foreground">None specified</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Tables Section Header & Tab Controls */}
-      <div className="rounded-2xl bg-slate-900/70 border border-slate-800 p-6 space-y-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          {/* Tabs */}
-          <div className="flex items-center gap-2 p-1 rounded-xl bg-slate-950 border border-slate-800 w-fit">
-            <button
-              onClick={() => setActiveTab("rankings")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition ${
-                activeTab === "rankings"
-                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
-                  : "text-slate-400 hover:text-white"
-              }`}
-            >
-              <Trophy className="h-4 w-4 text-amber-300" />
-              <span>AI Applicant Rankings</span>
-              <span className="px-1.5 py-0.2 rounded-full bg-indigo-500/30 text-white text-[10px]">
-                {jobApplications.length}
-              </span>
-            </button>
+      <Card className="bg-card">
+        <CardHeader className="p-6 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          {/* Tabs & View Mode Toggle */}
+          <div className="flex flex-wrap items-center gap-3">
+            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "rankings" | "all")}>
+              <TabsList>
+                <TabsTrigger value="rankings" className="gap-2">
+                  <Trophy className="h-4 w-4" />
+                  <span>AI Leaderboard</span>
+                  <Badge variant="secondary" className="px-2 py-0 h-5 text-xs font-semibold">
+                    {jobApplications.length}
+                  </Badge>
+                </TabsTrigger>
+                <TabsTrigger value="all" className="gap-2">
+                  <Users className="h-4 w-4" />
+                  <span>All Applicants</span>
+                  <Badge variant="secondary" className="px-2 py-0 h-5 text-xs font-semibold">
+                    {jobApplications.length}
+                  </Badge>
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
 
-            <button
-              onClick={() => setActiveTab("all")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-semibold transition ${
-                activeTab === "all"
-                  ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/30"
-                  : "text-slate-400 hover:text-white"
-              }`}
-            >
-              <Users className="h-4 w-4 text-sky-400" />
-              <span>All Applicants Roster</span>
-              <span className="px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-300 text-[10px]">
-                {jobApplications.length}
-              </span>
-            </button>
+            {/* View Mode Switcher (Leaderboard only) */}
+            {activeTab === "rankings" && (
+              <div className="flex items-center gap-1 bg-muted/60 p-1 rounded-lg border border-border">
+                <Button
+                  type="button"
+                  variant={viewMode === "table" ? "secondary" : "ghost"}
+                  size="sm"
+                  onClick={() => setViewMode("table")}
+                  className="h-8 gap-1.5 text-xs font-semibold"
+                  title="Table View (Full list)"
+                >
+                  <List className="h-3.5 w-3.5" />
+                  <span>Table</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant={viewMode === "split" ? "default" : "ghost"}
+                  size="sm"
+                  onClick={() => setViewMode("split")}
+                  className="h-8 gap-1.5 text-xs font-semibold"
+                  title="High-Velocity Fast-Screening Split View (No Modals, 10s Dossiers, Keyboard Triage)"
+                >
+                  <Zap className="h-3.5 w-3.5 text-amber-500 fill-amber-500" />
+                  <span>⚡ Fast-Screen</span>
+                  <Badge variant="outline" className="text-[10px] py-0 h-4 font-mono">
+                    Hot
+                  </Badge>
+                </Button>
+              </div>
+            )}
           </div>
 
           {/* Search & Filters */}
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2">
-              <Filter className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+            <div className="flex items-center gap-1.5">
+              <Filter className="h-4 w-4 text-muted-foreground shrink-0" />
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                className="h-10 px-3 rounded-lg border border-input bg-background text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <option value="ALL">All Statuses</option>
                 <option value="SHORTLISTED">Shortlisted</option>
@@ -298,409 +430,642 @@ export function JobProfileView({
               </select>
             </div>
 
-            <div className="relative w-full sm:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-              <input
+            {/* Official Spec Band Filter */}
+            <div className="flex items-center gap-1.5">
+              <select
+                value={bandFilter}
+                onChange={(e) => setBandFilter(e.target.value)}
+                className="h-10 px-3 rounded-lg border border-input bg-background text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="ALL">All Bands</option>
+                <option value="Strong">Strong (85%+)</option>
+                <option value="Good">Good (70-84%)</option>
+                <option value="Partial">Partial (50-69%)</option>
+                <option value="Weak">Weak (&lt;50%)</option>
+              </select>
+            </div>
+
+            {/* Quick Spec Toggles */}
+            <Button
+              type="button"
+              variant={needsVerifyOnly ? "default" : "outline"}
+              size="sm"
+              onClick={() => setNeedsVerifyOnly(!needsVerifyOnly)}
+              className="h-10 text-xs gap-1.5 font-medium"
+              title="Filter candidates requiring license / document verification"
+            >
+              <AlertCircle className="h-3.5 w-3.5 text-amber-500" />
+              <span>Verify Doc</span>
+            </Button>
+
+            <Button
+              type="button"
+              variant={hasFlagsOnly ? "default" : "outline"}
+              size="sm"
+              onClick={() => setHasFlagsOnly(!hasFlagsOnly)}
+              className="h-10 text-xs gap-1.5 font-medium"
+              title="Filter candidates with flagged evidence items (e.g. skills list only)"
+            >
+              <span>Flags Only</span>
+            </Button>
+
+            <div className="relative w-full sm:w-64 ml-auto">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
                 type="text"
-                placeholder="Search name, email, phone, ID..."
+                placeholder="Search name, code, contact..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500"
+                className="pl-10 h-10 text-sm"
               />
             </div>
           </div>
-        </div>
+        </CardHeader>
 
-        {/* TAB 1: AI APPLICANT RANKINGS LEADERBOARD */}
-        {activeTab === "rankings" && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between text-xs text-slate-400 px-1">
-              <span>
-                Ranked by <strong>Multi-Industry AI Scoring Model</strong> (40% Experience, 35% Skills, 15% Semantic, 10% Education)
-              </span>
-              <span className="font-mono text-indigo-400">Total: {rankedApplicants.length}</span>
-            </div>
+        <CardContent className="p-0">
+          {/* TAB 1: AI APPLICANT RANKINGS LEADERBOARD */}
+          {activeTab === "rankings" && (
+            <div>
+              {/* FAST-SCREEN SPLIT MODE */}
+              {viewMode === "split" ? (
+                <div className="border-t border-border">
+                  {/* High Velocity Guidance Bar */}
+                  <div className="px-6 py-2.5 bg-muted/30 border-b border-border flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-2">
+                      <Zap className="h-3.5 w-3.5 text-amber-500" />
+                      <span className="font-semibold text-foreground">High-Velocity Split Screening Mode</span>
+                      <span className="hidden sm:inline">· 10-Second Candidate Dossiers</span>
+                    </div>
+                    <div className="flex items-center gap-3 font-mono text-[11px]">
+                      <span className="hidden md:inline bg-background px-2 py-0.5 rounded border border-border">
+                        <Keyboard className="inline h-3 w-3 mr-1 text-muted-foreground" />
+                        J / ↓ Next · K / ↑ Prev
+                      </span>
+                      <span className="hidden md:inline bg-background px-2 py-0.5 rounded border border-border">
+                        S: Shortlist · R: Reject
+                      </span>
+                      <span className="font-bold text-foreground">
+                        {rankedApplicants.length} Candidates
+                      </span>
+                    </div>
+                  </div>
 
-            <div className="overflow-x-auto rounded-xl border border-slate-800">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-950/80 text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800">
-                  <tr>
-                    <th className="px-4 py-3.5 text-center w-12">Rank</th>
-                    <th className="px-4 py-3.5">Candidate Details & Contact</th>
-                    <th className="px-4 py-3.5">AI Match Score</th>
-                    <th className="px-4 py-3.5">Score Breakdown (PH Weights)</th>
-                    <th className="px-4 py-3.5">Key Skills Matched</th>
-                    <th className="px-4 py-3.5">Status</th>
-                    <th className="px-4 py-3.5 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/60 bg-slate-900/40">
                   {rankedApplicants.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="text-center py-12 text-slate-500">
-                        No applicants found matching this criteria.
-                      </td>
-                    </tr>
+                    <div className="text-center py-20 text-muted-foreground text-sm">
+                      No applicants found matching this filter.
+                    </div>
                   ) : (
-                    rankedApplicants.map((app, index) => {
-                      const score = app.match_result?.match_score ?? 0;
-                      const isTop3 = index < 3 && score > 0;
-                      return (
-                        <tr
-                          key={app.id}
-                          className="hover:bg-slate-800/30 transition cursor-pointer"
-                          onClick={() => openAnalysis(app)}
-                        >
-                          {/* Rank Icon */}
-                          <td className="px-4 py-3.5 text-center font-mono font-bold">
-                            {index === 0 && score > 0 ? (
-                              <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-amber-500/20 text-amber-300 text-sm">
-                                🥇
-                              </span>
-                            ) : index === 1 && score > 0 ? (
-                              <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-slate-300/20 text-slate-200 text-sm">
-                                🥈
-                              </span>
-                            ) : index === 2 && score > 0 ? (
-                              <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-amber-700/20 text-amber-500 text-sm">
-                                🥉
-                              </span>
-                            ) : (
-                              <span className="text-slate-500 text-xs">#{index + 1}</span>
-                            )}
-                          </td>
-
-                          {/* Candidate Name & Contact */}
-                          <td className="px-4 py-3.5">
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono font-bold text-indigo-400">
-                                {app.candidate_code}
-                              </span>
-                              {isTop3 && (
-                                <span className="px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 text-[10px] font-semibold">
-                                  Top Match
-                                </span>
-                              )}
-                            </div>
-                            <div className="font-semibold text-slate-200 mt-0.5">
-                              {anonymize ? "Demographics Masked" : app.applicant_name}
-                            </div>
-                            <div className="text-[11px] text-slate-400 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 mt-1">
-                              <span className="flex items-center gap-1 text-slate-300">
-                                <Mail className="h-3 w-3 text-slate-400" />
-                                {anonymize ? "hidden@applicant.privacy" : app.email}
-                              </span>
-                              {app.phone && (
-                                <span className="flex items-center gap-1 text-slate-300">
-                                  <Phone className="h-3 w-3 text-slate-400" />
-                                  {anonymize ? "+63 ••• ••• ••••" : app.phone}
-                                </span>
-                              )}
-                            </div>
-                          </td>
-
-                          {/* AI Match Score */}
-                          <td className="px-4 py-3.5">
-                            {app.match_result ? (
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <span
-                                    className={`font-mono font-bold text-xs px-2.5 py-0.5 rounded-md border ${
-                                      score >= 80
-                                        ? "bg-emerald-500/15 text-emerald-300 border-emerald-500/30"
-                                        : score >= 60
-                                        ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
-                                        : "bg-rose-500/15 text-rose-300 border-rose-500/30"
-                                    }`}
-                                  >
-                                    {score}%
-                                  </span>
-                                  <span className="text-[10px] text-slate-400">
-                                    {score >= 80
-                                      ? "High Fit"
-                                      : score >= 60
-                                      ? "Moderate"
-                                      : score === 0
-                                      ? "Ineligible"
-                                      : "Low Fit"}
-                                  </span>
-                                </div>
-                                <div className="w-24 h-1.5 rounded-full bg-slate-800 overflow-hidden mt-1.5">
-                                  <div
-                                    className={`h-full rounded-full ${
-                                      score >= 80 ? "bg-emerald-500" : score >= 60 ? "bg-amber-500" : "bg-rose-500"
-                                    }`}
-                                    style={{ width: `${score}%` }}
-                                  />
-                                </div>
-                              </div>
-                            ) : (
-                              <span className="text-slate-500 text-[11px]">Processing...</span>
-                            )}
-                          </td>
-
-                          {/* Score Breakdown (Exp Duties, Exp Tenure, Skills, Edu) */}
-                          <td className="px-4 py-3.5">
-                            {app.match_result ? (
-                              <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[11px] font-mono">
-                                <span className="text-sky-400">
-                                  Duties (35%): {app.match_result.semantic_match_score}%
-                                </span>
-                                <span className="text-teal-400">
-                                  Tenure (25%): {app.match_result.experience_match_score}%
-                                </span>
-                                <span className="text-indigo-400">
-                                  Skills (25%): {app.match_result.skill_match_score}%
-                                </span>
-                                <span className="text-violet-400">
-                                  Edu (15%): {app.match_result.education_match_score}%
-                                </span>
-                              </div>
-                            ) : (
-                              <span className="text-slate-500">-</span>
-                            )}
-                          </td>
-
-                          {/* Skills Matched */}
-                          <td className="px-4 py-3.5">
-                            {app.match_result ? (
-                              <div className="space-y-1">
-                                <div className="text-xs text-slate-300">
-                                  <span className="text-emerald-400 font-bold">
-                                    {app.match_result.matched_skills.length}
-                                  </span>{" "}
-                                  matched
-                                  {app.match_result.missing_skills.length > 0 && (
-                                    <span className="text-slate-500 text-[11px] ml-1">
-                                      ({app.match_result.missing_skills.length} missing)
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="flex flex-wrap gap-1 max-w-xs">
-                                  {app.match_result.matched_skills.slice(0, 2).map((s, idx) => (
-                                    <span
-                                      key={idx}
-                                      className="px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-300 text-[10px]"
-                                    >
-                                      ✓ {s}
-                                    </span>
-                                  ))}
-                                  {app.match_result.matched_skills.length > 2 && (
-                                    <span className="text-[10px] text-slate-500">
-                                      +{app.match_result.matched_skills.length - 2} more
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                            ) : (
-                              <span className="text-slate-500">-</span>
-                            )}
-                          </td>
-
-                          {/* Status */}
-                          <td className="px-4 py-3.5">
-                            <span
-                              className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${
-                                app.status === "SHORTLISTED"
-                                  ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                                  : app.status === "UNDER_REVIEW"
-                                  ? "bg-sky-500/10 text-sky-400 border-sky-500/20"
-                                  : app.status === "REJECTED"
-                                  ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
-                                  : "bg-amber-500/10 text-amber-400 border-amber-500/20"
+                    <div className="grid grid-cols-1 lg:grid-cols-12 min-h-[700px]">
+                      {/* Left Roster Panel (40% width on desktop) */}
+                      <div className="lg:col-span-5 xl:col-span-4 border-r border-border max-h-[820px] overflow-y-auto divide-y divide-border bg-card/50">
+                        {rankedApplicants.map((app, index) => {
+                          const isSelected = activeCandidate?.id === app.id;
+                          const score = app.match_result?.match_score ?? 0;
+                          const insights = app.match_result?.ai_insights;
+                          return (
+                            <div
+                              key={app.id}
+                              onClick={() => setActiveCandidateId(app.id)}
+                              className={`p-4 transition-all cursor-pointer relative ${
+                                isSelected
+                                  ? "bg-primary/5 dark:bg-primary/10 border-l-4 border-primary"
+                                  : "hover:bg-muted/40"
                               }`}
                             >
-                              {app.status}
-                            </span>
-                          </td>
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono text-xs font-bold text-muted-foreground">
+                                    #{index + 1}
+                                  </span>
+                                  <span className="font-mono font-bold text-primary text-sm">
+                                    {app.candidate_code}
+                                  </span>
+                                  {index < 3 && score > 0 && (
+                                    <Badge variant="outline" className="text-[10px] py-0 h-4 font-bold">
+                                      Top {index + 1}
+                                    </Badge>
+                                  )}
+                                </div>
 
-                          {/* Action Button */}
-                          <td className="px-4 py-3.5 text-right" onClick={(e) => e.stopPropagation()}>
-                            <button
-                              onClick={() => openAnalysis(app)}
-                              className="px-3 py-1.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 hover:text-white text-xs font-semibold inline-flex items-center gap-1.5 border border-indigo-500/30 transition shadow-sm"
-                            >
-                              <Sparkles className="h-3.5 w-3.5 text-indigo-400" />
-                              <span>View Insights</span>
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })
+                                <div className="flex items-center gap-1.5">
+                                  <Badge
+                                    variant={
+                                      score >= 75
+                                        ? "success"
+                                        : score >= 50
+                                        ? "warning"
+                                        : "secondary"
+                                    }
+                                    className="font-mono font-bold text-xs px-2 py-0.5"
+                                  >
+                                    {score}%
+                                  </Badge>
+                                  <Badge variant={getStatusBadgeVariant(app.status)} className="text-[10px] py-0 h-5 font-semibold">
+                                    {app.status}
+                                  </Badge>
+                                </div>
+                              </div>
+
+                              <div className="font-semibold text-foreground text-sm mt-1">
+                                {anonymize ? "Demographics Masked" : app.applicant_name}
+                              </div>
+
+                              {/* Instant Pinpoint 1-liner */}
+                              {insights?.executive_headline ? (
+                                <p className="text-xs text-muted-foreground line-clamp-1 italic mt-1 font-medium">
+                                  &ldquo;{insights.executive_headline}&rdquo;
+                                </p>
+                              ) : insights?.key_pinpoints?.[0] ? (
+                                <p className="text-xs text-muted-foreground line-clamp-1 mt-1">
+                                  ⭐ {insights.key_pinpoints[0].headline}
+                                </p>
+                              ) : (
+                                <div className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
+                                  <span>{app.resume?.extracted_experience_years || 0} yrs exp</span>
+                                  <span>·</span>
+                                  <span>{app.match_result?.matched_skills.length || 0} skills matched</span>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Right Active Candidate Dossier Panel (60% width) */}
+                      <div className="lg:col-span-7 xl:col-span-8 p-4 sm:p-6 max-h-[820px] overflow-y-auto space-y-4 bg-background">
+                        {activeCandidate ? (
+                          <>
+                            {/* Fast-Triage Action Bar */}
+                            <div className="p-3 rounded-xl border border-border bg-card shadow-xs flex flex-wrap items-center justify-between gap-3 sticky top-0 z-10 backdrop-blur-md bg-card/95">
+                              <div className="flex items-center gap-1.5">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    const cIdx = rankedApplicants.findIndex((a) => a.id === activeCandidate.id);
+                                    if (cIdx > 0) setActiveCandidateId(rankedApplicants[cIdx - 1].id);
+                                  }}
+                                  disabled={rankedApplicants.findIndex((a) => a.id === activeCandidate.id) <= 0}
+                                  className="h-8 gap-1 text-xs"
+                                  title="Previous candidate (or press K)"
+                                >
+                                  <ChevronUp className="h-3.5 w-3.5" />
+                                  <span>Prev (K)</span>
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    const cIdx = rankedApplicants.findIndex((a) => a.id === activeCandidate.id);
+                                    if (cIdx < rankedApplicants.length - 1) {
+                                      setActiveCandidateId(rankedApplicants[cIdx + 1].id);
+                                    }
+                                  }}
+                                  disabled={
+                                    rankedApplicants.findIndex((a) => a.id === activeCandidate.id) >=
+                                    rankedApplicants.length - 1
+                                  }
+                                  className="h-8 gap-1 text-xs"
+                                  title="Next candidate (or press J)"
+                                >
+                                  <span>Next (J)</span>
+                                  <ChevronDown className="h-3.5 w-3.5" />
+                                </Button>
+                                <span className="text-xs font-mono text-muted-foreground ml-2">
+                                  Candidate {rankedApplicants.findIndex((a) => a.id === activeCandidate.id) + 1} of{" "}
+                                  {rankedApplicants.length}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  size="sm"
+                                  variant={activeCandidate.status === "SHORTLISTED" ? "default" : "outline"}
+                                  disabled={updatingId === activeCandidate.id}
+                                  onClick={() => handleDirectStatusChange(activeCandidate, "SHORTLISTED")}
+                                  className="h-8 text-xs font-semibold gap-1.5 text-emerald-600 dark:text-emerald-400 hover:text-emerald-700"
+                                >
+                                  <Check className="h-3.5 w-3.5" />
+                                  <span>Shortlist (S)</span>
+                                </Button>
+
+                                <Button
+                                  size="sm"
+                                  variant={activeCandidate.status === "UNDER_REVIEW" ? "default" : "outline"}
+                                  disabled={updatingId === activeCandidate.id}
+                                  onClick={() => handleDirectStatusChange(activeCandidate, "UNDER_REVIEW")}
+                                  className="h-8 text-xs font-semibold"
+                                >
+                                  <span>Review (U)</span>
+                                </Button>
+
+                                <Button
+                                  size="sm"
+                                  variant={activeCandidate.status === "REJECTED" ? "destructive" : "outline"}
+                                  disabled={updatingId === activeCandidate.id}
+                                  onClick={() => handleDirectStatusChange(activeCandidate, "REJECTED")}
+                                  className="h-8 text-xs font-semibold gap-1.5 text-destructive hover:text-destructive"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                  <span>Reject (R)</span>
+                                </Button>
+
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => openAnalysis(activeCandidate)}
+                                  className="h-8 text-xs text-muted-foreground gap-1"
+                                  title="Open full dialog modal"
+                                >
+                                  <ExternalLink className="h-3.5 w-3.5" />
+                                  <span>Full Modal</span>
+                                </Button>
+                              </div>
+                            </div>
+
+                            {/* Instant Candidate Dossier */}
+                            <CandidatePinpointDossier
+                              application={activeCandidate}
+                              anonymize={anonymize}
+                            />
+                          </>
+                        ) : null}
+                      </div>
+                    </div>
                   )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
+                </div>
+              ) : (
+                /* STANDARD TABLE VIEW (Aligned with TalentMatch Pool Table Row Spec) */
+                <div>
+                  <div className="px-6 py-3 bg-muted/40 border-y border-border flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm text-muted-foreground">
+                    <span>
+                      Preset: <strong>{isRegulatedRole ? "Regulated Professional (Medical)" : "Professional / Technical (IT)"}</strong>
+                      {" · "}
+                      <span className="font-mono text-xs">
+                        {isRegulatedRole 
+                          ? "30% Req · 25% Exp · 25% Credential · 10% Pref · 10% Achiev" 
+                          : "40% Req · 25% Exp · 15% Edu · 10% Pref · 10% Achiev"}
+                      </span>
+                    </span>
+                    <span className="font-mono font-bold text-foreground">Showing: {rankedApplicants.length} Candidates</span>
+                  </div>
 
-        {/* TAB 2: ALL APPLICANTS DIRECTORY ROSTER */}
-        {activeTab === "all" && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between text-xs text-slate-400 px-1">
-              <span>Chronological list of all received candidate submissions.</span>
-              <span className="font-mono text-indigo-400">Total: {rosterApplicants.length}</span>
-            </div>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-24 text-center font-bold">Rank</TableHead>
+                        <TableHead className="w-56 font-bold">Candidate ID</TableHead>
+                        <TableHead className="w-24 font-bold">Match</TableHead>
+                        <TableHead className="w-28 font-bold">Band</TableHead>
+                        <TableHead className="w-28 font-bold">Must-haves</TableHead>
+                        <TableHead className="w-48 font-bold">Hard requirement</TableHead>
+                        <TableHead className="min-w-[180px] font-bold">Flags</TableHead>
+                        <TableHead className="text-right w-44 font-bold">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {rankedApplicants.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={8} className="text-center py-14 text-muted-foreground text-sm">
+                            No applicants found matching this filter.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        rankedApplicants.map((app, index) => {
+                          const score = app.match_result?.match_score ?? 0;
+                          const insights = app.match_result?.ai_insights;
+                          const band =
+                            insights?.band ||
+                            (score >= 85 ? "Strong" : score >= 70 ? "Good" : score >= 50 ? "Partial" : "Weak");
+                          const mustHavesSummary =
+                            insights?.must_haves_summary ||
+                            (insights?.must_have_breakdown
+                              ? `${insights.must_have_breakdown.filter((m) => m.status === "met").length} / ${insights.must_have_breakdown.length}`
+                              : `${app.match_result?.matched_skills.length || 0} Met`);
+                          const hardReqStatus =
+                            insights?.hard_requirement_status ||
+                            (insights?.action_needed ? "Stated, verify document" : "None required");
+                          const flags = insights?.flags || [];
 
-            <div className="overflow-x-auto rounded-xl border border-slate-800">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-950/80 text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800">
-                  <tr>
-                    <th className="px-4 py-3.5">Candidate ID</th>
-                    <th className="px-4 py-3.5">Applicant Full Name</th>
-                    <th className="px-4 py-3.5">Email Address</th>
-                    <th className="px-4 py-3.5">Contact Number</th>
-                    <th className="px-4 py-3.5">Experience</th>
-                    <th className="px-4 py-3.5">Applied Date</th>
-                    <th className="px-4 py-3.5">Status & Decision</th>
-                    <th className="px-4 py-3.5 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800/60 bg-slate-900/40">
+                          return (
+                            <TableRow
+                              key={app.id}
+                              className="cursor-pointer hover:bg-muted/40 transition-colors"
+                              onClick={() => openAnalysis(app)}
+                            >
+                              {/* Rank */}
+                              <TableCell className="text-center font-mono font-bold text-xs whitespace-nowrap">
+                                {index === 0 && score > 0 ? (
+                                  <span className="text-sm">🥇 1 of {rankedApplicants.length}</span>
+                                ) : index === 1 && score > 0 ? (
+                                  <span className="text-sm">🥈 2 of {rankedApplicants.length}</span>
+                                ) : index === 2 && score > 0 ? (
+                                  <span className="text-sm">🥉 3 of {rankedApplicants.length}</span>
+                                ) : (
+                                  <span className="text-muted-foreground">
+                                    {index + 1} of {rankedApplicants.length}
+                                  </span>
+                                )}
+                              </TableCell>
+
+                              {/* Candidate ID & Blind Name (Spec Note 1) */}
+                              <TableCell>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-mono font-extrabold text-primary text-sm bg-primary/10 px-2 py-0.5 rounded border border-primary/20">
+                                    {app.candidate_code}
+                                  </span>
+                                  {app.status === "SHORTLISTED" && (
+                                    <Badge variant="outline" className="text-[10px] py-0 text-emerald-600 bg-emerald-500/10 border-emerald-500/20 font-medium">
+                                      Revealed
+                                    </Badge>
+                                  )}
+                                </div>
+                                <div className="text-xs text-foreground font-semibold mt-1 truncate max-w-[200px]">
+                                  {app.status === "SHORTLISTED" || !anonymize ? app.applicant_name : "Demographics Masked"}
+                                </div>
+                                {insights?.why_this_score ? (
+                                  <p className="text-[11px] text-muted-foreground line-clamp-1 italic max-w-[220px] mt-0.5" title={insights.why_this_score}>
+                                    &ldquo;{insights.why_this_score}&rdquo;
+                                  </p>
+                                ) : null}
+                              </TableCell>
+
+                              {/* Match Score */}
+                              <TableCell>
+                                <div className="space-y-1">
+                                  <span className="font-mono font-extrabold text-base text-foreground">
+                                    {score}%
+                                  </span>
+                                  <div className="w-16">
+                                    <Progress value={score} className="h-1.5" />
+                                  </div>
+                                </div>
+                              </TableCell>
+
+                              {/* Band */}
+                              <TableCell>
+                                <Badge
+                                  variant={
+                                    band === "Strong"
+                                      ? "success"
+                                      : band === "Good"
+                                      ? "info"
+                                      : band === "Partial"
+                                      ? "warning"
+                                      : "secondary"
+                                  }
+                                  className="font-bold text-xs px-2.5 py-0.5"
+                                >
+                                  {band}
+                                </Badge>
+                              </TableCell>
+
+                              {/* Must-haves */}
+                              <TableCell>
+                                <Badge
+                                  variant="outline"
+                                  className={`font-mono font-bold text-xs px-2.5 py-0.5 ${
+                                    mustHavesSummary.startsWith("All") || (mustHavesSummary.includes("/") && mustHavesSummary.split("/")[0].trim() === mustHavesSummary.split("/")[1].trim())
+                                      ? "text-emerald-600 border-emerald-500/30 bg-emerald-500/10"
+                                      : "text-amber-600 border-amber-500/30 bg-amber-500/10"
+                                  }`}
+                                >
+                                  {mustHavesSummary}
+                                </Badge>
+                              </TableCell>
+
+                              {/* Hard requirement */}
+                              <TableCell>
+                                {hardReqStatus === "Stated, verify document" ? (
+                                  <Badge
+                                    variant="outline"
+                                    className="gap-1 text-xs font-semibold py-0.5 text-amber-700 dark:text-amber-300 border-amber-500/30 bg-amber-500/10 whitespace-nowrap"
+                                  >
+                                    <AlertCircle className="h-3 w-3 text-amber-600 shrink-0" />
+                                    <span>Stated, verify document</span>
+                                  </Badge>
+                                ) : hardReqStatus === "Verified" ? (
+                                  <Badge
+                                    variant="outline"
+                                    className="gap-1 text-xs font-semibold py-0.5 text-emerald-600 border-emerald-500/30 bg-emerald-500/10 whitespace-nowrap"
+                                  >
+                                    <CheckCircle2 className="h-3 w-3 text-emerald-500 shrink-0" />
+                                    <span>Verified</span>
+                                  </Badge>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground font-mono">None required</span>
+                                )}
+                              </TableCell>
+
+                              {/* Flags */}
+                              <TableCell>
+                                {flags && flags.length > 0 ? (
+                                  <div className="flex flex-wrap gap-1 max-w-[220px]">
+                                    {flags.map((f: string, fIdx: number) => (
+                                      <Badge
+                                        key={fIdx}
+                                        variant="outline"
+                                        className="text-[10px] font-normal py-0.5 px-2 text-rose-700 dark:text-rose-300 border-rose-500/30 bg-rose-500/10"
+                                      >
+                                        {f}
+                                      </Badge>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground font-mono">None</span>
+                                )}
+                              </TableCell>
+
+                              {/* Actions */}
+                              <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => {
+                                      setActiveCandidateId(app.id);
+                                      setViewMode("split");
+                                    }}
+                                    className="gap-1 text-xs font-semibold h-8"
+                                    title="Open high-velocity split screen with this candidate"
+                                  >
+                                    <Zap className="h-3 w-3 text-amber-500 fill-amber-500" />
+                                    <span>Screen</span>
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => openAnalysis(app)}
+                                    className="gap-1 text-xs font-semibold h-8"
+                                    title="Open official TalentMatch candidate summary card"
+                                  >
+                                    <Sparkles className="h-3 w-3 text-primary" />
+                                    <span>Card</span>
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 2: ALL APPLICANTS DIRECTORY ROSTER */}
+          {activeTab === "all" && (
+            <div>
+              <div className="px-6 py-3 bg-muted/40 border-y border-border flex items-center justify-between text-xs sm:text-sm text-muted-foreground">
+                <span>Chronological applicant submissions roster</span>
+                <span className="font-mono font-bold text-foreground">Total: {rosterApplicants.length}</span>
+              </div>
+
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[130px]">Candidate ID</TableHead>
+                    <TableHead>Applicant Name</TableHead>
+                    <TableHead>Email Address</TableHead>
+                    <TableHead>Contact Number</TableHead>
+                    <TableHead className="w-[120px]">Experience</TableHead>
+                    <TableHead className="w-[120px]">Applied Date</TableHead>
+                    <TableHead className="w-[220px]">Decision</TableHead>
+                    <TableHead className="text-right w-[100px]">Details</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {rosterApplicants.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="text-center py-12 text-slate-500">
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-14 text-muted-foreground text-sm">
                         No applications recorded yet.
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ) : (
                     rosterApplicants.map((app) => {
                       const expYears = app.resume?.extracted_experience_years;
                       return (
-                        <tr
+                        <TableRow
                           key={app.id}
-                          className="hover:bg-slate-800/30 transition cursor-pointer"
+                          className="cursor-pointer"
                           onClick={() => openAnalysis(app)}
                         >
-                          {/* Candidate Code */}
-                          <td className="px-4 py-3.5 font-mono font-bold text-indigo-400">
+                          <TableCell className="font-mono font-bold text-primary text-sm">
                             {app.candidate_code}
-                          </td>
+                          </TableCell>
 
-                          {/* Applicant Name */}
-                          <td className="px-4 py-3.5">
-                            <div className="font-semibold text-slate-200">
+                          <TableCell>
+                            <div className="font-semibold text-foreground text-sm">
                               {anonymize ? "Demographics Masked" : app.applicant_name}
                             </div>
-                            <div className="text-[10px] text-slate-500">
-                              {app.match_result ? `Match: ${app.match_result.match_score}%` : "Pending match"}
+                            <div className="text-xs text-muted-foreground">
+                              {app.match_result ? `Match: ${app.match_result.match_score}%` : "Pending"}
                             </div>
-                          </td>
+                          </TableCell>
 
-                          {/* Email */}
-                          <td className="px-4 py-3.5">
+                          <TableCell>
                             {anonymize ? (
-                              <span className="text-slate-500">hidden@applicant.privacy</span>
+                              <span className="text-muted-foreground text-sm">hidden@privacy</span>
                             ) : (
                               <a
                                 href={`mailto:${app.email}`}
                                 onClick={(e) => e.stopPropagation()}
-                                className="text-slate-300 hover:text-indigo-400 flex items-center gap-1.5 transition"
+                                className="text-foreground hover:underline flex items-center gap-1.5 text-sm"
                               >
-                                <Mail className="h-3 w-3 text-slate-400 shrink-0" />
+                                <Mail className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                                 <span>{app.email}</span>
                               </a>
                             )}
-                          </td>
+                          </TableCell>
 
-                          {/* Contact Number */}
-                          <td className="px-4 py-3.5">
+                          <TableCell>
                             {anonymize ? (
-                              <span className="text-slate-500">+63 ••• ••• ••••</span>
+                              <span className="text-muted-foreground text-sm">+63 ••• ••••</span>
                             ) : app.phone ? (
                               <a
                                 href={`tel:${app.phone}`}
                                 onClick={(e) => e.stopPropagation()}
-                                className="text-slate-300 hover:text-teal-400 flex items-center gap-1.5 transition"
+                                className="text-foreground hover:underline flex items-center gap-1.5 text-sm"
                               >
-                                <Phone className="h-3 w-3 text-teal-400 shrink-0" />
+                                <Phone className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                                 <span>{app.phone}</span>
                               </a>
                             ) : (
-                              <span className="text-slate-500">Not provided</span>
+                              <span className="text-muted-foreground text-sm">-</span>
                             )}
-                          </td>
+                          </TableCell>
 
-                          {/* Extracted Experience */}
-                          <td className="px-4 py-3.5 text-slate-300">
+                          <TableCell className="text-sm">
                             {expYears !== undefined && expYears !== null ? (
                               expYears === 0 ? (
-                                <span className="text-slate-400">Fresh Grad (0 yrs)</span>
+                                <span className="text-muted-foreground">0 yrs</span>
                               ) : (
-                                <span className="font-mono text-teal-300">{expYears} yrs</span>
+                                <span className="font-mono font-bold">{expYears} yrs</span>
                               )
                             ) : (
-                              <span className="text-slate-500">-</span>
+                              <span className="text-muted-foreground">-</span>
                             )}
-                          </td>
+                          </TableCell>
 
-                          {/* Applied Date */}
-                          <td className="px-4 py-3.5 text-slate-400 text-[11px]">
-                            {new Date(app.applied_at).toLocaleDateString()}{" "}
-                            <span className="text-slate-500">
-                              {new Date(app.applied_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                            </span>
-                          </td>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {new Date(app.applied_at).toLocaleDateString()}
+                          </TableCell>
 
                           {/* Quick Decision Changer */}
-                          <td className="px-4 py-3.5" onClick={(e) => e.stopPropagation()}>
+                          <TableCell onClick={(e) => e.stopPropagation()}>
                             <div className="flex items-center gap-1.5">
-                              <button
-                                onClick={(e) => handleQuickStatusChange(app, "SHORTLISTED", e)}
+                              <Button
+                                size="sm"
+                                variant={app.status === "SHORTLISTED" ? "default" : "outline"}
                                 disabled={updatingId === app.id}
-                                className={`px-2 py-0.5 rounded text-[10px] font-semibold transition ${
-                                  app.status === "SHORTLISTED"
-                                    ? "bg-emerald-600 text-white"
-                                    : "bg-slate-800 text-slate-400 hover:bg-emerald-500/20 hover:text-emerald-300"
-                                }`}
+                                onClick={(e) => handleQuickStatusChange(app, "SHORTLISTED", e)}
+                                className="h-7 px-2.5 text-xs font-semibold"
                               >
                                 Shortlist
-                              </button>
-                              <button
-                                onClick={(e) => handleQuickStatusChange(app, "UNDER_REVIEW", e)}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant={app.status === "UNDER_REVIEW" ? "secondary" : "ghost"}
                                 disabled={updatingId === app.id}
-                                className={`px-2 py-0.5 rounded text-[10px] font-semibold transition ${
-                                  app.status === "UNDER_REVIEW"
-                                    ? "bg-sky-600 text-white"
-                                    : "bg-slate-800 text-slate-400 hover:bg-sky-500/20 hover:text-sky-300"
-                                }`}
+                                onClick={(e) => handleQuickStatusChange(app, "UNDER_REVIEW", e)}
+                                className="h-7 px-2.5 text-xs font-semibold"
                               >
                                 Review
-                              </button>
-                              <button
-                                onClick={(e) => handleQuickStatusChange(app, "REJECTED", e)}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant={app.status === "REJECTED" ? "destructive" : "ghost"}
                                 disabled={updatingId === app.id}
-                                className={`px-2 py-0.5 rounded text-[10px] font-semibold transition ${
-                                  app.status === "REJECTED"
-                                    ? "bg-rose-600 text-white"
-                                    : "bg-slate-800 text-slate-400 hover:bg-rose-500/20 hover:text-rose-300"
-                                }`}
+                                onClick={(e) => handleQuickStatusChange(app, "REJECTED", e)}
+                                className="h-7 px-2.5 text-xs font-semibold"
                               >
                                 Reject
-                              </button>
+                              </Button>
                             </div>
-                          </td>
+                          </TableCell>
 
-                          {/* Action Button */}
-                          <td className="px-4 py-3.5 text-right" onClick={(e) => e.stopPropagation()}>
-                            <button
+                          <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
                               onClick={() => openAnalysis(app)}
-                              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold inline-flex items-center gap-1.5 border border-slate-700/60 transition"
+                              className="h-8 text-xs px-2.5 font-medium"
                             >
-                              <FileText className="h-3.5 w-3.5 text-indigo-400" />
-                              <span>Details</span>
-                            </button>
-                          </td>
-                        </tr>
+                              <FileText className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
                       );
                     })
                   )}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Candidate Analysis Modal */}
       <CandidateAnalysisModal

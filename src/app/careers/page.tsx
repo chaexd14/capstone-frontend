@@ -16,14 +16,23 @@ export default function CareersPage() {
 
   const loadData = async () => {
     try {
-      // 1. Fetch jobs immediately to render positions without delay
+      const cached = sessionStorage.getItem("tm_cached_jobs");
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        requestAnimationFrame(() => {
+          setJobs(parsed);
+          setLoading(false);
+        });
+      }
+    } catch {}
+
+    try {
       const jobsData = await fetchApi<Job[]>("/jobs/");
       setJobs(jobsData);
       try { sessionStorage.setItem("tm_cached_jobs", JSON.stringify(jobsData)); } catch {}
       setBackendOnline(true);
       setLoading(false);
 
-      // 2. Fetch applicant submissions in the background
       const appsData = await fetchApi<Application[]>("/applications/");
       setApplications(appsData);
     } catch (err) {
@@ -34,16 +43,14 @@ export default function CareersPage() {
   };
 
   useEffect(() => {
-    try {
-      const cached = sessionStorage.getItem("tm_cached_jobs");
-      if (cached) {
-        setJobs(JSON.parse(cached));
-        setLoading(false);
-      }
-    } catch {}
-    loadData();
+    const timer = setTimeout(() => {
+      void loadData();
+    }, 0);
     const interval = setInterval(loadData, 15000);
-    return () => clearInterval(interval);
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+    };
   }, []);
 
   const handleApplicationCreated = (newApp: Application) => {
@@ -52,20 +59,14 @@ export default function CareersPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-black text-slate-100 font-sans selection:bg-indigo-500 selection:text-white flex flex-col">
-      {/* Background Ambience */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden -z-10">
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[700px] bg-indigo-600/10 rounded-full blur-[140px]" />
-        <div className="absolute bottom-1/3 right-1/4 w-[500px] h-[500px] bg-violet-600/10 rounded-full blur-[140px]" />
-      </div>
-
+    <div className="min-h-screen bg-background text-foreground flex flex-col font-sans">
       <Navigation backendOnline={backendOnline} />
 
       <main className="flex-1">
         {loading ? (
           <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
-            <Loader2 className="h-8 w-8 animate-spin text-indigo-400" />
-            <div className="text-xs text-slate-400">Loading open job opportunities...</div>
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            <div className="text-xs text-muted-foreground">Loading open positions...</div>
           </div>
         ) : (
           <ApplicantPortal
@@ -76,7 +77,7 @@ export default function CareersPage() {
         )}
       </main>
 
-      <footer className="border-t border-slate-800/80 bg-slate-950/90 py-4 text-xs text-slate-500 text-center">
+      <footer className="border-t border-border bg-background py-4 text-xs text-muted-foreground text-center">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
           <span>TalentMatch Careers · Verified Universal Job Matching Engine</span>
           <span>Philippine Multi-Industry Benchmark</span>
