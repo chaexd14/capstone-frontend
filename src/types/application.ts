@@ -153,6 +153,7 @@ export interface Resume {
 
 export interface Application {
   id: number;
+  tracking_token?: string;
   job: number;
   job_title?: string;
   job_department?: string;

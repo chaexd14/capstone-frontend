@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { Job } from "@/types/job";
 import { Application } from "@/types/application";
 import {
@@ -18,6 +18,7 @@ import {
   Eye,
   ArrowRight,
   GraduationCap,
+  Lock,
 } from "lucide-react";
 import { ApplyModal } from "./ApplyModal";
 import { JobDetailModal } from "./JobDetailModal";
@@ -53,9 +54,35 @@ export function ApplicantPortal({ jobs, applications, onApplicationCreated }: Ap
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isApplyOpen, setIsApplyOpen] = useState(false);
 
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get("tab");
+      if (tabParam === "MY_APPLICATIONS" || tabParam === "applications") {
+        setActiveTab("MY_APPLICATIONS");
+      }
+    } catch {}
+  }, []);
+
+  // Set of job IDs the applicant has already applied to
+  const appliedJobIds = useMemo(() => {
+    const ids = new Set<number>();
+    applications.forEach((app) => {
+      if (typeof app.job === "number") {
+        ids.add(app.job);
+      } else if (app.job && typeof app.job === "object" && "id" in (app.job as any)) {
+        ids.add(Number((app.job as any).id));
+      }
+    });
+    return ids;
+  }, [applications]);
+
   // Filter jobs by search and department
   const filteredJobs = useMemo(() => {
     return jobs.filter((job) => {
+      // Exclude archived and draft requisitions from applicant view
+      if (job.status === "ARCHIVED" || job.status === "DRAFT") return false;
+
       const q = searchQuery.toLowerCase().trim();
       const matchesSearch =
         !q ||
@@ -84,6 +111,7 @@ export function ApplicantPortal({ jobs, applications, onApplicationCreated }: Ap
   };
 
   const openApply = (job: Job) => {
+    if (job.status === "CLOSED") return;
     setSelectedJobForApply(job);
     setIsApplyOpen(true);
   };
@@ -241,9 +269,23 @@ export function ApplicantPortal({ jobs, applications, onApplicationCreated }: Ap
                 >
                   <CardHeader className="p-6 pb-4 space-y-3">
                     <div className="flex items-start justify-between gap-2">
-                      <Badge variant="outline" className="text-xs font-medium">
-                        {job.department}
-                      </Badge>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <Badge variant="outline" className="text-xs font-medium">
+                          {job.department}
+                        </Badge>
+                        {job.status === "CLOSED" && (
+                          <Badge variant="outline" className="text-[11px] font-semibold border-amber-500/40 text-amber-600 dark:text-amber-400 bg-amber-500/10 gap-1">
+                            <Lock className="h-3 w-3" />
+                            Closed
+                          </Badge>
+                        )}
+                        {appliedJobIds.has(job.id) && (
+                          <Badge variant="secondary" className="text-[11px] font-semibold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 gap-1 border border-emerald-500/30">
+                            <CheckCircle2 className="h-3 w-3" />
+                            Applied
+                          </Badge>
+                        )}
+                      </div>
                       <span className="text-xs text-muted-foreground font-mono">
                         {job.applicant_count || 0} applicants
                       </span>
@@ -313,14 +355,36 @@ export function ApplicantPortal({ jobs, applications, onApplicationCreated }: Ap
                       <span>Details</span>
                     </Button>
 
-                    <Button
-                      size="sm"
-                      onClick={() => openApply(job)}
-                      className="gap-1.5 font-semibold text-xs"
-                    >
-                      <span>Apply Now</span>
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
+                    {appliedJobIds.has(job.id) ? (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => setActiveTab("MY_APPLICATIONS")}
+                        className="gap-1.5 font-semibold text-xs border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20"
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        <span>Already Applied</span>
+                      </Button>
+                    ) : job.status === "CLOSED" ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled
+                        className="gap-1.5 font-medium text-xs text-muted-foreground border-border bg-muted/40 cursor-not-allowed opacity-80"
+                      >
+                        <Lock className="h-3.5 w-3.5 text-amber-500" />
+                        <span>Applications Closed</span>
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        onClick={() => openApply(job)}
+                        className="gap-1.5 font-semibold text-xs"
+                      >
+                        <span>Apply Now</span>
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                    )}
                   </CardFooter>
                 </Card>
               ))}
@@ -454,9 +518,14 @@ export function ApplicantPortal({ jobs, applications, onApplicationCreated }: Ap
       {/* Job Detail Modal */}
       <JobDetailModal
         job={selectedJobForDetail}
+        hasApplied={selectedJobForDetail ? appliedJobIds.has(selectedJobForDetail.id) : false}
         isOpen={isDetailOpen}
         onClose={() => setIsDetailOpen(false)}
         onApply={(job) => openApply(job)}
+        onViewApplication={() => {
+          setIsDetailOpen(false);
+          setActiveTab("MY_APPLICATIONS");
+        }}
       />
 
       {/* Apply Modal */}

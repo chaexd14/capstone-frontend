@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
-import { UploadCloud, FileText, CheckCircle2, AlertCircle, Loader2, Sparkles } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { UploadCloud, FileText, CheckCircle2, AlertCircle, Loader2, Sparkles, Clock, Check } from "lucide-react";
 import { Job } from "@/types/job";
 import { Application } from "@/types/application";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
@@ -9,7 +9,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { API_BASE_URL } from "@/lib/api";
+import { Progress } from "@/components/ui/progress";
+import { API_BASE_URL, getSecurityHeaders } from "@/lib/api";
+
+import { createClient } from "@/lib/supabase/client";
 
 interface ApplyModalProps {
   job: Job | null;
@@ -27,6 +30,81 @@ export function ApplyModal({ job, isOpen, onClose, onSuccess }: ApplyModalProps)
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successResult, setSuccessResult] = useState<Application | null>(null);
+  const [isEvaluating, setIsEvaluating] = useState(false);
+  const [evalProgress, setEvalProgress] = useState(35);
+  const [userId, setUserId] = useState<string | null>(null);
+
+  const supabase = createClient();
+
+  React.useEffect(() => {
+    async function loadUser() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          setUserId(user.id);
+          if (user.email && !email) setEmail(user.email);
+          const fullName = user.user_metadata?.full_name || "";
+          if (fullName && !firstName) {
+            const parts = fullName.split(" ");
+            setFirstName(parts[0] || "");
+            setLastName(parts.slice(1).join(" ") || "");
+          }
+        }
+      } catch {}
+    }
+    if (isOpen) {
+      loadUser();
+    }
+  }, [isOpen]);
+
+  // Polling effect for real-time background AI evaluation
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout | null = null;
+    let progressTimer: NodeJS.Timeout | null = null;
+    let isCancelled = false;
+
+    if (successResult && isEvaluating && successResult.id) {
+      progressTimer = setInterval(() => {
+        setEvalProgress((prev) => (prev < 90 ? prev + 6 : prev));
+      }, 700);
+
+      intervalId = setInterval(async () => {
+        try {
+          const tokenParam = successResult.tracking_token ? `?token=${encodeURIComponent(successResult.tracking_token)}` : "";
+          const response = await fetch(`${API_BASE_URL}/applications/${successResult.id}/${tokenParam}`, {
+            headers: getSecurityHeaders(),
+          });
+          if (!response.ok) return;
+
+          const data: Application = await response.json();
+          if (isCancelled) return;
+
+          const isFinished = data.resume?.processing_status === "COMPLETED" || !!data.match_result;
+          if (isFinished) {
+            setSuccessResult(data);
+            setIsEvaluating(false);
+            setEvalProgress(100);
+            onSuccess(data);
+            if (progressTimer) clearInterval(progressTimer);
+            if (intervalId) clearInterval(intervalId);
+          } else if (data.resume?.processing_status === "FAILED") {
+            setSuccessResult(data);
+            setIsEvaluating(false);
+            if (progressTimer) clearInterval(progressTimer);
+            if (intervalId) clearInterval(intervalId);
+          }
+        } catch (err) {
+          console.error("Polling application status error:", err);
+        }
+      }, 1500);
+
+      return () => {
+        isCancelled = true;
+        if (progressTimer) clearInterval(progressTimer);
+        if (intervalId) clearInterval(intervalId);
+      };
+    }
+  }, [successResult?.id, isEvaluating]);
 
   if (!job) return null;
 
@@ -54,6 +132,11 @@ export function ApplyModal({ job, isOpen, onClose, onSuccess }: ApplyModalProps)
       return;
     }
 
+    if (job.status === "CLOSED") {
+      setError("This position is closed and is no longer accepting applications.");
+      return;
+    }
+
     setSubmitting(true);
     setError(null);
 
@@ -63,21 +146,44 @@ export function ApplyModal({ job, isOpen, onClose, onSuccess }: ApplyModalProps)
     formData.append("email", email);
     formData.append("phone", phone);
     formData.append("resume", file);
+    if (userId) {
+      formData.append("user_id", userId);
+    }
 
     try {
       const response = await fetch(`${API_BASE_URL}/jobs/${job.id}/apply/`, {
         method: "POST",
+        headers: getSecurityHeaders(),
         body: formData,
       });
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.detail || errData.resume?.[0] || "Failed to submit application");
+        let message = errData.error || errData.detail;
+        if (!message && errData.email) {
+          message = Array.isArray(errData.email) ? errData.email[0] : errData.email;
+        }
+        if (!message && errData.non_field_errors) {
+          message = Array.isArray(errData.non_field_errors) ? errData.non_field_errors[0] : errData.non_field_errors;
+        }
+        if (!message && errData.resume) {
+          message = Array.isArray(errData.resume) ? errData.resume[0] : errData.resume;
+        }
+        throw new Error(message || "Failed to submit application");
       }
 
       const applicationData: Application = await response.json();
       setSuccessResult(applicationData);
       onSuccess(applicationData);
+
+      const alreadyCompleted = applicationData.resume?.processing_status === "COMPLETED" || !!applicationData.match_result;
+      if (alreadyCompleted) {
+        setIsEvaluating(false);
+        setEvalProgress(100);
+      } else {
+        setIsEvaluating(true);
+        setEvalProgress(40);
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Error submitting application");
     } finally {
@@ -87,6 +193,8 @@ export function ApplyModal({ job, isOpen, onClose, onSuccess }: ApplyModalProps)
 
   const handleResetAndClose = () => {
     setSuccessResult(null);
+    setIsEvaluating(false);
+    setEvalProgress(35);
     setFirstName("");
     setLastName("");
     setEmail("");
@@ -113,56 +221,141 @@ export function ApplyModal({ job, isOpen, onClose, onSuccess }: ApplyModalProps)
           </DialogDescription>
         </DialogHeader>
 
-        {/* Success View */}
+        {/* Progress or Final Result View */}
         {successResult ? (
-          <div className="py-6 text-center space-y-5">
-            <div className="h-16 w-16 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto">
-              <CheckCircle2 className="h-8 w-8" />
-            </div>
-            <div className="space-y-1">
-              <h3 className="text-xl font-bold text-foreground">Application Successfully Submitted</h3>
-              <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                Your resume was parsed, anonymized, and screened against this role&apos;s benchmarks.
-              </p>
-            </div>
+          isEvaluating ? (
+            <div className="py-6 text-center space-y-5">
+              <div className="relative mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 text-primary border border-primary/20 shadow-xs">
+                <Sparkles className="h-8 w-8 animate-pulse text-primary" />
+                <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-primary"></span>
+                </span>
+              </div>
 
-            <div className="p-5 rounded-xl border border-border bg-card text-left space-y-3 shadow-xs">
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-muted-foreground">Candidate Reference:</span>
-                <span className="font-mono font-bold text-primary text-base">{successResult.candidate_code}</span>
+              <div className="space-y-1">
+                <h3 className="text-xl font-bold text-foreground">Application Received</h3>
+                <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                  Your resume has been saved. Our bias-reduced AI evaluation engine is analyzing your qualifications in real-time.
+                </p>
               </div>
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-muted-foreground">Initial Status:</span>
-                <Badge variant="secondary" className="text-xs font-semibold">{successResult.status}</Badge>
-              </div>
-              {successResult.match_result && (
-                <div className="pt-3 border-t border-border space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className="text-foreground font-semibold flex items-center gap-2 text-sm">
-                      <Sparkles className="h-4 w-4 text-primary" />
-                      AI Match Score:
-                    </span>
-                    <span className="font-bold text-foreground font-mono text-lg">
-                      {successResult.match_result.match_score}%
-                    </span>
-                  </div>
-                  {successResult.match_result.matched_skills.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 pt-1">
-                      {successResult.match_result.matched_skills.slice(0, 6).map((s, idx) => (
-                        <Badge key={idx} variant="outline" className="text-xs font-normal">
-                          ✓ {s}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
+
+              {/* Live Progress Bar */}
+              <div className="space-y-1.5 px-1 max-w-md mx-auto">
+                <div className="flex justify-between items-center text-xs text-muted-foreground">
+                  <span className="font-medium text-foreground flex items-center gap-1.5">
+                    <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                    AI Evaluation in Progress
+                  </span>
+                  <span className="font-mono text-primary font-semibold">{evalProgress}%</span>
                 </div>
-              )}
-            </div>
+                <Progress value={evalProgress} className="h-2 bg-muted" />
+              </div>
 
-            <Button onClick={handleResetAndClose} size="lg" className="w-full text-sm font-semibold">
-              Done & View Status
-            </Button>
-          </div>
+              {/* Stepper Card */}
+              <div className="p-4 rounded-xl border border-border bg-card/60 text-left space-y-3.5 shadow-xs">
+                {/* Step 1 */}
+                <div className="flex items-start gap-3">
+                  <div className="h-6 w-6 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0 mt-0.5">
+                    <Check className="h-3.5 w-3.5" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-semibold text-foreground">File Uploaded & Redacted</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Assigned Candidate Code: <span className="font-mono font-bold text-primary">{successResult.candidate_code}</span>
+                    </p>
+                  </div>
+                </div>
+
+                {/* Step 2 */}
+                <div className="flex items-start gap-3">
+                  <div className="h-6 w-6 rounded-full bg-primary/15 text-primary flex items-center justify-center shrink-0 mt-0.5">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-semibold text-foreground">5-Component Rubric Screening</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Comparing skills, professional licenses, and experience tenure against job benchmark...
+                    </p>
+                  </div>
+                </div>
+
+                {/* Step 3 */}
+                <div className="flex items-start gap-3">
+                  <div className="h-6 w-6 rounded-full bg-muted text-muted-foreground flex items-center justify-center shrink-0 mt-0.5">
+                    <Clock className="h-3.5 w-3.5" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-xs font-semibold text-muted-foreground">Score Calculation & Recruiter Insights</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      Generating merit-based breakdown and evidence verification cards...
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                Feel free to close this window. Processing will finish in the background and update your candidate status.
+              </p>
+
+              <Button onClick={handleResetAndClose} variant="outline" size="lg" className="w-full text-sm font-semibold">
+                Close & View Portal
+              </Button>
+            </div>
+          ) : (
+            <div className="py-6 text-center space-y-5">
+              <div className="h-16 w-16 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto">
+                <CheckCircle2 className="h-8 w-8" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-xl font-bold text-foreground">Application Successfully Screened</h3>
+                <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                  Your resume was parsed, anonymized, and screened against this role&apos;s benchmarks.
+                </p>
+              </div>
+
+              <div className="p-5 rounded-xl border border-border bg-card text-left space-y-3 shadow-xs">
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-muted-foreground">Candidate Reference:</span>
+                  <span className="font-mono font-bold text-primary text-base">{successResult.candidate_code}</span>
+                </div>
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-muted-foreground">Initial Status:</span>
+                  <Badge variant="secondary" className="text-xs font-semibold">{successResult.status}</Badge>
+                </div>
+                {successResult.match_result ? (
+                  <div className="pt-3 border-t border-border space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-foreground font-semibold flex items-center gap-2 text-sm">
+                        <Sparkles className="h-4 w-4 text-primary" />
+                        AI Match Score:
+                      </span>
+                      <span className="font-bold text-foreground font-mono text-lg">
+                        {successResult.match_result.match_score}%
+                      </span>
+                    </div>
+                    {successResult.match_result.matched_skills && successResult.match_result.matched_skills.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5 pt-1">
+                        {successResult.match_result.matched_skills.slice(0, 6).map((s, idx) => (
+                          <Badge key={idx} variant="outline" className="text-xs font-normal">
+                            ✓ {s}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="pt-3 border-t border-border text-xs text-muted-foreground">
+                    Application successfully saved. Recruiter screening is pending review.
+                  </div>
+                )}
+              </div>
+
+              <Button onClick={handleResetAndClose} size="lg" className="w-full text-sm font-semibold">
+                Done & View Status
+              </Button>
+            </div>
+          )
         ) : (
           /* Application Form */
           <form onSubmit={handleSubmit} className="space-y-4 pt-1">

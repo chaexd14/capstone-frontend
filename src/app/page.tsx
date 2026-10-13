@@ -88,11 +88,16 @@ export default function HomePage() {
                 </CardDescription>
               </div>
             </CardHeader>
-            <CardFooter className="p-6 pt-2">
-              <Button asChild variant="outline" size="default" className="w-full justify-between group-hover:bg-primary group-hover:text-primary-foreground transition-colors font-semibold text-sm">
+            <CardFooter className="p-6 pt-2 flex gap-2">
+              <Button asChild variant="outline" size="default" className="flex-1 justify-between group-hover:bg-primary group-hover:text-primary-foreground transition-colors font-semibold text-sm">
                 <Link href="/careers">
-                  <span>Enter Applicant Portal</span>
+                  <span>Browse Jobs</span>
                   <ArrowRight className="h-4 w-4 ml-2 group-hover:translate-x-1 transition-transform" />
+                </Link>
+              </Button>
+              <Button asChild variant="secondary" size="default" className="text-sm font-semibold">
+                <Link href="/applicant/login">
+                  <span>Sign In</span>
                 </Link>
               </Button>
             </CardFooter>
@@ -107,7 +112,7 @@ export default function HomePage() {
               <div>
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-lg sm:text-xl font-bold">Recruiter Studio & Admin</CardTitle>
-                  <span className="text-xs font-mono text-muted-foreground">/admin</span>
+                  <span className="text-xs font-mono text-muted-foreground">/recruiter</span>
                 </div>
                 <CardDescription className="mt-2 text-sm leading-relaxed">
                   Post and calibrate job specs, inspect AI candidate ranking leaderboards, view contact profiles, and analyze explainable scoring rubrics.
@@ -116,8 +121,8 @@ export default function HomePage() {
             </CardHeader>
             <CardFooter className="p-6 pt-2">
               <Button asChild variant="outline" size="default" className="w-full justify-between group-hover:bg-primary group-hover:text-primary-foreground transition-colors font-semibold text-sm">
-                <Link href="/admin">
-                  <span>Enter Recruiter Admin</span>
+                <Link href="/recruiter/login">
+                  <span>Recruiter Enterprise Sign In</span>
                   <ArrowRight className="h-4 w-4 ml-2 group-hover:translate-x-1 transition-transform" />
                 </Link>
               </Button>

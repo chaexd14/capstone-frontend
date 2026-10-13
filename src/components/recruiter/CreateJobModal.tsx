@@ -183,6 +183,26 @@ export function CreateJobModal({ isOpen, onClose, onJobCreated }: CreateJobModal
   // Guidance and calibration UI state
   const [showPostingGuide, setShowPostingGuide] = useState(false);
   const [showCalibration, setShowCalibration] = useState(true);
+
+  // 5-Component Scoring Rubric Weights (Recruiter configurable)
+  const DEFAULT_RUBRIC_WEIGHTS = {
+    required_skills: 40,
+    experience: 25,
+    education: 15,
+    preferred_skills: 10,
+    projects: 10,
+  };
+  const [rubricWeights, setRubricWeights] = useState(DEFAULT_RUBRIC_WEIGHTS);
+
+  const totalRubricWeight = Math.round(
+    (Number(rubricWeights.required_skills) || 0) +
+    (Number(rubricWeights.experience) || 0) +
+    (Number(rubricWeights.education) || 0) +
+    (Number(rubricWeights.preferred_skills) || 0) +
+    (Number(rubricWeights.projects) || 0)
+  );
+  const isWeightValid = totalRubricWeight === 100;
+
   // Determine if role is regulated dynamically
   const isRegulated = (() => {
     const combined = `${title} ${department} ${description}`.toLowerCase();
@@ -361,6 +381,10 @@ export function CreateJobModal({ isOpen, onClose, onJobCreated }: CreateJobModal
       setError("Job Description & Responsibilities are required for AI screening.");
       return;
     }
+    if (!isWeightValid) {
+      setError(`Scoring rubric percentages must total exactly 100% (currently ${totalRubricWeight}%). Please adjust the component weights.`);
+      return;
+    }
 
     setLoading(true);
     setError(null);
@@ -376,6 +400,7 @@ export function CreateJobModal({ isOpen, onClose, onJobCreated }: CreateJobModal
         education_requirement: education,
         required_skills: requiredSkills,
         preferred_skills: preferredSkills,
+        rubric_weights: rubricWeights,
         status: jobStatus,
       };
 
@@ -975,61 +1000,257 @@ export function CreateJobModal({ isOpen, onClose, onJobCreated }: CreateJobModal
             )}
           </div>
 
-          {/* Section 5: AI Scoring Rubric & Anti-Bias Safeguards Preview */}
+          {/* Section 5: AI Scoring Rubric & Anti-Bias Safeguards (Recruiter Customizable) */}
           <div className="rounded-xl border border-border bg-card overflow-hidden">
             <button
               type="button"
               onClick={() => setShowCalibration(!showCalibration)}
               className="w-full p-3.5 flex items-center justify-between text-left hover:bg-muted/40 transition-colors"
             >
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="h-5 w-5 rounded-full bg-primary/10 text-primary text-[11px] font-extrabold flex items-center justify-center">
                   5
                 </span>
-                <span className="text-xs font-bold text-foreground">Live AI Scoring Rubric &amp; Safeguards Breakdown</span>
-                <Badge variant="outline" className="text-[10px] uppercase font-bold ml-1">
-                  {isRegulated ? "Regulated Professional Preset" : "Technical & Operations Preset"}
+                <span className="text-xs font-bold text-foreground">Scoring Rubric Calibration (Customizable Weights)</span>
+                <Badge
+                  variant={isWeightValid ? "outline" : "destructive"}
+                  className={`text-[10px] font-bold ${
+                    isWeightValid
+                      ? "border-emerald-500/40 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10"
+                      : ""
+                  }`}
+                >
+                  {isWeightValid ? `Total: 100% (Balanced)` : `Total: ${totalRubricWeight}% (Must equal 100%)`}
                 </Badge>
               </div>
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <span>{showCalibration ? "Hide Breakdown" : "View Breakdown"}</span>
+                <span>{showCalibration ? "Hide Breakdown" : "Configure Weights"}</span>
                 {showCalibration ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
               </div>
             </button>
 
             {showCalibration && (
-              <div className="p-3.5 pt-0 space-y-3 text-xs border-t border-border/50">
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-3">
-                  <div className="p-2.5 rounded-lg border border-border bg-background text-center space-y-0.5">
-                    <div className="text-[10px] text-muted-foreground uppercase font-bold">Required Skills</div>
-                    <div className="text-sm font-bold text-primary">{isRegulated ? "30%" : "40%"}</div>
-                    <div className="text-[10px] text-muted-foreground">Must-have fit</div>
+              <div className="p-3.5 pt-0 space-y-3.5 text-xs border-t border-border/50">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-3">
+                  <p className="text-[11px] text-muted-foreground">
+                    Customize the percentage weights allocated to each evaluation dimension. Total must sum to exactly 100%.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setRubricWeights(DEFAULT_RUBRIC_WEIGHTS)}
+                    className="h-7 text-[11px] text-primary hover:text-primary/80 self-start sm:self-auto px-2"
+                  >
+                    Reset to Default (40/25/15/10/10)
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5">
+                  {/* Required Skills */}
+                  <div className="p-3 rounded-lg border border-border bg-background space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-muted-foreground uppercase font-bold">Required Skills</span>
+                      <span className="text-xs font-mono font-bold text-primary">{rubricWeights.required_skills}%</span>
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">Must-have competencies</div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={rubricWeights.required_skills}
+                      onChange={(e) =>
+                        setRubricWeights((prev) => ({ ...prev, required_skills: Number(e.target.value) }))
+                      }
+                      className="w-full accent-primary h-1.5 cursor-pointer"
+                    />
+                    <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                      <span>0%</span>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={rubricWeights.required_skills}
+                        onChange={(e) =>
+                          setRubricWeights((prev) => ({
+                            ...prev,
+                            required_skills: Math.max(0, Math.min(100, Number(e.target.value) || 0)),
+                          }))
+                        }
+                        className="h-6 w-14 text-center text-xs font-bold p-0.5"
+                      />
+                      <span>100%</span>
+                    </div>
                   </div>
 
-                  <div className="p-2.5 rounded-lg border border-border bg-background text-center space-y-0.5">
-                    <div className="text-[10px] text-muted-foreground uppercase font-bold">Experience</div>
-                    <div className="text-sm font-bold text-foreground">25%</div>
-                    <div className="text-[10px] text-muted-foreground">Capped tenure</div>
+                  {/* Experience */}
+                  <div className="p-3 rounded-lg border border-border bg-background space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-muted-foreground uppercase font-bold">Experience</span>
+                      <span className="text-xs font-mono font-bold text-foreground">{rubricWeights.experience}%</span>
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">Tenure &amp; duties fit</div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={rubricWeights.experience}
+                      onChange={(e) =>
+                        setRubricWeights((prev) => ({ ...prev, experience: Number(e.target.value) }))
+                      }
+                      className="w-full accent-primary h-1.5 cursor-pointer"
+                    />
+                    <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                      <span>0%</span>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={rubricWeights.experience}
+                        onChange={(e) =>
+                          setRubricWeights((prev) => ({
+                            ...prev,
+                            experience: Math.max(0, Math.min(100, Number(e.target.value) || 0)),
+                          }))
+                        }
+                        className="h-6 w-14 text-center text-xs font-bold p-0.5"
+                      />
+                      <span>100%</span>
+                    </div>
                   </div>
 
-                  <div className="p-2.5 rounded-lg border border-border bg-background text-center space-y-0.5">
-                    <div className="text-[10px] text-muted-foreground uppercase font-bold">Education</div>
-                    <div className="text-sm font-bold text-foreground">{isRegulated ? "25%" : "15%"}</div>
-                    <div className="text-[10px] text-muted-foreground">Degree + license</div>
+                  {/* Education */}
+                  <div className="p-3 rounded-lg border border-border bg-background space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-muted-foreground uppercase font-bold">Education</span>
+                      <span className="text-xs font-mono font-bold text-foreground">{rubricWeights.education}%</span>
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">Degree &amp; credentials</div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={rubricWeights.education}
+                      onChange={(e) =>
+                        setRubricWeights((prev) => ({ ...prev, education: Number(e.target.value) }))
+                      }
+                      className="w-full accent-primary h-1.5 cursor-pointer"
+                    />
+                    <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                      <span>0%</span>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={rubricWeights.education}
+                        onChange={(e) =>
+                          setRubricWeights((prev) => ({
+                            ...prev,
+                            education: Math.max(0, Math.min(100, Number(e.target.value) || 0)),
+                          }))
+                        }
+                        className="h-6 w-14 text-center text-xs font-bold p-0.5"
+                      />
+                      <span>100%</span>
+                    </div>
                   </div>
 
-                  <div className="p-2.5 rounded-lg border border-border bg-background text-center space-y-0.5">
-                    <div className="text-[10px] text-muted-foreground uppercase font-bold">Bonus Tools</div>
-                    <div className="text-sm font-bold text-foreground">10%</div>
-                    <div className="text-[10px] text-muted-foreground">Preferred fit</div>
+                  {/* Bonus Tools */}
+                  <div className="p-3 rounded-lg border border-border bg-background space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-muted-foreground uppercase font-bold">Bonus Tools</span>
+                      <span className="text-xs font-mono font-bold text-foreground">{rubricWeights.preferred_skills}%</span>
+                    </div>
+                    <div className="text-[10px] text-muted-foreground">Preferred assets</div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={rubricWeights.preferred_skills}
+                      onChange={(e) =>
+                        setRubricWeights((prev) => ({ ...prev, preferred_skills: Number(e.target.value) }))
+                      }
+                      className="w-full accent-primary h-1.5 cursor-pointer"
+                    />
+                    <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                      <span>0%</span>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={rubricWeights.preferred_skills}
+                        onChange={(e) =>
+                          setRubricWeights((prev) => ({
+                            ...prev,
+                            preferred_skills: Math.max(0, Math.min(100, Number(e.target.value) || 0)),
+                          }))
+                        }
+                        className="h-6 w-14 text-center text-xs font-bold p-0.5"
+                      />
+                      <span>100%</span>
+                    </div>
                   </div>
 
-                  <div className="p-2.5 rounded-lg border border-border bg-background text-center space-y-0.5 col-span-2 sm:col-span-1">
-                    <div className="text-[10px] text-muted-foreground uppercase font-bold">Projects / Duties</div>
-                    <div className="text-sm font-bold text-foreground">10%</div>
+                  {/* Projects / Duties */}
+                  <div className="p-3 rounded-lg border border-border bg-background space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] text-muted-foreground uppercase font-bold">Projects / Duties</span>
+                      <span className="text-xs font-mono font-bold text-foreground">{rubricWeights.projects}%</span>
+                    </div>
                     <div className="text-[10px] text-muted-foreground">Hands-on tasks</div>
+                    <input
+                      type="range"
+                      min={0}
+                      max={100}
+                      step={5}
+                      value={rubricWeights.projects}
+                      onChange={(e) =>
+                        setRubricWeights((prev) => ({ ...prev, projects: Number(e.target.value) }))
+                      }
+                      className="w-full accent-primary h-1.5 cursor-pointer"
+                    />
+                    <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                      <span>0%</span>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={100}
+                        value={rubricWeights.projects}
+                        onChange={(e) =>
+                          setRubricWeights((prev) => ({
+                            ...prev,
+                            projects: Math.max(0, Math.min(100, Number(e.target.value) || 0)),
+                          }))
+                        }
+                        className="h-6 w-14 text-center text-xs font-bold p-0.5"
+                      />
+                      <span>100%</span>
+                    </div>
                   </div>
                 </div>
+
+                {!isWeightValid && (
+                  <div className="p-2.5 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs flex items-center justify-between">
+                    <span>
+                      Weights must sum to 100%. Current sum: <strong>{totalRubricWeight}%</strong> (
+                      {totalRubricWeight < 100 ? `Add ${100 - totalRubricWeight}%` : `Reduce ${totalRubricWeight - 100}%`}
+                      )
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setRubricWeights(DEFAULT_RUBRIC_WEIGHTS)}
+                      className="h-6 text-[11px] px-2"
+                    >
+                      Reset to 100%
+                    </Button>
+                  </div>
+                )}
 
                 <div className="p-2.5 rounded-lg bg-background border border-border space-y-1.5 text-[11px]">
                   <div className="flex items-center gap-1.5 font-semibold text-foreground">
@@ -1064,13 +1285,18 @@ export function CreateJobModal({ isOpen, onClose, onJobCreated }: CreateJobModal
               <Badge variant={jobStatus === "PUBLISHED" ? "default" : "secondary"} className="text-[10px]">
                 {jobStatus === "PUBLISHED" ? "Live for Screening" : "Saved as Draft"}
               </Badge>
+              {!isWeightValid && (
+                <span className="text-destructive font-medium text-[11px] ml-2">
+                  (Cannot save: weights total {totalRubricWeight}%)
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
               <Button type="button" variant="outline" size="sm" onClick={onClose} className="h-9">
                 Cancel
               </Button>
-              <Button type="submit" size="sm" disabled={loading} className="gap-2 font-semibold h-9 px-4">
+              <Button type="submit" size="sm" disabled={loading || !isWeightValid} className="gap-2 font-semibold h-9 px-4">
                 {loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 <span>{jobStatus === "PUBLISHED" ? "Publish Job Benchmark" : "Save Requisition Draft"}</span>
               </Button>

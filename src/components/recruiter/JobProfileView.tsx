@@ -26,10 +26,16 @@ import {
   Check,
   X,
   ExternalLink,
+  Sliders,
   AlertCircle,
+  Lock,
+  RotateCcw,
+  Archive,
+  Trash2,
 } from "lucide-react";
 import { CandidateAnalysisModal } from "./CandidateAnalysisModal";
 import { CandidatePinpointDossier } from "./CandidatePinpointDossier";
+import { ConfirmJobActionModal, JobActionType } from "./ConfirmJobActionModal";
 import { fetchApi } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -52,6 +58,9 @@ interface JobProfileViewProps {
   anonymize: boolean;
   onBack: () => void;
   onApplicationUpdated: (updatedApp: Application) => void;
+  onJobUpdated?: (updatedJob: Job) => void;
+  onJobArchived?: (jobId: number) => void;
+  onJobDeleted?: (jobId: number) => void;
 }
 
 export function JobProfileView({
@@ -60,7 +69,18 @@ export function JobProfileView({
   anonymize,
   onBack,
   onApplicationUpdated,
+  onJobUpdated,
+  onJobArchived,
+  onJobDeleted,
 }: JobProfileViewProps) {
+  const [currentJob, setCurrentJob] = useState<Job>(job);
+  const [actionModalType, setActionModalType] = useState<JobActionType | null>(null);
+  const [isActionLoading, setIsActionLoading] = useState(false);
+
+  useEffect(() => {
+    setCurrentJob(job);
+  }, [job]);
+
   const [activeTab, setActiveTab] = useState<"rankings" | "all">("rankings");
   const [viewMode, setViewMode] = useState<"table" | "split">("table");
   const [activeCandidateId, setActiveCandidateId] = useState<number | null>(null);
@@ -74,7 +94,39 @@ export function JobProfileView({
   const [updatingId, setUpdatingId] = useState<number | null>(null);
 
   // Filter applications for this specific job
-  const jobApplications = applications.filter((app) => app.job === job.id || app.job_title === job.title);
+  const jobApplications = applications.filter(
+    (app) => app.job === currentJob.id || app.job_title === currentJob.title
+  );
+
+  const handleConfirmAction = async () => {
+    if (!actionModalType) return;
+    setIsActionLoading(true);
+    try {
+      if (actionModalType === "close") {
+        const updated = await fetchApi<Job>(`/jobs/${currentJob.id}/close/`, { method: "POST" });
+        setCurrentJob(updated);
+        if (onJobUpdated) onJobUpdated(updated);
+      } else if (actionModalType === "reopen") {
+        const updated = await fetchApi<Job>(`/jobs/${currentJob.id}/reopen/`, { method: "POST" });
+        setCurrentJob(updated);
+        if (onJobUpdated) onJobUpdated(updated);
+      } else if (actionModalType === "archive") {
+        await fetchApi(`/jobs/${currentJob.id}/archive/`, { method: "POST" });
+        if (onJobArchived) onJobArchived(currentJob.id);
+        onBack();
+      } else if (actionModalType === "delete") {
+        await fetchApi(`/jobs/${currentJob.id}/`, { method: "DELETE" });
+        if (onJobDeleted) onJobDeleted(currentJob.id);
+        onBack();
+      }
+    } catch (err: any) {
+      console.error("Action error:", err);
+      alert(err.message || "An error occurred while executing this action.");
+    } finally {
+      setIsActionLoading(false);
+      setActionModalType(null);
+    }
+  };
 
   // Compute metrics
   const totalCount = jobApplications.length;
@@ -232,17 +284,70 @@ export function JobProfileView({
               <span>Back to Positions</span>
             </Button>
 
-            <div className="flex items-center gap-2.5">
-              <Badge variant="outline" className="gap-1.5 py-1 text-xs font-semibold">
-                <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-                Active Benchmark
-              </Badge>
+            <div className="flex flex-wrap items-center gap-2">
+              {currentJob.status === "CLOSED" ? (
+                <Badge variant="outline" className="gap-1.5 py-1 text-xs font-semibold border-amber-500/40 text-amber-600 dark:text-amber-400 bg-amber-500/10">
+                  <Lock className="h-3.5 w-3.5" />
+                  <span>Closed · Submissions Locked</span>
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="gap-1.5 py-1 text-xs font-semibold border-emerald-500/40 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>Published · Accepting Applications</span>
+                </Badge>
+              )}
+
               {anonymize && (
                 <Badge variant="secondary" className="gap-1.5 py-1 text-xs text-primary font-semibold">
                   <ShieldCheck className="h-4 w-4" />
                   Demographics Masked
                 </Badge>
               )}
+
+              {/* Lifecycle Actions */}
+              <div className="flex items-center gap-1.5 pl-2 border-l border-border">
+                {currentJob.status === "CLOSED" ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setActionModalType("reopen")}
+                    className="gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10 font-semibold h-8"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    <span>Reopen Job</span>
+                  </Button>
+                ) : (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setActionModalType("close")}
+                    className="gap-1.5 text-xs text-amber-600 dark:text-amber-400 border-amber-500/30 hover:bg-amber-500/10 font-semibold h-8"
+                  >
+                    <Lock className="h-3.5 w-3.5" />
+                    <span>Close Job</span>
+                  </Button>
+                )}
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setActionModalType("archive")}
+                  className="gap-1.5 text-xs text-rose-600 dark:text-rose-400 border-rose-500/30 hover:bg-rose-500/10 font-semibold h-8"
+                >
+                  <Archive className="h-3.5 w-3.5" />
+                  <span>Archive</span>
+                </Button>
+
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setActionModalType("delete")}
+                  className="gap-1.5 text-xs text-destructive hover:bg-destructive/10 font-semibold h-8 px-2"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>Delete</span>
+                </Button>
+              </div>
             </div>
           </div>
 
@@ -251,27 +356,27 @@ export function JobProfileView({
             <div className="lg:col-span-2 space-y-3">
               <div className="flex items-center gap-2">
                 <Badge variant="outline" className="text-xs font-semibold">
-                  {job.department}
+                  {currentJob.department}
                 </Badge>
-                <span className="text-sm text-muted-foreground">· Posted on {new Date(job.created_at).toLocaleDateString()}</span>
+                <span className="text-sm text-muted-foreground">· Posted on {new Date(currentJob.created_at).toLocaleDateString()}</span>
               </div>
 
               <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
-                {job.title}
+                {currentJob.title}
               </h1>
 
               <div className="flex flex-wrap items-center gap-5 text-sm text-muted-foreground pt-1">
                 <span className="flex items-center gap-1.5 font-medium text-foreground">
                   <MapPin className="h-4 w-4 text-primary" />
-                  {job.location} ({job.employment_type})
+                  {currentJob.location} ({currentJob.employment_type})
                 </span>
                 <span className="flex items-center gap-1.5">
                   <Clock className="h-4 w-4 text-primary" />
-                  Experience: <strong className="text-foreground">{job.minimum_experience}</strong>
+                  Experience: <strong className="text-foreground">{currentJob.minimum_experience}</strong>
                 </span>
                 <span className="flex items-center gap-1.5">
                   <GraduationCap className="h-4 w-4 text-primary" />
-                  Education: <strong className="text-foreground">{job.education_requirement}</strong>
+                  Education: <strong className="text-foreground">{currentJob.education_requirement}</strong>
                 </span>
               </div>
             </div>
@@ -304,7 +409,7 @@ export function JobProfileView({
                 Job Description & Scope:
               </span>
               <p className="text-muted-foreground leading-relaxed mt-1.5 whitespace-pre-line text-sm">
-                {job.description}
+                {currentJob.description}
               </p>
             </div>
 
@@ -315,8 +420,8 @@ export function JobProfileView({
                   Required Qualifications & Licensure:
                 </span>
                 <div className="flex flex-wrap gap-2 mt-2">
-                  {job.required_skills && job.required_skills.length > 0 ? (
-                    job.required_skills.map((skill, idx) => (
+                  {currentJob.required_skills && currentJob.required_skills.length > 0 ? (
+                    currentJob.required_skills.map((skill, idx) => (
                       <Badge
                         key={idx}
                         variant="secondary"
@@ -337,8 +442,8 @@ export function JobProfileView({
                   Preferred Assets:
                 </span>
                 <div className="flex flex-wrap gap-2 mt-2">
-                  {job.preferred_skills && job.preferred_skills.length > 0 ? (
-                    job.preferred_skills.map((skill, idx) => (
+                  {currentJob.preferred_skills && currentJob.preferred_skills.length > 0 ? (
+                    currentJob.preferred_skills.map((skill, idx) => (
                       <Badge
                         key={idx}
                         variant="outline"
@@ -350,6 +455,56 @@ export function JobProfileView({
                   ) : (
                     <span className="text-muted-foreground">None specified</span>
                   )}
+                </div>
+              </div>
+            </div>
+
+            {/* Calibrated Scoring Rubric Breakdown for Recruiter */}
+            <div className="pt-3 border-t border-border space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-foreground uppercase tracking-wider text-xs flex items-center gap-1.5">
+                  <Sliders className="h-3.5 w-3.5 text-primary" />
+                  Calibrated Scoring Rubric:
+                </span>
+                <span className="text-[11px] text-muted-foreground font-mono">
+                  {currentJob.rubric_weights ? "Custom Recruiter Weights" : "Default 40/25/15/10/10 Weights"}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center text-xs">
+                <div className="p-2.5 rounded-lg bg-background border border-border space-y-0.5">
+                  <div className="text-[10px] text-muted-foreground font-bold uppercase">Required Skills</div>
+                  <div className="font-bold text-primary text-sm font-mono">
+                    {currentJob.rubric_weights?.required_skills ?? 40}%
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">Must-have fit</div>
+                </div>
+                <div className="p-2.5 rounded-lg bg-background border border-border space-y-0.5">
+                  <div className="text-[10px] text-muted-foreground font-bold uppercase">Experience</div>
+                  <div className="font-bold text-foreground text-sm font-mono">
+                    {currentJob.rubric_weights?.experience ?? 25}%
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">Tenure fit</div>
+                </div>
+                <div className="p-2.5 rounded-lg bg-background border border-border space-y-0.5">
+                  <div className="text-[10px] text-muted-foreground font-bold uppercase">Education</div>
+                  <div className="font-bold text-foreground text-sm font-mono">
+                    {currentJob.rubric_weights?.education ?? 15}%
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">Degree + license</div>
+                </div>
+                <div className="p-2.5 rounded-lg bg-background border border-border space-y-0.5">
+                  <div className="text-[10px] text-muted-foreground font-bold uppercase">Bonus Tools</div>
+                  <div className="font-bold text-foreground text-sm font-mono">
+                    {currentJob.rubric_weights?.preferred_skills ?? 10}%
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">Preferred assets</div>
+                </div>
+                <div className="p-2.5 rounded-lg bg-background border border-border space-y-0.5 col-span-2 sm:col-span-1">
+                  <div className="text-[10px] text-muted-foreground font-bold uppercase">Projects / Duties</div>
+                  <div className="font-bold text-foreground text-sm font-mono">
+                    {currentJob.rubric_weights?.projects ?? 10}%
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">Hands-on tasks</div>
                 </div>
               </div>
             </div>
@@ -1077,6 +1232,17 @@ export function JobProfileView({
           setSelectedApplication(updatedApp);
           onApplicationUpdated(updatedApp);
         }}
+      />
+
+      {/* Confirm Job Action Modal */}
+      <ConfirmJobActionModal
+        isOpen={actionModalType !== null}
+        actionType={actionModalType}
+        jobTitle={currentJob.title}
+        applicantCount={totalCount}
+        isLoading={isActionLoading}
+        onConfirm={handleConfirmAction}
+        onClose={() => setActionModalType(null)}
       />
     </div>
   );
