@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import Link from "next/link";
 import { UploadCloud, FileText, CheckCircle2, AlertCircle, Loader2, Sparkles, Clock, Check } from "lucide-react";
 import { Job } from "@/types/job";
 import { Application } from "@/types/application";
@@ -10,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { API_BASE_URL, getSecurityHeaders } from "@/lib/api";
+import { API_BASE_URL, getAuthHeaders, getSecurityHeaders } from "@/lib/api";
 
 import { createClient } from "@/lib/supabase/client";
 
@@ -76,9 +77,9 @@ export function ApplyModal({ job, isOpen, onClose, onSuccess }: ApplyModalProps)
 
       intervalId = setInterval(async () => {
         try {
-          const tokenParam = trackingToken ? `?token=${encodeURIComponent(trackingToken)}` : "";
-          const response = await fetch(`${API_BASE_URL}/applications/${resultId}/${tokenParam}`, {
-            headers: getSecurityHeaders(),
+          const authHeaders = await getAuthHeaders();
+          const response = await fetch(`${API_BASE_URL}/applications/${resultId}/`, {
+            headers: authHeaders,
           });
           if (!response.ok) return;
 
@@ -138,6 +139,11 @@ export function ApplyModal({ job, isOpen, onClose, onSuccess }: ApplyModalProps)
       return;
     }
 
+    if (!userId) {
+      setError("You must be signed in to submit an application. Please sign in or create an account.");
+      return;
+    }
+
     if (job.status === "CLOSED") {
       setError("This position is closed and is no longer accepting applications.");
       return;
@@ -152,14 +158,13 @@ export function ApplyModal({ job, isOpen, onClose, onSuccess }: ApplyModalProps)
     formData.append("email", email);
     formData.append("phone", phone);
     formData.append("resume", file);
-    if (userId) {
-      formData.append("user_id", userId);
-    }
+    formData.append("user_id", userId);
 
     try {
+      const authHeaders = await getAuthHeaders();
       const response = await fetch(`${API_BASE_URL}/jobs/${job.id}/apply/`, {
         method: "POST",
-        headers: getSecurityHeaders(),
+        headers: authHeaders,
         body: formData,
       });
 
@@ -365,6 +370,18 @@ export function ApplyModal({ job, isOpen, onClose, onSuccess }: ApplyModalProps)
         ) : (
           /* Application Form */
           <form onSubmit={handleSubmit} className="space-y-4 pt-1">
+            {!userId && (
+              <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-foreground text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 text-xs sm:text-sm">
+                  <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />
+                  <span>Please sign in with your applicant account to submit and track your application.</span>
+                </div>
+                <Button asChild size="sm" variant="outline" className="font-semibold text-xs shrink-0">
+                  <Link href="/applicant/login?next=/careers">Sign In / Register</Link>
+                </Button>
+              </div>
+            )}
+
             {error && (
               <div className="p-3.5 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm flex items-start gap-2.5">
                 <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
@@ -454,12 +471,14 @@ export function ApplyModal({ job, isOpen, onClose, onSuccess }: ApplyModalProps)
               <Button type="button" variant="outline" size="default" onClick={handleResetAndClose}>
                 Cancel
               </Button>
-              <Button type="submit" size="default" disabled={submitting || !file} className="font-semibold">
+              <Button type="submit" size="default" disabled={submitting || !file || !userId} className="font-semibold">
                 {submitting ? (
                   <>
                     <Loader2 className="h-4 w-4 animate-spin" />
                     <span>Analyzing & Submitting...</span>
                   </>
+                ) : !userId ? (
+                  <span>Sign In Required to Apply</span>
                 ) : (
                   <span>Submit Application</span>
                 )}

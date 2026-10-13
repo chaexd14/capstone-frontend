@@ -18,28 +18,28 @@ import { Card, CardHeader, CardTitle, CardDescription, CardFooter } from "@/comp
 
 export default function HomePage() {
   const [jobs, setJobs] = useState<Job[]>([]);
-  const [applications, setApplications] = useState<Application[]>([]);
+  const [screenedCount, setScreenedCount] = useState<number>(0);
   const [backendOnline, setBackendOnline] = useState(false);
 
   useEffect(() => {
     const loadStats = async () => {
       try {
         const cachedJobs = sessionStorage.getItem("tm_cached_jobs");
-        const cachedApps = sessionStorage.getItem("tm_cached_apps");
+        const cachedCount = sessionStorage.getItem("tm_cached_screened_count");
         if (cachedJobs) setJobs(JSON.parse(cachedJobs));
-        if (cachedApps) setApplications(JSON.parse(cachedApps));
+        if (cachedCount) setScreenedCount(Number(cachedCount));
       } catch {}
       try {
-        const [jobsData, appsData] = await Promise.all([
+        const [jobsData, statsData] = await Promise.all([
           fetchApi<Job[]>("/jobs/"),
-          fetchApi<Application[]>("/applications/"),
+          fetchApi<{ open_benchmarks: number; screened_candidates: number }>("/jobs/public-stats/"),
         ]);
         setBackendOnline(true);
         setJobs(jobsData);
-        setApplications(appsData);
+        setScreenedCount(statsData.screened_candidates);
         try {
           sessionStorage.setItem("tm_cached_jobs", JSON.stringify(jobsData));
-          sessionStorage.setItem("tm_cached_apps", JSON.stringify(appsData));
+          sessionStorage.setItem("tm_cached_screened_count", String(statsData.screened_candidates));
         } catch {}
       } catch {
         setBackendOnline(false);
@@ -138,7 +138,7 @@ export default function HomePage() {
           </div>
           <div className="space-y-1">
             <div className="text-xs text-muted-foreground font-medium">Screened Candidates</div>
-            <div className="text-2xl font-bold font-mono text-foreground">{applications.length}</div>
+            <div className="text-2xl font-bold font-mono text-foreground">{screenedCount}</div>
           </div>
           <div className="space-y-1">
             <div className="text-xs text-muted-foreground font-medium">Scoring Weights</div>
