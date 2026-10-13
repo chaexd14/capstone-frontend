@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Navigation } from "@/components/Navigation";
@@ -12,18 +12,19 @@ import { Loader2, LogOut, UserCheck, LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase/client";
+import type { User } from "@supabase/supabase-js";
 
 export default function CareersPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
   const [backendOnline, setBackendOnline] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const cached = sessionStorage.getItem("tm_cached_jobs");
       if (cached) {
@@ -58,7 +59,7 @@ export default function CareersPage() {
       setBackendOnline(false);
       setLoading(false);
     }
-  };
+  }, [supabase]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -69,7 +70,7 @@ export default function CareersPage() {
       clearTimeout(timer);
       clearInterval(interval);
     };
-  }, []);
+  }, [loadData]);
 
   const handleLogout = async () => {
     try {

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Sparkles, UserCheck, Briefcase, Shield, Sun, Moon, LogOut, LogIn } from "lucide-react";
@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase/client";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
+import type { User } from "@supabase/supabase-js";
 
 interface NavigationProps {
   anonymize?: boolean;
@@ -26,10 +27,10 @@ export function Navigation({
   const isCareers = pathname.startsWith("/careers");
   const [isDark, setIsDark] = useState(false);
 
-  const [user, setUser] = useState<any>(null);
+  const [user, setUser] = useState<User | null>(null);
   const [role, setRole] = useState<string | null>(null);
 
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
     try {
@@ -66,7 +67,7 @@ export function Navigation({
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [supabase]);
 
   const toggleTheme = () => {
     const next = !isDark;

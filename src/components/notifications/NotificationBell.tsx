@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import {
   Bell,
   CheckCheck,
-  CheckCircle2,
   Clock,
   Sparkles,
   UserPlus,
@@ -109,9 +108,16 @@ export function NotificationBell({ role, userId }: NotificationBellProps) {
   // Initial fetch and 12-second polling
   useEffect(() => {
     if (!role) return;
-    loadNotifications();
-    const interval = setInterval(loadNotifications, 12000);
-    return () => clearInterval(interval);
+    const timer = setTimeout(() => {
+      void loadNotifications();
+    }, 0);
+    const interval = setInterval(() => {
+      void loadNotifications();
+    }, 12000);
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+    };
   }, [role, loadNotifications]);
 
   // Dismiss toast after 5 seconds

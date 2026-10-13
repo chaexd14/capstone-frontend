@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { UploadCloud, FileText, CheckCircle2, AlertCircle, Loader2, Sparkles, Clock, Check } from "lucide-react";
 import { Job } from "@/types/job";
 import { Application } from "@/types/application";
@@ -34,44 +34,50 @@ export function ApplyModal({ job, isOpen, onClose, onSuccess }: ApplyModalProps)
   const [evalProgress, setEvalProgress] = useState(35);
   const [userId, setUserId] = useState<string | null>(null);
 
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
+  const onSuccessRef = useRef(onSuccess);
+  useEffect(() => {
+    onSuccessRef.current = onSuccess;
+  }, [onSuccess]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     async function loadUser() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
           setUserId(user.id);
-          if (user.email && !email) setEmail(user.email);
+          setEmail((prev) => (!prev && user.email ? user.email : prev));
           const fullName = user.user_metadata?.full_name || "";
-          if (fullName && !firstName) {
+          if (fullName) {
             const parts = fullName.split(" ");
-            setFirstName(parts[0] || "");
-            setLastName(parts.slice(1).join(" ") || "");
+            setFirstName((prev) => (!prev ? parts[0] || "" : prev));
+            setLastName((prev) => (!prev ? parts.slice(1).join(" ") || "" : prev));
           }
         }
       } catch {}
     }
     if (isOpen) {
-      loadUser();
+      void loadUser();
     }
-  }, [isOpen]);
+  }, [isOpen, supabase]);
 
   // Polling effect for real-time background AI evaluation
+  const resultId = successResult?.id;
+  const trackingToken = successResult?.tracking_token;
   useEffect(() => {
     let intervalId: NodeJS.Timeout | null = null;
     let progressTimer: NodeJS.Timeout | null = null;
     let isCancelled = false;
 
-    if (successResult && isEvaluating && successResult.id) {
+    if (resultId && isEvaluating) {
       progressTimer = setInterval(() => {
         setEvalProgress((prev) => (prev < 90 ? prev + 6 : prev));
       }, 700);
 
       intervalId = setInterval(async () => {
         try {
-          const tokenParam = successResult.tracking_token ? `?token=${encodeURIComponent(successResult.tracking_token)}` : "";
-          const response = await fetch(`${API_BASE_URL}/applications/${successResult.id}/${tokenParam}`, {
+          const tokenParam = trackingToken ? `?token=${encodeURIComponent(trackingToken)}` : "";
+          const response = await fetch(`${API_BASE_URL}/applications/${resultId}/${tokenParam}`, {
             headers: getSecurityHeaders(),
           });
           if (!response.ok) return;
@@ -84,7 +90,7 @@ export function ApplyModal({ job, isOpen, onClose, onSuccess }: ApplyModalProps)
             setSuccessResult(data);
             setIsEvaluating(false);
             setEvalProgress(100);
-            onSuccess(data);
+            onSuccessRef.current(data);
             if (progressTimer) clearInterval(progressTimer);
             if (intervalId) clearInterval(intervalId);
           } else if (data.resume?.processing_status === "FAILED") {
@@ -104,7 +110,7 @@ export function ApplyModal({ job, isOpen, onClose, onSuccess }: ApplyModalProps)
         if (intervalId) clearInterval(intervalId);
       };
     }
-  }, [successResult?.id, isEvaluating]);
+  }, [resultId, trackingToken, isEvaluating]);
 
   if (!job) return null;
 

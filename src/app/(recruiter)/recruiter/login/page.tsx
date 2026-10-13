@@ -1,18 +1,18 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { Sparkles, Briefcase, Lock, Mail, User, ArrowRight, AlertCircle, ShieldCheck } from "lucide-react";
+import { Sparkles, Briefcase, Lock, Mail, User, ArrowRight, AlertCircle, ShieldCheck, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-export default function RecruiterLoginPage() {
+function RecruiterLoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextUrl = searchParams.get("next") || "/recruiter";
@@ -63,8 +63,9 @@ export default function RecruiterLoginPage() {
 
       router.push(nextUrl);
       router.refresh();
-    } catch (err: any) {
-      setErrorMsg(err.message || "Invalid recruiter credentials.");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Invalid recruiter credentials.";
+      setErrorMsg(message);
     } finally {
       setLoading(false);
     }
@@ -104,8 +105,9 @@ export default function RecruiterLoginPage() {
         setActiveTab("signin");
         setEmail(regEmail);
       }
-    } catch (err: any) {
-      setErrorMsg(err.message || "Failed to create recruiter workspace account.");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to create recruiter workspace account.";
+      setErrorMsg(message);
     } finally {
       setLoading(false);
     }
@@ -293,5 +295,20 @@ export default function RecruiterLoginPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+export default function RecruiterLoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-3">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <span className="text-xs text-muted-foreground">Loading Recruiter Portal...</span>
+        </div>
+      }
+    >
+      <RecruiterLoginForm />
+    </Suspense>
   );
 }

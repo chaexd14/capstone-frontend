@@ -73,13 +73,15 @@ export function JobProfileView({
   onJobArchived,
   onJobDeleted,
 }: JobProfileViewProps) {
+  const [prevJob, setPrevJob] = useState(job);
   const [currentJob, setCurrentJob] = useState<Job>(job);
   const [actionModalType, setActionModalType] = useState<JobActionType | null>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
 
-  useEffect(() => {
+  if (job !== prevJob) {
+    setPrevJob(job);
     setCurrentJob(job);
-  }, [job]);
+  }
 
   const [activeTab, setActiveTab] = useState<"rankings" | "all">("rankings");
   const [viewMode, setViewMode] = useState<"table" | "split">("table");
@@ -119,9 +121,10 @@ export function JobProfileView({
         if (onJobDeleted) onJobDeleted(currentJob.id);
         onBack();
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Action error:", err);
-      alert(err.message || "An error occurred while executing this action.");
+      const message = err instanceof Error ? err.message : "An error occurred while executing this action.";
+      alert(message);
     } finally {
       setIsActionLoading(false);
       setActionModalType(null);

@@ -1,22 +1,30 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Navigation } from "@/components/Navigation";
 import { RecruiterPortal } from "@/components/recruiter/RecruiterPortal";
 import { Job } from "@/types/job";
 import { Application } from "@/types/application";
 import { fetchApi } from "@/lib/api";
-import { Loader2, LogOut, Briefcase } from "lucide-react";
+import { Loader2, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { createClient } from "@/lib/supabase/client";
 
+interface RecruiterUserInfo {
+  id: string;
+  email?: string;
+  name: string;
+  role: string;
+  company?: string;
+}
+
 export default function AdminRecruiterPage() {
   const router = useRouter();
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [currentUser, setCurrentUser] = useState<RecruiterUserInfo | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [anonymize, setAnonymize] = useState<boolean>(true);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -58,7 +66,7 @@ export default function AdminRecruiterPage() {
       }
     };
     checkAuth();
-  }, [router]);
+  }, [router, supabase]);
 
   const loadData = async () => {
     try {

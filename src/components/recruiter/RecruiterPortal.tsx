@@ -21,7 +21,6 @@ import {
   Trash2,
   Loader2,
   RefreshCw,
-  AlertTriangle,
 } from "lucide-react";
 import { CreateJobModal } from "./CreateJobModal";
 import { CandidateAnalysisModal } from "./CandidateAnalysisModal";
@@ -62,7 +61,6 @@ export function RecruiterPortal({
   onJobUpdated,
   onJobDeleted,
   onJobArchived,
-  onRefreshData,
   onApplicationUpdated,
 }: RecruiterPortalProps) {
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
@@ -96,7 +94,10 @@ export function RecruiterPortal({
 
   useEffect(() => {
     if (jobTab === "ARCHIVED") {
-      void loadArchivedJobs();
+      const timer = setTimeout(() => {
+        void loadArchivedJobs();
+      }, 0);
+      return () => clearTimeout(timer);
     }
   }, [jobTab, loadArchivedJobs]);
 
@@ -108,7 +109,10 @@ export function RecruiterPortal({
       if (jobIdParam && jobs.length > 0) {
         const target = jobs.find((j) => String(j.id) === String(jobIdParam));
         if (target) {
-          setSelectedJob(target);
+          const timer = setTimeout(() => {
+            setSelectedJob(target);
+          }, 0);
+          return () => clearTimeout(timer);
         }
       }
     } catch {}
@@ -138,9 +142,10 @@ export function RecruiterPortal({
         await fetchApi(`/archived-jobs/${actionArchivedJob.id}/`, { method: "DELETE" });
         setArchivedJobs((prev) => prev.filter((j) => j.id !== actionArchivedJob.id));
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Action error:", err);
-      alert(err.message || "Failed to execute action.");
+      const message = err instanceof Error ? err.message : "Failed to execute action.";
+      alert(message);
     } finally {
       setIsActionLoading(false);
       setActionModalType(null);
@@ -156,9 +161,10 @@ export function RecruiterPortal({
       setArchivedJobs((prev) => prev.filter((j) => j.id !== archivedJob.id));
       if (onJobCreated) onJobCreated(restored);
       setJobTab("ACTIVE");
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to restore archived job:", err);
-      alert(err.message || "Failed to restore archived job.");
+      const message = err instanceof Error ? err.message : "Failed to restore archived job.";
+      alert(message);
     } finally {
       setIsActionLoading(false);
     }
@@ -306,7 +312,7 @@ export function RecruiterPortal({
 
         {/* Tab Selector */}
         <div className="px-6 pb-2 border-b border-border flex items-center justify-between gap-4">
-          <Tabs value={jobTab} onValueChange={(v) => setJobTab(v as any)}>
+          <Tabs value={jobTab} onValueChange={(v) => setJobTab(v as "ACTIVE" | "CLOSED" | "ARCHIVED")}>
             <TabsList>
               <TabsTrigger value="ACTIVE" className="gap-2">
                 <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />

@@ -10,7 +10,6 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   AlertTriangle,
   Archive,
@@ -58,7 +57,7 @@ export function ConfirmJobActionModal({
             <div className="space-y-3 text-sm text-muted-foreground pt-1">
               <p>
                 Are you sure you want to close{" "}
-                <strong className="text-foreground">"{jobTitle}"</strong>?
+                <strong className="text-foreground">&ldquo;{jobTitle}&rdquo;</strong>?
               </p>
               <div className="p-3.5 rounded-xl border border-amber-500/20 bg-amber-500/10 text-amber-900 dark:text-amber-200 text-xs space-y-1.5 leading-relaxed">
                 <div className="font-semibold flex items-center gap-1.5 text-amber-800 dark:text-amber-300">
@@ -85,7 +84,7 @@ export function ConfirmJobActionModal({
           description: (
             <div className="space-y-3 text-sm text-muted-foreground pt-1">
               <p>
-                Reopen <strong className="text-foreground">"{jobTitle}"</strong>?
+                Reopen <strong className="text-foreground">&ldquo;{jobTitle}&rdquo;</strong>?
               </p>
               <p className="text-xs text-muted-foreground leading-relaxed">
                 This will transition the role status back to <strong>PUBLISHED</strong>. Candidates will
@@ -105,7 +104,7 @@ export function ConfirmJobActionModal({
           description: (
             <div className="space-y-3 text-sm text-muted-foreground pt-1">
               <p>
-                Move <strong className="text-foreground">"{jobTitle}"</strong> to the Archived Jobs repository?
+                Move <strong className="text-foreground">&ldquo;{jobTitle}&rdquo;</strong> to the Archived Jobs repository?
               </p>
               <div className="p-3.5 rounded-xl border border-destructive/30 bg-destructive/10 text-destructive text-xs space-y-2 leading-relaxed">
                 <div className="font-bold flex items-center gap-1.5 text-sm">
@@ -146,7 +145,7 @@ export function ConfirmJobActionModal({
           description: (
             <div className="space-y-3 text-sm text-muted-foreground pt-1">
               <p>
-                Permanently delete <strong className="text-foreground">"{jobTitle}"</strong>?
+                Permanently delete <strong className="text-foreground">&ldquo;{jobTitle}&rdquo;</strong>?
               </p>
               <div className="p-3.5 rounded-xl border border-destructive/30 bg-destructive/10 text-destructive text-xs space-y-2 leading-relaxed">
                 <div className="font-bold flex items-center gap-1.5 text-sm">
@@ -173,7 +172,7 @@ export function ConfirmJobActionModal({
           description: (
             <div className="space-y-3 text-sm text-muted-foreground pt-1">
               <p>
-                Permanently delete archived job <strong className="text-foreground">"{jobTitle}"</strong>?
+                Permanently delete archived job <strong className="text-foreground">&ldquo;{jobTitle}&rdquo;</strong>?
               </p>
               <p className="text-xs text-muted-foreground leading-relaxed">
                 This will remove the archived specification completely from the database. This action

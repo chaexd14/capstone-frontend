@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo } from "react";
 import { Job } from "@/types/job";
 import { Application } from "@/types/application";
 import {
@@ -46,7 +46,18 @@ const DEPARTMENTS = [
 ];
 
 export function ApplicantPortal({ jobs, applications, onApplicationCreated }: ApplicantPortalProps) {
-  const [activeTab, setActiveTab] = useState("JOBS");
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const tabParam = params.get("tab");
+        if (tabParam === "MY_APPLICATIONS" || tabParam === "applications") {
+          return "MY_APPLICATIONS";
+        }
+      } catch {}
+    }
+    return "JOBS";
+  });
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedDepartment, setSelectedDepartment] = useState("All");
   const [selectedJobForDetail, setSelectedJobForDetail] = useState<Job | null>(null);
@@ -54,24 +65,14 @@ export function ApplicantPortal({ jobs, applications, onApplicationCreated }: Ap
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isApplyOpen, setIsApplyOpen] = useState(false);
 
-  useEffect(() => {
-    try {
-      const params = new URLSearchParams(window.location.search);
-      const tabParam = params.get("tab");
-      if (tabParam === "MY_APPLICATIONS" || tabParam === "applications") {
-        setActiveTab("MY_APPLICATIONS");
-      }
-    } catch {}
-  }, []);
-
   // Set of job IDs the applicant has already applied to
   const appliedJobIds = useMemo(() => {
     const ids = new Set<number>();
     applications.forEach((app) => {
       if (typeof app.job === "number") {
         ids.add(app.job);
-      } else if (app.job && typeof app.job === "object" && "id" in (app.job as any)) {
-        ids.add(Number((app.job as any).id));
+      } else if (app.job && typeof app.job === "object" && "id" in (app.job as Record<string, unknown>)) {
+        ids.add(Number((app.job as { id: number | string }).id));
       }
     });
     return ids;

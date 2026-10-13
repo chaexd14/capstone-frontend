@@ -1,18 +1,18 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, Suspense } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { Sparkles, UserCheck, Lock, Mail, User, ArrowRight, AlertCircle, CheckCircle2 } from "lucide-react";
+import { Sparkles, UserCheck, Lock, Mail, User, ArrowRight, AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 
-export default function ApplicantLoginPage() {
+function ApplicantLoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextUrl = searchParams.get("next") || "/careers";
@@ -62,8 +62,9 @@ export default function ApplicantLoginPage() {
 
       router.push(nextUrl);
       router.refresh();
-    } catch (err: any) {
-      setErrorMsg(err.message || "Failed to sign in. Please verify your credentials.");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to sign in. Please verify your credentials.";
+      setErrorMsg(message);
     } finally {
       setLoading(false);
     }
@@ -116,8 +117,9 @@ export default function ApplicantLoginPage() {
         setActiveTab("signin");
         setSignInEmail(signUpEmail);
       }
-    } catch (err: any) {
-      setErrorMsg(err.message || "Registration failed. Please try again.");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Registration failed. Please try again.";
+      setErrorMsg(message);
     } finally {
       setLoading(false);
     }
@@ -307,5 +309,20 @@ export default function ApplicantLoginPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+export default function ApplicantLoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-3">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          <span className="text-xs text-muted-foreground">Loading Applicant Portal...</span>
+        </div>
+      }
+    >
+      <ApplicantLoginForm />
+    </Suspense>
   );
 }
