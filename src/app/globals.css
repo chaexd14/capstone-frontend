@@ -31,72 +31,343 @@
 }
 
 :root {
-  --background: #ffffff;
-  --foreground: #09090b;
+  /* Minimalist Blue-to-White Theme (Light) */
+  --background: #f8fafc;
+  --foreground: #0f172a;
   --card: #ffffff;
-  --card-foreground: #09090b;
+  --card-foreground: #0f172a;
   --popover: #ffffff;
-  --popover-foreground: #09090b;
-  --primary: #18181b;
-  --primary-foreground: #fafafa;
-  --secondary: #f4f4f5;
-  --secondary-foreground: #18181b;
-  --muted: #f4f4f5;
-  --muted-foreground: #71717a;
-  --accent: #f4f4f5;
-  --accent-foreground: #18181b;
+  --popover-foreground: #0f172a;
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --secondary: #eff6ff;
+  --secondary-foreground: #1d4ed8;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: #dbeafe;
+  --accent-foreground: #1e40af;
   --destructive: #ef4444;
-  --destructive-foreground: #fafafa;
-  --border: #e4e4e7;
-  --input: #e4e4e7;
-  --ring: #18181b;
-  --radius: 0.5rem;
+  --destructive-foreground: #ffffff;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #3b82f6;
+  --radius: 0.75rem;
 }
 
-.dark {
-  --background: #09090b;
-  --foreground: #fafafa;
-  --card: #121215;
-  --card-foreground: #fafafa;
-  --popover: #121215;
-  --popover-foreground: #fafafa;
-  --primary: #fafafa;
-  --primary-foreground: #18181b;
-  --secondary: #1f1f23;
-  --secondary-foreground: #fafafa;
-  --muted: #1f1f23;
-  --muted-foreground: #a1a1aa;
-  --accent: #1f1f23;
-  --accent-foreground: #fafafa;
-  --destructive: #ef4444;
-  --destructive-foreground: #fafafa;
-  --border: #27272a;
-  --input: #27272a;
-  --ring: #d4d4d8;
+@layer base {
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  * {
+    border-color: var(--border);
+  }
 }
 
-body {
-  background-color: var(--background);
-  color: var(--foreground);
-  font-feature-settings: "rlig" 1, "calt" 1;
+::selection {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
 }
 
-* {
-  border-color: var(--border);
+/* Subtle atmospheric backdrop radial glow (Light Theme) */
+.ambient-glow {
+  background-image: radial-gradient(ellipse 80% 50% at 50% -15%, rgba(37, 99, 235, 0.08), transparent 70%);
 }
 
-/* Custom scrollbars for clean minimal feel */
+/* Minimalist refined scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background: #cbd5e1;
   border-radius: 9999px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--muted-foreground);
+  background: #2563eb;
+}
+
+/* ==========================================================================
+   TalentMatch Signature Sonner Toast Theme
+   Luminous Blue-to-White design system with semantic status borders:
+   - Success: Emerald (#10b981) border & subtle emerald wash
+   - Warning: Amber (#f59e0b) border & subtle amber wash
+   - Error / Danger: Rose-Red (#ef4444) border & subtle rose wash
+   - Info / Loading: TalentMatch Blue (#2196F3) border & subtle sky wash
+   ========================================================================== */
+
+[data-sonner-toaster],
+[data-sonner-toaster][data-sonner-theme="light"] {
+  --normal-bg: #ffffff !important;
+  --normal-border: #cbd5e1 !important;
+  --normal-text: #0f172a !important;
+  --border-radius: 14px !important;
+  --width: 380px !important;
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+}
+
+/* Base architectural toast card */
+[data-sonner-toast],
+[data-sonner-toast][data-styled="true"] {
+  background: #ffffff !important;
+  border: 1.5px solid #cbd5e1 !important;
+  border-radius: 14px !important;
+  color: #0f172a !important;
+  padding: 14px 40px 14px 14px !important;
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 12px !important;
+  box-shadow:
+    0 12px 28px -6px rgba(15, 23, 42, 0.1),
+    0 4px 10px -2px rgba(15, 23, 42, 0.05) !important;
+}
+
+/* Semantic Status Variants — Easily Identified Perimeter Borders & Subtle Brand Wash */
+[data-sonner-toast][data-type="success"],
+[data-sonner-toast].talentmatch-toast-success {
+  background: linear-gradient(135deg, #f0fdf4 0%, #ffffff 52%) !important;
+  border: 1.5px solid #10b981 !important;
+  box-shadow:
+    0 12px 28px -6px rgba(16, 185, 129, 0.16),
+    0 4px 10px -2px rgba(15, 23, 42, 0.05) !important;
+}
+
+[data-sonner-toast][data-type="warning"],
+[data-sonner-toast].talentmatch-toast-warning {
+  background: linear-gradient(135deg, #fffbeb 0%, #ffffff 52%) !important;
+  border: 1.5px solid #f59e0b !important;
+  box-shadow:
+    0 12px 28px -6px rgba(245, 158, 11, 0.16),
+    0 4px 10px -2px rgba(15, 23, 42, 0.05) !important;
+}
+
+[data-sonner-toast][data-type="error"],
+[data-sonner-toast].talentmatch-toast-error {
+  background: linear-gradient(135deg, #fff1f2 0%, #ffffff 52%) !important;
+  border: 1.5px solid #ef4444 !important;
+  box-shadow:
+    0 12px 28px -6px rgba(239, 68, 68, 0.18),
+    0 4px 10px -2px rgba(15, 23, 42, 0.05) !important;
+}
+
+[data-sonner-toast][data-type="info"],
+[data-sonner-toast][data-type="loading"],
+[data-sonner-toast].talentmatch-toast-info,
+[data-sonner-toast].talentmatch-toast-loading {
+  background: linear-gradient(135deg, #eff6ff 0%, #ffffff 52%) !important;
+  border: 1.5px solid #2196F3 !important;
+  box-shadow:
+    0 12px 28px -6px rgba(33, 150, 243, 0.15),
+    0 4px 10px -2px rgba(15, 23, 42, 0.05) !important;
+}
+
+/* Fix Sonner's 16x16 [data-icon] box so 32x32 (w-8 h-8) badge never overflows into text */
+[data-sonner-toast][data-styled="true"] [data-icon] {
+  width: 32px !important;
+  height: 32px !important;
+  margin: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-shrink: 0 !important;
+  position: relative !important;
+}
+
+[data-sonner-toast][data-styled="true"] [data-icon] svg {
+  margin: 0 !important;
+}
+
+[data-sonner-toast][data-styled="true"] .sonner-loader {
+  position: static !important;
+  transform: none !important;
+  width: 32px !important;
+  height: 32px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* Content column & typography hierarchy aligned with DESIGN.md and FormAlertNote */
+[data-sonner-toast][data-styled="true"] [data-content] {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 3px !important;
+  flex: 1 1 0% !important;
+  min-width: 0 !important;
+  padding-top: 1px !important;
+}
+
+[data-sonner-toast][data-styled="true"] [data-title] {
+  font-size: 13.5px !important;
+  font-weight: 700 !important;
+  line-height: 1.35 !important;
+  letter-spacing: -0.01em !important;
+  color: #0f172a !important;
+}
+
+[data-sonner-toast][data-type="success"] [data-title] {
+  color: #064e3b !important;
+}
+
+[data-sonner-toast][data-type="warning"] [data-title] {
+  color: #78350f !important;
+}
+
+[data-sonner-toast][data-type="error"] [data-title] {
+  color: #881337 !important;
+}
+
+[data-sonner-toast][data-styled="true"] [data-description] {
+  font-size: 12.5px !important;
+  font-weight: 400 !important;
+  line-height: 1.5 !important;
+  color: #475569 !important;
+}
+
+/* Dock close button cleanly inside top-right corner instead of floating top-left */
+[data-sonner-toast][data-styled="true"] [data-close-button] {
+  position: absolute !important;
+  left: auto !important;
+  right: 10px !important;
+  top: 10px !important;
+  transform: none !important;
+  width: 26px !important;
+  height: 26px !important;
+  border-radius: 8px !important;
+  border: 1px solid transparent !important;
+  background: transparent !important;
+  color: #64748b !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease !important;
+}
+
+[data-sonner-toast][data-styled="true"] [data-close-button]:hover {
+  background: rgba(15, 23, 42, 0.06) !important;
+  border-color: rgba(148, 163, 184, 0.3) !important;
+  color: #0f172a !important;
+}
+
+[data-sonner-toast][data-styled="true"] [data-close-button]:focus-visible {
+  outline: none !important;
+  box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.35) !important;
+}
+
+/* Brand-aligned Action & Cancel buttons */
+[data-sonner-toast][data-styled="true"] [data-button] {
+  border-radius: 8px !important;
+  height: 28px !important;
+  padding: 0 10px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  background: #2196F3 !important;
+  color: #ffffff !important;
+  transition: background-color 0.15s ease !important;
+}
+
+[data-sonner-toast][data-styled="true"] [data-button]:hover {
+  background: #1976D2 !important;
+}
+
+[data-sonner-toast][data-styled="true"] [data-cancel] {
+  background: #f1f5f9 !important;
+  color: #334155 !important;
+  border: 1px solid #e2e8f0 !important;
+}
+
+[data-sonner-toast][data-styled="true"] [data-cancel]:hover {
+  background: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+/* ==========================================================================
+   TalentMatch Minimalist Motion System
+   Fluid, hardware-accelerated entrance choreography with organic deceleration.
+   Minimalist, subtle, and non-blocking for user actions.
+   ========================================================================== */
+
+@keyframes tmFadeInUp {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes tmFadeIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes tmFloatIn {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.995);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-fade-in-up {
+  animation: tmFadeInUp 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-fade-in {
+  animation: tmFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animate-float-in {
+  animation: tmFloatIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.animation-delay-75 {
+  animation-delay: 75ms;
+}
+
+.animation-delay-150 {
+  animation-delay: 150ms;
+}
+
+.animation-delay-225 {
+  animation-delay: 225ms;
+}
+
+.animation-delay-300 {
+  animation-delay: 300ms;
+}
+
+.animation-delay-375 {
+  animation-delay: 375ms;
+}
+
+.animation-delay-450 {
+  animation-delay: 450ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in-up,
+  .animate-fade-in,
+  .animate-float-in {
+    animation: none !important;
+    opacity: 1 !important;
+    transform: none !important;
+  }
 }

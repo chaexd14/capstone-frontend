@@ -3,20 +3,21 @@
 import React, { useState } from "react";
 import { Application, SkillEvidenceItem, CandidateLogistics } from "@/types/application";
 import {
-  Sparkles,
-  Clock,
-  GraduationCap,
   Copy,
   Check,
   ShieldCheck,
-  HelpCircle,
-  FileCheck,
-  AlertCircle,
-  Award,
-  Compass,
+  Calculator,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { toast } from "@/components/ui/sonner";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 
 interface CandidatePinpointDossierProps {
   application: Application;
@@ -31,6 +32,7 @@ export function CandidatePinpointDossier({
 }: CandidatePinpointDossierProps) {
   const [copied, setCopied] = useState(false);
   const [peekName, setPeekName] = useState(false);
+  const [auditModalOpen, setAuditModalOpen] = useState(false);
 
   const match = application.match_result;
   const resume = application.resume;
@@ -71,11 +73,13 @@ export function CandidatePinpointDossier({
 
   const actionNeeded = insights?.action_needed;
 
+  const hasPenalty = Boolean(
+    insights?.penalty_note?.toLowerCase().includes("penalty") ||
+    (score < 60 && match?.missing_skills && match.missing_skills.length > 0)
+  );
   const penaltyNote =
     insights?.penalty_note ||
-    (score < 60 && match?.missing_skills && match.missing_skills.length > 0
-      ? "Score reflects penalty for missing critical must-have requirement."
-      : "No must-have penalty applied.");
+    (hasPenalty ? "Score adjusted: Missing critical must-have requirement." : "");
 
   // Must-have breakdown with [met], [unclear], [not found]
   const mustHaveBreakdown: SkillEvidenceItem[] =
@@ -241,36 +245,22 @@ export function CandidatePinpointDossier({
 
     lines.push(`EXPERIENCE`);
     lines.push(
-      `${resume?.extracted_experience_years || 0} years relevant. Credit is capped at requirement.`
+      `${resume?.extracted_experience_years || 0} years relevant (meets requirement).`
     );
     lines.push(``);
 
     lines.push(`EDUCATION`);
-    lines.push(`${resume?.extracted_education?.[0] || "Academic degree on file"} (requirement met)`);
+    lines.push(`${resume?.extracted_education?.[0] || "Academic degree on file"} (Requirement met)`);
     lines.push(``);
 
-    lines.push(`SCORE BREAKDOWN`);
-    const bd = match?.ai_insights?.score_breakdown || {};
+    lines.push(`RUBRIC SCORE BREAKDOWN`);
     lines.push(
-      `Required skills ${bd.required_skills ?? match?.skill_match_score ?? 0} | Experience ${bd.experience ?? match?.experience_match_score ?? 0} | Education ${bd.education ?? match?.education_match_score ?? 0} | Preferred ${bd.preferred_skills ?? match?.preferred_skill_match_score ?? 0} | Achievements ${bd.projects ?? match?.project_match_score ?? 0}`
+      `Required: ${match?.skill_match_score || 0}% (40%) | Experience: ${match?.experience_match_score || 0}% (25%) | Education: ${match?.education_match_score || 0}% (15%) | Preferred: ${match?.preferred_skill_match_score || 0}% (10%) | Projects: ${match?.project_match_score || 0}% (10%)`
     );
-    lines.push(``);
-
-    // Reference Score Calculation Table
-    lines.push(`REFERENCE SCORE CALCULATION`);
-    lines.push(`| Component | Score | Weight | Contribution |`);
-    lines.push(`|---|---|---|---|`);
-    refCalc.items.forEach((it) => {
-      const sc = typeof it.score === "number" ? it.score.toFixed(2) : it.score;
-      const wt = typeof it.weight === "number" ? it.weight.toFixed(2) : it.weight;
-      const cb = typeof it.contribution === "number" ? it.contribution.toFixed(3) : it.contribution;
-      lines.push(`| ${it.component} | ${sc} | ${wt} | ${cb} |`);
-    });
-    lines.push(`| Raw score | | | ${refCalc.raw_score.toFixed(1)}% |`);
     if (refCalc.penalty_multiplier < 1.0) {
-      lines.push(`| Penalty: ${refCalc.penalty_description || "Must-have without hands-on evidence"} | x ${refCalc.penalty_multiplier.toFixed(2)} | | |`);
+      lines.push(`Adjustment: ${refCalc.penalty_description || "Missing must-have qualification"}`);
     }
-    lines.push(`| Final match | | | ${score}% (${band}) |`);
+    lines.push(`Overall Match: ${score}% (${band})`);
     lines.push(``);
 
     lines.push(`ASK IN THE SCREENING CALL`);
@@ -293,6 +283,9 @@ export function CandidatePinpointDossier({
 
     navigator.clipboard.writeText(lines.join("\n"));
     setCopied(true);
+    toast.success("Evaluation Summary Copied", {
+      description: `Evaluation summary for ${application.candidate_code} copied to clipboard.`,
+    });
     setTimeout(() => setCopied(false), 2500);
   };
 
@@ -322,12 +315,12 @@ export function CandidatePinpointDossier({
                     <span className="text-xs text-muted-foreground">({application.email})</span>
                   )}
                   {isShortlisted && (
-                    <Badge variant="outline" className="text-[10px] py-0 text-emerald-600 border-emerald-500/30 bg-emerald-500/10 font-medium">
+                    <Badge variant="outline" className="text-[10px] py-0 text-emerald-800 border-emerald-500/30 bg-emerald-500/10 font-medium">
                       Revealed post-shortlist
                     </Badge>
                   )}
                   {peekName && !isShortlisted && anonymize && (
-                    <Badge variant="outline" className="text-[10px] py-0 text-amber-600 border-amber-500/30 bg-amber-500/10 font-medium">
+                    <Badge variant="outline" className="text-[10px] py-0 text-amber-800 border-amber-500/30 bg-amber-500/10 font-medium">
                       Auditor Peek
                     </Badge>
                   )}
@@ -361,8 +354,8 @@ export function CandidatePinpointDossier({
             >
               {copied ? (
                 <>
-                  <Check className="h-3.5 w-3.5 text-emerald-500" />
-                  <span className="text-emerald-600 dark:text-emerald-400">Card Copied!</span>
+                  <Check className="h-3.5 w-3.5 text-emerald-600" />
+                  <span className="text-emerald-700 font-semibold">Card Copied!</span>
                 </>
               ) : (
                 <>
@@ -378,31 +371,31 @@ export function CandidatePinpointDossier({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-baseline gap-1.5">
-              <span className="text-xs uppercase font-bold text-muted-foreground">Match</span>
-              <span className="text-3xl font-extrabold font-mono text-foreground">{score}%</span>
+              <span className="text-xs uppercase font-bold text-slate-500">Match</span>
+              <span className={`text-3xl font-extrabold font-mono tabular-nums ${score >= 85 ? "text-emerald-600" : score >= 70 ? "text-[#1976D2]" : "text-slate-900"}`}>
+                {score}%
+              </span>
             </div>
 
             <Badge variant={getBandBadgeVariant(band)} className="text-xs font-bold px-2.5 py-0.5">
               {band}
             </Badge>
 
-            <span className="text-xs text-muted-foreground font-medium">
-              Review Priority: <strong className="text-foreground">{reviewPriority}</strong>
+            <span className="text-xs text-slate-500 font-medium">
+              Review Priority: <strong className="text-slate-900">{reviewPriority}</strong>
             </span>
           </div>
 
-          <div className="text-xs text-muted-foreground italic">
-            {penaltyNote}
-          </div>
+          {hasPenalty && penaltyNote && (
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+              <span>⚠️ {penaltyNote}</span>
+            </div>
+          )}
         </div>
 
-        {/* 2. WHY THIS SCORE */}
-        <div className="p-3.5 rounded-lg bg-muted/40 border border-border/80 space-y-1">
-          <div className="text-[11px] font-bold text-primary uppercase tracking-wider flex items-center gap-1.5">
-            <Sparkles className="h-3.5 w-3.5" />
-            <span>Why This Score</span>
-          </div>
-          <p className="text-sm text-foreground leading-relaxed font-medium">
+        {/* 2. EXECUTIVE BRIEF / WHY THIS SCORE */}
+        <div className="p-4 rounded-xl bg-blue-50/60 border border-blue-100">
+          <p className="text-sm text-slate-800 leading-relaxed font-medium">
             {whyThisScore}
           </p>
         </div>
@@ -410,9 +403,8 @@ export function CandidatePinpointDossier({
         {/* 3. ACTION NEEDED BEFORE OFFER (if hard requirement / license verification exists) */}
         {actionNeeded && (
           <div className="p-3.5 rounded-lg bg-amber-500/10 border border-amber-500/30 space-y-1">
-            <div className="text-[11px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-              <AlertCircle className="h-3.5 w-3.5" />
-              <span>Action Needed Before Offer</span>
+            <div className="text-[11px] font-bold text-amber-700 uppercase tracking-wider">
+              Action Needed Before Offer
             </div>
             <p className="text-xs text-foreground leading-relaxed">
               {actionNeeded}
@@ -424,9 +416,8 @@ export function CandidatePinpointDossier({
       {/* 4. MUST-HAVE SKILLS */}
       <div className="p-5 rounded-xl border border-border bg-card space-y-3">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm font-bold text-foreground uppercase tracking-wider">
-            <FileCheck className="h-4 w-4 text-primary" />
-            <span>Must-Have Skills</span>
+          <div className="text-sm font-bold text-foreground uppercase tracking-wider">
+            Must-Have Skills
           </div>
           <span className="text-xs font-mono text-muted-foreground font-semibold">
             {mustHaveBreakdown.filter((m) => m.status === "met").length} / {mustHaveBreakdown.length} Met
@@ -466,7 +457,7 @@ export function CandidatePinpointDossier({
                 )}
 
                 {isUnclear && (
-                  <p className="text-amber-700 dark:text-amber-300 font-medium pl-1 text-xs">
+                  <p className="text-amber-700 font-medium pl-1 text-xs">
                     {item.note || "Listed under Skills only. No sentence shows hands-on use."}
                   </p>
                 )}
@@ -485,9 +476,8 @@ export function CandidatePinpointDossier({
       {/* 5. PREFERRED SKILLS */}
       {preferredBreakdown.length > 0 && (
         <div className="p-5 rounded-xl border border-border bg-card space-y-3">
-          <div className="flex items-center gap-2 text-sm font-bold text-foreground uppercase tracking-wider">
-            <Sparkles className="h-4 w-4 text-primary" />
-            <span>Preferred Skills</span>
+          <div className="text-sm font-bold text-foreground uppercase tracking-wider">
+            Preferred Skills
           </div>
 
           <div className="space-y-2">
@@ -534,9 +524,8 @@ export function CandidatePinpointDossier({
       {/* 6. OTHER EVIDENCE & ACHIEVEMENTS */}
       {otherEvidence.length > 0 && (
         <div className="p-5 rounded-xl border border-border bg-card space-y-2.5">
-          <div className="flex items-center gap-2 text-sm font-bold text-foreground uppercase tracking-wider">
-            <Award className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
-            <span>Other Evidence & Notable Credentials</span>
+          <div className="text-sm font-bold text-foreground uppercase tracking-wider">
+            Other Evidence &amp; Notable Credentials
           </div>
 
           <ul className="space-y-1.5 pl-2">
@@ -551,126 +540,146 @@ export function CandidatePinpointDossier({
       )}
 
       {/* 7. EXPERIENCE & EDUCATION RECAP */}
-      <div className="p-5 rounded-xl border border-border bg-muted/20 grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+      <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
         <div className="space-y-1">
-          <div className="font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-            <Clock className="h-3.5 w-3.5 text-primary" />
-            <span>Experience</span>
+          <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+            Experience
           </div>
-          <div className="font-semibold text-foreground text-sm">
+          <div className="font-semibold text-slate-900 text-sm">
             {resume?.extracted_experience_years || 0} years relevant
           </div>
-          <div className="text-muted-foreground">
-            Credit is capped at requirement; extra tenure is not overweighted.
+          <div className="text-slate-500 text-xs">
+            Tenure meets role requirement
           </div>
         </div>
 
         <div className="space-y-1">
-          <div className="font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-            <GraduationCap className="h-3.5 w-3.5 text-primary" />
-            <span>Education</span>
+          <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+            Education
           </div>
-          <div className="font-semibold text-foreground text-sm">
+          <div className="font-semibold text-slate-900 text-sm">
             {resume?.extracted_education?.[0] || "Academic Degree"}
           </div>
-          <div className="text-emerald-600 dark:text-emerald-400 font-medium">
-            Requirement met
+          <div className="text-emerald-700 font-semibold text-xs flex items-center gap-1">
+            ✓ Requirement verified
           </div>
         </div>
       </div>
 
-      {/* 8. SCORE BREAKDOWN & REFERENCE SCORE CALCULATION */}
-      <div className="p-5 rounded-xl border border-border bg-card space-y-4 text-xs">
-        <div className="flex flex-wrap items-center justify-between gap-2 font-bold text-foreground">
-          <span className="uppercase tracking-wider">Score Breakdown & Rubric Weights</span>
-          <span className="text-muted-foreground font-mono">
-            {refCalc?.preset_name || "Official 5-Component Preset"}
-          </span>
+      {/* 8. SCORE BREAKDOWN & METRIC TILES */}
+      <div className="p-5 rounded-xl border border-border bg-card space-y-3.5 text-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <span className="font-bold text-slate-900 text-xs uppercase tracking-wider">Rubric Score Breakdown</span>
+            <span className="text-[11px] text-slate-500 font-medium ml-2 font-mono">({refCalc?.preset_name || "5-Component Preset"})</span>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setAuditModalOpen(true)}
+            className="h-7 text-xs border-slate-200 text-slate-700 hover:bg-slate-100 font-medium gap-1.5"
+          >
+            <Calculator className="w-3.5 h-3.5 text-slate-500" />
+            <span>Formula Breakdown</span>
+          </Button>
         </div>
 
         {/* 5 Component Metric Tiles */}
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 text-center font-mono">
-          <div className="p-2.5 rounded-lg bg-muted/40 border border-border">
-            <div className="text-[10px] text-muted-foreground uppercase font-semibold">Required</div>
-            <div className="text-lg font-extrabold text-foreground mt-0.5">{match?.skill_match_score || 0}%</div>
+          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+            <div className="text-[11px] text-slate-500 uppercase font-bold tracking-wider">Required (40%)</div>
+            <div className={`text-xl font-extrabold mt-1 ${(match?.skill_match_score || 0) >= 80 ? "text-emerald-600" : "text-slate-900"}`}>
+              {match?.skill_match_score || 0}%
+            </div>
           </div>
-          <div className="p-2.5 rounded-lg bg-muted/40 border border-border">
-            <div className="text-[10px] text-muted-foreground uppercase font-semibold">Experience</div>
-            <div className="text-lg font-extrabold text-foreground mt-0.5">{match?.experience_match_score || 0}%</div>
+          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+            <div className="text-[11px] text-slate-500 uppercase font-bold tracking-wider">Experience (25%)</div>
+            <div className={`text-xl font-extrabold mt-1 ${(match?.experience_match_score || 0) >= 80 ? "text-emerald-600" : "text-slate-900"}`}>
+              {match?.experience_match_score || 0}%
+            </div>
           </div>
-          <div className="p-2.5 rounded-lg bg-muted/40 border border-border">
-            <div className="text-[10px] text-muted-foreground uppercase font-semibold">Education</div>
-            <div className="text-lg font-extrabold text-foreground mt-0.5">{match?.education_match_score || 0}%</div>
+          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+            <div className="text-[11px] text-slate-500 uppercase font-bold tracking-wider">Education (15%)</div>
+            <div className={`text-xl font-extrabold mt-1 ${(match?.education_match_score || 0) >= 80 ? "text-emerald-600" : "text-slate-900"}`}>
+              {match?.education_match_score || 0}%
+            </div>
           </div>
-          <div className="p-2.5 rounded-lg bg-muted/40 border border-border">
-            <div className="text-[10px] text-muted-foreground uppercase font-semibold">Preferred</div>
-            <div className="text-lg font-extrabold text-foreground mt-0.5">{match?.preferred_skill_match_score || 0}%</div>
+          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+            <div className="text-[11px] text-slate-500 uppercase font-bold tracking-wider">Preferred (10%)</div>
+            <div className={`text-xl font-extrabold mt-1 ${(match?.preferred_skill_match_score || 0) >= 80 ? "text-emerald-600" : "text-slate-900"}`}>
+              {match?.preferred_skill_match_score || 0}%
+            </div>
           </div>
-          <div className="p-2.5 rounded-lg bg-muted/40 border border-border col-span-2 sm:col-span-1">
-            <div className="text-[10px] text-muted-foreground uppercase font-semibold">Achievements</div>
-            <div className="text-lg font-extrabold text-foreground mt-0.5">{match?.project_match_score || 0}%</div>
+          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 col-span-2 sm:col-span-1">
+            <div className="text-[11px] text-slate-500 uppercase font-bold tracking-wider">Projects (10%)</div>
+            <div className={`text-xl font-extrabold mt-1 ${(match?.project_match_score || 0) >= 80 ? "text-emerald-600" : "text-slate-900"}`}>
+              {match?.project_match_score || 0}%
+            </div>
           </div>
         </div>
+      </div>
 
-        {/* Reference Score Calculation Table (Section 1.5 & 2.5 of TalentMatch Recruiter Summary Spec) */}
-        <div className="pt-2 space-y-2">
-          <div className="flex items-center justify-between text-xs">
-            <span className="font-semibold text-foreground flex items-center gap-1.5">
-              <Sparkles className="h-3.5 w-3.5 text-primary" />
+      {/* Formula Audit Dialog (Available on Demand for Compliance/Verification) */}
+      <Dialog open={auditModalOpen} onOpenChange={setAuditModalOpen}>
+        <DialogContent className="max-w-2xl bg-white p-6 rounded-2xl shadow-xl border border-slate-200">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <Calculator className="w-4 h-4 text-[#1976D2]" />
               <span>Reference Score Calculation (Audit Trail)</span>
-            </span>
-            <Badge variant="outline" className="text-[10px] font-mono">
-              Formula Audited
-            </Badge>
-          </div>
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-500">
+              Deterministic mathematical contribution per rubric component for {application.candidate_code}.
+            </DialogDescription>
+          </DialogHeader>
 
-          <div className="rounded-lg border border-border overflow-hidden bg-background">
+          <div className="rounded-xl border border-slate-200 overflow-hidden bg-white mt-2">
             <table className="w-full text-xs text-left">
-              <thead className="bg-muted/50 border-b border-border text-[11px] font-semibold text-muted-foreground">
+              <thead className="bg-slate-50 border-b border-slate-200 text-[11px] font-semibold text-slate-600">
                 <tr>
-                  <th className="py-2 px-3">Component</th>
-                  <th className="py-2 px-3 text-right">Score</th>
-                  <th className="py-2 px-3 text-right">Weight</th>
-                  <th className="py-2 px-3 text-right">Contribution</th>
+                  <th className="py-2.5 px-3">Component</th>
+                  <th className="py-2.5 px-3 text-right">Score</th>
+                  <th className="py-2.5 px-3 text-right">Weight</th>
+                  <th className="py-2.5 px-3 text-right">Contribution</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border font-mono text-[11px]">
+              <tbody className="divide-y divide-slate-100 font-mono text-[11px]">
                 {refCalc.items.map((item, idx) => (
-                  <tr key={idx} className="hover:bg-muted/20">
+                  <tr key={idx} className="hover:bg-slate-50/50">
                     <td className="py-2 px-3 font-sans">
-                      <span className="font-medium text-foreground">{item.component}</span>
+                      <span className="font-medium text-slate-900">{item.component}</span>
                       {item.description && (
-                        <span className="block text-[10px] text-muted-foreground font-sans">
+                        <span className="block text-[11px] text-slate-500 font-sans">
                           {item.description}
                         </span>
                       )}
                     </td>
-                    <td className="py-2 px-3 text-right text-foreground font-semibold">
+                    <td className="py-2 px-3 text-right text-slate-900 font-semibold">
                       {typeof item.score === "number" ? item.score.toFixed(2) : item.score}
                     </td>
-                    <td className="py-2 px-3 text-right text-muted-foreground">
+                    <td className="py-2 px-3 text-right text-slate-500">
                       {typeof item.weight === "number" ? (item.weight * 100).toFixed(0) + "%" : item.weight}
                     </td>
-                    <td className="py-2 px-3 text-right font-bold text-foreground">
+                    <td className="py-2 px-3 text-right font-bold text-slate-900">
                       {typeof item.contribution === "number" ? item.contribution.toFixed(3) : item.contribution}
                     </td>
                   </tr>
                 ))}
 
                 {/* Raw Score Subtotal */}
-                <tr className="bg-muted/30 font-semibold border-t-2 border-border">
-                  <td className="py-2 px-3 font-sans text-foreground">Raw score</td>
-                  <td colSpan={2} className="py-2 px-3 text-right text-muted-foreground"></td>
-                  <td className="py-2 px-3 text-right text-foreground font-bold">
+                <tr className="bg-slate-50/80 font-semibold border-t-2 border-slate-200">
+                  <td className="py-2 px-3 font-sans text-slate-900">Raw score subtotal</td>
+                  <td colSpan={2} className="py-2 px-3 text-right text-slate-400"></td>
+                  <td className="py-2 px-3 text-right text-slate-900 font-bold">
                     {refCalc.raw_score.toFixed(1)}%
                   </td>
                 </tr>
 
                 {/* Penalty Row if applied */}
                 {refCalc.penalty_multiplier < 1.0 && (
-                  <tr className="bg-amber-500/5 text-amber-700 dark:text-amber-300 font-sans">
-                    <td className="py-2 px-3 text-[11px]">
-                      Penalty: {refCalc.penalty_description || "Missing must-have without hands-on evidence"}
+                  <tr className="bg-amber-50 text-amber-800 font-sans">
+                    <td className="py-2 px-3 text-xs">
+                      Penalty: {refCalc.penalty_description || "Missing critical requirement"}
                     </td>
                     <td colSpan={2} className="py-2 px-3 text-right font-mono font-bold">
                       x {refCalc.penalty_multiplier.toFixed(2)}
@@ -682,26 +691,25 @@ export function CandidatePinpointDossier({
                 )}
 
                 {/* Final Match Row */}
-                <tr className="bg-primary/10 font-bold border-t border-border">
-                  <td className="py-2.5 px-3 font-sans text-primary text-xs">
-                    Final match
+                <tr className="bg-blue-50/60 font-bold border-t border-blue-100">
+                  <td className="py-2.5 px-3 font-sans text-[#1976D2] text-xs">
+                    Final Match Score
                   </td>
-                  <td colSpan={3} className="py-2.5 px-3 text-right text-primary text-xs">
-                    {score}%, shown as <strong>{score}% ({band})</strong>
+                  <td colSpan={3} className="py-2.5 px-3 text-right text-[#1976D2] text-xs font-mono">
+                    <strong>{score}% ({band})</strong>
                   </td>
                 </tr>
               </tbody>
             </table>
           </div>
-        </div>
-      </div>
+        </DialogContent>
+      </Dialog>
 
       {/* 9. ASK IN THE SCREENING CALL */}
       <div className="p-5 rounded-xl border border-border bg-card space-y-3">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-sm font-bold text-foreground uppercase tracking-wider">
-            <HelpCircle className="h-4 w-4 text-primary" />
-            <span>Ask in the Screening Call</span>
+          <div className="text-sm font-bold text-foreground uppercase tracking-wider">
+            Ask in the Screening Call
           </div>
           <Badge variant="outline" className="text-[10px] font-mono">
             {screeningQuestions.length} Questions
@@ -723,11 +731,10 @@ export function CandidatePinpointDossier({
         </div>
       </div>
 
-      {/* 10. LOGISTICS (shown, not scored) */}
+      {/* 10. LOGISTICS (Non-scored candidate preferences) */}
       <div className="p-4 rounded-xl border border-border bg-muted/30 text-xs space-y-2">
-        <div className="font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
-          <Compass className="h-3.5 w-3.5 text-primary" />
-          <span>Logistics (Shown for recruiter, never scored)</span>
+        <div className="font-bold text-muted-foreground uppercase tracking-wider">
+          Logistics & Preferences (Not Scored)
         </div>
         <div className="flex flex-wrap items-center gap-4 text-foreground pt-1">
           {logistics.notice_period && (
@@ -753,21 +760,16 @@ export function CandidatePinpointDossier({
         </div>
       </div>
 
-      {/* 11. DATA USED / FAIRNESS */}
-      <div className="p-4 rounded-xl border border-border bg-muted/10 text-xs text-muted-foreground space-y-1">
-        <div className="flex items-center gap-1.5 font-bold text-foreground">
-          <ShieldCheck className="h-4 w-4 text-primary" />
-          <span>Fairness & Demographic Bias-Reduction Notice</span>
+      {/* 11. DEMOGRAPHIC BLIND SCREENING */}
+      <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 text-xs text-slate-600 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <ShieldCheck className="h-4 w-4 text-[#1976D2]" />
+          <span className="font-semibold text-slate-900">Demographic Blind Screening</span>
+          <span className="text-slate-500">• PII & School Prestige Masked</span>
         </div>
-        <div>
-          <strong>Scored on:</strong> skills evidence, experience tenure, credentials, projects
-        </div>
-        <div>
-          <strong>Excluded:</strong> candidate name, contact details, address, school prestige, employer names, graduation year
-        </div>
-        <div className="pt-1 text-[11px] font-mono text-emerald-600 dark:text-emerald-400">
-          ✓ Parse confidence: High
-        </div>
+        <span className="text-[11px] font-mono font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+          ✓ High Confidence Parse
+        </span>
       </div>
     </div>
   );

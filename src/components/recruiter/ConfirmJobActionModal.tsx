@@ -59,8 +59,8 @@ export function ConfirmJobActionModal({
                 Are you sure you want to close{" "}
                 <strong className="text-foreground">&ldquo;{jobTitle}&rdquo;</strong>?
               </p>
-              <div className="p-3.5 rounded-xl border border-amber-500/20 bg-amber-500/10 text-amber-900 dark:text-amber-200 text-xs space-y-1.5 leading-relaxed">
-                <div className="font-semibold flex items-center gap-1.5 text-amber-800 dark:text-amber-300">
+              <div className="p-3.5 rounded-xl border border-amber-500/20 bg-amber-500/10 text-amber-900 text-xs space-y-1.5 leading-relaxed">
+                <div className="font-semibold flex items-center gap-1.5 text-amber-800">
                   <Lock className="h-4 w-4" />
                   <span>Applications will be paused</span>
                 </div>
@@ -199,19 +199,19 @@ export function ConfirmJobActionModal({
 
         <div className="py-2">{config.description}</div>
 
-        <DialogFooter className="pt-3 border-t border-border flex items-center justify-end gap-2">
-          <Button variant="outline" size="sm" onClick={onClose} disabled={isLoading}>
+        <DialogFooter className="pt-3 border-t border-border flex items-center justify-end gap-2.5">
+          <Button variant="outline" size="sm" onClick={onClose} disabled={isLoading} className="h-9 px-4 text-xs font-semibold">
             Cancel
           </Button>
           <Button
             size="sm"
             onClick={onConfirm}
             disabled={isLoading}
-            className={`gap-1.5 font-semibold ${config.confirmClass}`}
+            className={`h-9 px-4 text-xs gap-1.5 font-semibold ${config.confirmClass}`}
           >
             {isLoading ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
                 <span>Processing...</span>
               </>
             ) : (

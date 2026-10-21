@@ -31,13 +31,13 @@ export function JobDetailModal({ job, hasApplied, isOpen, onClose, onApply, onVi
               {job.employment_type}
             </Badge>
             {job.status === "CLOSED" && (
-              <Badge variant="outline" className="text-xs font-semibold border-amber-500/40 text-amber-600 dark:text-amber-400 bg-amber-500/10 gap-1">
+              <Badge variant="outline" className="text-xs font-semibold border-amber-500/40 text-amber-600 bg-amber-500/10 gap-1">
                 <Lock className="h-3 w-3" />
                 Applications Closed
               </Badge>
             )}
             {hasApplied && (
-              <Badge variant="secondary" className="text-xs font-semibold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 gap-1">
+              <Badge variant="secondary" className="text-xs font-semibold bg-emerald-500/15 text-emerald-600 border border-emerald-500/30 gap-1">
                 <CheckCircle2 className="h-3.5 w-3.5" />
                 Already Applied
               </Badge>
@@ -68,7 +68,7 @@ export function JobDetailModal({ job, hasApplied, isOpen, onClose, onApply, onVi
 
         <div className="space-y-6 py-3 text-sm">
           {job.status === "CLOSED" && (
-            <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-900 dark:text-amber-200 text-xs flex items-center gap-2.5">
+            <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-900 text-xs flex items-center gap-2.5">
               <Lock className="h-4 w-4 text-amber-600 shrink-0" />
               <span>This position is currently closed and no longer accepting new submissions. Existing applicants can still view and track their application progress.</span>
             </div>
@@ -84,37 +84,67 @@ export function JobDetailModal({ job, hasApplied, isOpen, onClose, onApply, onVi
             </p>
           </div>
 
-          {/* Required Skills */}
+          {/* Required Skills / Qualifications */}
           {job.required_skills && job.required_skills.length > 0 && (
             <div className="space-y-2.5 pt-3 border-t border-border">
               <h4 className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-primary" />
-                Required Qualifications &amp; Licensure
+                Must-Have Competencies &amp; State Licenses
               </h4>
-              <div className="flex flex-wrap gap-2">
-                {job.required_skills.map((skill, idx) => (
-                  <Badge key={idx} variant="secondary" className="text-xs px-3 py-1 font-medium">
-                    {skill}
-                  </Badge>
-                ))}
-              </div>
+              {job.required_skills.some((s) => s.length > 32 || s.trim().split(/\s+/).length > 4) ? (
+                <ul className="space-y-2">
+                  {job.required_skills.map((skill, idx) => (
+                    <li
+                      key={idx}
+                      className="flex items-start gap-2.5 text-xs sm:text-sm font-medium px-3 py-2 rounded-xl bg-primary/5 text-foreground border border-primary/20 leading-relaxed"
+                    >
+                      <span className="text-primary font-mono font-bold text-[10px] mt-0.5 shrink-0">
+                        {String(idx + 1).padStart(2, "0")}
+                      </span>
+                      <span className="break-words">{skill}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {job.required_skills.map((skill, idx) => (
+                    <Badge key={idx} variant="secondary" className="text-xs px-3 py-1 font-medium">
+                      {skill}
+                    </Badge>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
-          {/* Preferred Skills */}
+          {/* Preferred Skills / Qualifications */}
           {job.preferred_skills && job.preferred_skills.length > 0 && (
             <div className="space-y-2.5 pt-3 border-t border-border">
               <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-primary" />
-                Preferred / Bonus Assets
+                Preferred Qualifications &amp; Bonus Assets
               </h4>
-              <div className="flex flex-wrap gap-2">
-                {job.preferred_skills.map((skill, idx) => (
-                  <Badge key={idx} variant="outline" className="text-xs px-3 py-1 font-normal">
-                    {skill}
-                  </Badge>
-                ))}
-              </div>
+              {job.preferred_skills.some((s) => s.length > 32 || s.trim().split(/\s+/).length > 4) ? (
+                <ul className="space-y-2">
+                  {job.preferred_skills.map((skill, idx) => (
+                    <li
+                      key={idx}
+                      className="flex items-start gap-2.5 text-xs sm:text-sm font-normal px-3 py-2 rounded-xl bg-muted/40 text-muted-foreground border border-border leading-relaxed"
+                    >
+                      <span className="font-mono font-bold text-[10px] mt-0.5 shrink-0">+{idx + 1}</span>
+                      <span className="break-words">{skill}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {job.preferred_skills.map((skill, idx) => (
+                    <Badge key={idx} variant="outline" className="text-xs px-3 py-1 font-normal">
+                      {skill}
+                    </Badge>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -142,7 +172,7 @@ export function JobDetailModal({ job, hasApplied, isOpen, onClose, onApply, onVi
                 onClose();
                 if (onViewApplication) onViewApplication();
               }}
-              className="gap-2 font-semibold border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20"
+              className="gap-2 font-semibold border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20"
             >
               <CheckCircle2 className="h-4 w-4" />
               <span>Already Applied · View Status</span>

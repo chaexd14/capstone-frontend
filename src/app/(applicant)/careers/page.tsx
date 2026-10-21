@@ -1,16 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
-import Link from "next/link";
+import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import { useRouter } from "next/navigation";
-import { Navigation } from "@/components/Navigation";
 import { ApplicantPortal } from "@/components/applicant/ApplicantPortal";
 import { Job } from "@/types/job";
 import { Application } from "@/types/application";
 import { fetchApi } from "@/lib/api";
-import { Loader2, LogOut, UserCheck, LogIn } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 
@@ -37,12 +33,16 @@ export default function CareersPage() {
     } catch {}
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       setCurrentUser(user);
 
       const jobsData = await fetchApi<Job[]>("/jobs/");
       setJobs(jobsData);
-      try { sessionStorage.setItem("tm_cached_jobs", JSON.stringify(jobsData)); } catch {}
+      try {
+        sessionStorage.setItem("tm_cached_jobs", JSON.stringify(jobsData));
+      } catch {}
       setBackendOnline(true);
       setLoading(false);
 
@@ -94,80 +94,39 @@ export default function CareersPage() {
     loadData();
   };
 
-  const displayName =
-    currentUser?.user_metadata?.full_name ||
-    currentUser?.email?.split("@")[0] ||
-    "Applicant";
-
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col font-sans">
-      <Navigation backendOnline={backendOnline} />
+    <div className="min-h-screen bg-[#e3f1fe] text-slate-900 flex flex-col font-sans selection:bg-[#2196F3] selection:text-white relative">
+      {/* Blueprint Background Texture: Fine Dot Mesh + Architectural 48px Grid */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(rgba(33,150,243,0.15)_1px,transparent_1px)] [background-size:24px_24px]"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 z-0 bg-[linear-gradient(to_right,rgba(33,150,243,0.035)_1px,transparent_1px),linear-gradient(to_bottom,rgba(33,150,243,0.035)_1px,transparent_1px)] [background-size:48px_48px]"
+      />
 
-      {/* Applicant Session & Logout Bar */}
-      <div className="border-b border-border bg-card/60 px-4 sm:px-6 lg:px-8 py-2">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 text-xs">
-          {currentUser ? (
-            <>
-              <div className="flex items-center gap-2">
-                <Badge variant="outline" className="gap-1.5 py-0.5 font-medium border-primary/40 text-primary bg-primary/5">
-                  <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-                  <UserCheck className="h-3 w-3" />
-                  Applicant Account
-                </Badge>
-                <span className="text-foreground font-semibold">{displayName}</span>
-                <span className="text-muted-foreground font-mono text-[11px]">({currentUser.email})</span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleLogout}
-                  className="h-7 text-xs text-muted-foreground hover:text-destructive gap-1.5 px-2.5"
-                >
-                  <LogOut className="h-3.5 w-3.5" />
-                  <span>Log Out</span>
-                </Button>
-              </div>
-            </>
-          ) : (
-            <>
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                <span>Viewing as Guest. Sign in to your account to save resumes and track your applications.</span>
-              </div>
-              <Button asChild variant="outline" size="sm" className="h-7 text-xs gap-1.5 px-3">
-                <Link href="/applicant/login">
-                  <LogIn className="h-3.5 w-3.5" />
-                  <span>Applicant Sign In</span>
-                </Link>
-              </Button>
-            </>
-          )}
-        </div>
-      </div>
-
-      <main className="flex-1">
-        {loading ? (
-          <div className="flex flex-col items-center justify-center min-h-[60vh] gap-3">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            <div className="text-xs text-muted-foreground">Loading open positions...</div>
+      {loading ? (
+        <div className="flex flex-col items-center justify-center min-h-screen gap-3 relative z-10">
+          <div className="w-12 h-12 rounded-2xl bg-white text-[#2196F3] shadow-md flex items-center justify-center border border-blue-200/80">
+            <Loader2 className="h-6 w-6 animate-spin text-[#2196F3]" />
           </div>
-        ) : (
-          <ApplicantPortal
-            jobs={jobs}
-            applications={applications}
-            onApplicationCreated={handleApplicationCreated}
-          />
-        )}
-      </main>
-
-      <footer className="border-t border-border bg-background py-4 text-xs text-muted-foreground text-center">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>TalentMatch Careers · Verified Universal Job Matching Engine</span>
-          <span>Philippine Multi-Industry Benchmark</span>
+          <div className="text-sm font-semibold text-slate-600">Loading open positions...</div>
         </div>
-      </footer>
+      ) : (
+        <div className="relative z-10 flex-1 flex flex-col">
+          <Suspense fallback={null}>
+            <ApplicantPortal
+              jobs={jobs}
+              applications={applications}
+              onApplicationCreated={handleApplicationCreated}
+              currentUser={currentUser}
+              onLogout={handleLogout}
+              backendOnline={backendOnline}
+            />
+          </Suspense>
+        </div>
+      )}
     </div>
   );
 }

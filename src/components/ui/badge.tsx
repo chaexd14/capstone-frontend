@@ -3,23 +3,23 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const badgeVariants = cva(
-  "inline-flex items-center rounded-md border px-2.5 py-0.5 text-xs font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 select-none",
+  "inline-flex items-center rounded-lg border px-2.5 py-1 text-xs font-medium transition-all focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 select-none",
   {
     variants: {
       variant: {
         default:
-          "border-transparent bg-primary text-primary-foreground shadow-xs hover:bg-primary/80",
+          "border-transparent bg-primary text-primary-foreground shadow-xs hover:bg-primary/90 font-semibold",
         secondary:
-          "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80",
+          "border-blue-100 bg-secondary text-secondary-foreground hover:bg-accent font-medium",
         destructive:
           "border-transparent bg-destructive text-destructive-foreground shadow-xs hover:bg-destructive/80",
-        outline: "text-foreground border-border bg-background",
+        outline: "text-foreground border-border/80 bg-card hover:bg-secondary font-medium",
         success:
-          "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 font-semibold",
+          "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 font-semibold",
         warning:
-          "border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400 font-semibold",
+          "border-amber-500/30 bg-amber-500/10 text-amber-700 font-semibold",
         info:
-          "border-sky-500/30 bg-sky-500/10 text-sky-700 dark:text-sky-400 font-semibold",
+          "border-blue-500/30 bg-blue-500/10 text-blue-700 font-semibold",
       },
     },
     defaultVariants: {
