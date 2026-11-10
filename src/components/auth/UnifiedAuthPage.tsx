@@ -5,17 +5,13 @@ import React, { useState, useEffect, useId } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { fetchApi } from "@/lib/api";
 import {
   Sparkles,
   ShieldCheck,
   CheckCircle2,
   AlertCircle,
   Loader2,
-  Lock,
   Mail,
-  User,
-  Building2,
   ArrowRight,
   Eye,
   EyeOff,
@@ -27,7 +23,6 @@ import {
   Award,
   Search,
   Check,
-  KeyRound,
 } from "lucide-react";
 
 interface UnifiedAuthPageProps {
@@ -38,6 +33,15 @@ interface SlideItem {
   headline: string;
   subtitle: string;
   renderVisual: () => React.ReactNode;
+}
+
+function getRememberedEmail() {
+  if (typeof window === "undefined") return "";
+  try {
+    return localStorage.getItem("talentmatch_saved_email") ?? "";
+  } catch {
+    return "";
+  }
 }
 
 export function UnifiedAuthPage({ initialRole = "applicant" }: UnifiedAuthPageProps) {
@@ -59,9 +63,10 @@ export function UnifiedAuthPage({ initialRole = "applicant" }: UnifiedAuthPagePr
   const [successMsg, setSuccessMsg] = useState("");
 
   // Sign In inputs
-  const [email, setEmail] = useState("");
+  const [rememberedEmail] = useState(getRememberedEmail);
+  const [email, setEmail] = useState(rememberedEmail);
   const [password, setPassword] = useState("");
-  const [rememberMe, setRememberMe] = useState(true);
+  const [rememberMe, setRememberMe] = useState(Boolean(rememberedEmail));
   const [showPassword, setShowPassword] = useState(false);
 
   // Sign Up inputs
@@ -87,17 +92,6 @@ export function UnifiedAuthPage({ initialRole = "applicant" }: UnifiedAuthPagePr
   const emailInputId = useId();
   const passwordInputId = useId();
   const rememberCheckboxId = useId();
-
-  // Load remembered email
-  useEffect(() => {
-    try {
-      const savedEmail = localStorage.getItem("talentmatch_saved_email");
-      if (savedEmail) {
-        setEmail(savedEmail);
-        setRememberMe(true);
-      }
-    } catch {}
-  }, []);
 
   // Auto-cycle carousel slides every 6s
   useEffect(() => {

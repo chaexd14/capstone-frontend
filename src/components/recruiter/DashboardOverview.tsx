@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { Job } from "@/types/job";
 import { Application } from "@/types/application";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 
 interface DashboardOverviewProps {
   jobs: Job[];

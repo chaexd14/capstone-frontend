@@ -28,7 +28,6 @@ interface NavigationProps {
 export function Navigation({
   anonymize = false,
   onToggleAnonymize,
-  backendOnline,
   currentUser,
   onLogout,
 }: NavigationProps) {

@@ -36,6 +36,53 @@ interface LoginPageComponentProps {
   initialRole?: "recruiter" | "applicant";
 }
 
+type FormNotice = {
+  variant: "error" | "warning" | "info";
+  title: string;
+  description: string;
+};
+
+function getRememberedEmail() {
+  if (typeof window === "undefined") return "";
+  try {
+    return localStorage.getItem("talentmatch_saved_email") ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function getRedirectNotice(errorParam: string | null): FormNotice | null {
+  if (errorParam === "unauthorized") {
+    return {
+      variant: "error",
+      title: "Authentication Required",
+      description: "Please sign in with authorized recruiter credentials to access that workspace.",
+    };
+  }
+  if (errorParam === "recruiter_only") {
+    return {
+      variant: "error",
+      title: "Access Restricted",
+      description: "That section requires a verified recruiter account.",
+    };
+  }
+  if (errorParam === "account_conflict") {
+    return {
+      variant: "warning",
+      title: "Session Switched",
+      description: "Your previous session was signed out so you can switch portals cleanly.",
+    };
+  }
+  if (errorParam === "signup_disabled") {
+    return {
+      variant: "warning",
+      title: "Registration Restricted",
+      description: "Self-service recruiter registration is disabled. Recruiter accounts must be provisioned by a system administrator.",
+    };
+  }
+  return null;
+}
+
 export function LoginPageComponent({ initialRole = "applicant" }: LoginPageComponentProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -46,9 +93,10 @@ export function LoginPageComponent({ initialRole = "applicant" }: LoginPageCompo
   const [portalRole] = useState<"recruiter" | "applicant">(roleParam || initialRole);
   const [loading, setLoading] = useState(false);
 
-  const [email, setEmail] = useState("");
+  const [rememberedEmail] = useState(getRememberedEmail);
+  const [email, setEmail] = useState(rememberedEmail);
   const [password, setPassword] = useState("");
-  const [rememberMe, setRememberMe] = useState(true);
+  const [rememberMe, setRememberMe] = useState(Boolean(rememberedEmail));
   const [showPassword, setShowPassword] = useState(false);
 
   // Field-level & Form-level validation states ("Reward Early, Punish Late")
@@ -60,11 +108,7 @@ export function LoginPageComponent({ initialRole = "applicant" }: LoginPageCompo
     email?: boolean;
     password?: boolean;
   }>({});
-  const [formNotice, setFormNotice] = useState<{
-    variant: "error" | "warning" | "info";
-    title: string;
-    description: string;
-  } | null>(null);
+  const [formNotice, setFormNotice] = useState<FormNotice | null>(() => getRedirectNotice(errorParam));
 
   // Forgot Password Modal states
   const [showForgotModal, setShowForgotModal] = useState(false);
@@ -85,51 +129,14 @@ export function LoginPageComponent({ initialRole = "applicant" }: LoginPageCompo
   const rememberCheckboxId = useId();
   const forgotEmailInputId = useId();
 
-  // Load remembered email
-  useEffect(() => {
-    try {
-      const savedEmail = localStorage.getItem("talentmatch_saved_email");
-      if (savedEmail) {
-        setEmail(savedEmail);
-        setRememberMe(true);
-      }
-    } catch { }
-  }, []);
-
   // Show error from query parameters if user was redirected
   useEffect(() => {
-    if (errorParam === "unauthorized") {
-      const msg = "Please sign in with authorized recruiter credentials to access that workspace.";
-      setFormNotice({
-        variant: "error",
-        title: "Authentication Required",
-        description: msg,
-      });
-      toast.error("Authentication Required", { description: msg });
-    } else if (errorParam === "recruiter_only") {
-      const msg = "That section requires a verified recruiter account.";
-      setFormNotice({
-        variant: "error",
-        title: "Access Restricted",
-        description: msg,
-      });
-      toast.error("Access Restricted", { description: msg });
-    } else if (errorParam === "account_conflict") {
-      const msg = "Your previous session was signed out so you can switch portals cleanly.";
-      setFormNotice({
-        variant: "warning",
-        title: "Session Switched",
-        description: msg,
-      });
-      toast.warning("Session Switched", { description: msg });
-    } else if (errorParam === "signup_disabled") {
-      const msg = "Self-service recruiter registration is disabled. Recruiter accounts must be provisioned by a system administrator.";
-      setFormNotice({
-        variant: "warning",
-        title: "Registration Restricted",
-        description: msg,
-      });
-      toast.warning("Registration Restricted", { description: msg });
+    const notice = getRedirectNotice(errorParam);
+    if (!notice) return;
+    if (notice.variant === "error") {
+      toast.error(notice.title, { description: notice.description });
+    } else {
+      toast.warning(notice.title, { description: notice.description });
     }
   }, [errorParam]);
 

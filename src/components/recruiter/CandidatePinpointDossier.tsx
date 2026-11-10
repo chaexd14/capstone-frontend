@@ -420,13 +420,16 @@ export function CandidatePinpointDossier({
             Must-Have Skills
           </div>
           <span className="text-xs font-mono text-muted-foreground font-semibold">
-            {mustHaveBreakdown.filter((m) => m.status === "met").length} / {mustHaveBreakdown.length} Met
+            {insights?.must_haves_summary
+              ? `${insights.must_haves_summary} Met`
+              : `${mustHaveBreakdown.filter((m) => m.status === "met").length} / ${mustHaveBreakdown.filter((m) => m.status !== "verify_in_screening").length || mustHaveBreakdown.length} Met`}
           </span>
         </div>
 
         <div className="space-y-2">
           {mustHaveBreakdown.map((item, idx) => {
             const isMet = item.status === "met";
+            const isVerify = item.status === "verify_in_screening";
             const isUnclear = item.status === "unclear";
             return (
               <div
@@ -436,10 +439,18 @@ export function CandidatePinpointDossier({
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <Badge
-                      variant={isMet ? "success" : isUnclear ? "warning" : "destructive"}
+                      variant={
+                        isMet
+                          ? "success"
+                          : isVerify
+                          ? "info"
+                          : isUnclear
+                          ? "warning"
+                          : "destructive"
+                      }
                       className="font-mono text-[10px] px-2 py-0 uppercase font-bold"
                     >
-                      {item.status}
+                      {isVerify ? "VERIFY IN SCREENING" : item.status}
                     </Badge>
                     <span className="font-bold text-foreground text-sm">{item.skill}</span>
                   </div>
@@ -456,13 +467,19 @@ export function CandidatePinpointDossier({
                   </p>
                 )}
 
+                {isVerify && (
+                  <p className="text-sky-700 font-medium pl-1 text-xs">
+                    {item.note || "Confirm in screening call / live assessment (not typically listed on resumes)."}
+                  </p>
+                )}
+
                 {isUnclear && (
                   <p className="text-amber-700 font-medium pl-1 text-xs">
                     {item.note || "Listed under Skills only. No sentence shows hands-on use."}
                   </p>
                 )}
 
-                {!isMet && !isUnclear && (
+                {!isMet && !isVerify && !isUnclear && (
                   <p className="text-destructive font-medium pl-1 text-xs">
                     {item.note || "No mention found in resume"}
                   </p>

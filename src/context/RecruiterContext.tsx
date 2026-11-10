@@ -4,7 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { useRouter } from "next/navigation";
 import { Job } from "@/types/job";
 import { Application } from "@/types/application";
-import { ApiError, fetchApi } from "@/lib/api";
+import { ApiError, clearResumeBlobCache, fetchApi } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
 
 export interface RecruiterUserInfo {
@@ -51,6 +51,7 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
 
   const clearRecruiterStorage = useCallback(() => {
     try {
+      clearResumeBlobCache();
       sessionStorage.removeItem("tm_cached_apps");
       sessionStorage.removeItem("tm_cached_jobs");
       localStorage.removeItem("talentmatch_recruiter_user");

@@ -118,8 +118,78 @@ async function fetchApiResponse(endpoint: string, options: RequestInit): Promise
   return response;
 }
 
+export interface ResumePreviewPage {
+  page_number: number;
+  width: number;
+  height: number;
+  data_url: string;
+}
+
+export interface ResumePreviewResponse {
+  format: string;
+  page_count: number;
+  rendered_pages: number;
+  pages: ResumePreviewPage[];
+}
+
+const resumeBlobCache = new Map<string, Blob>();
+const resumePreviewCache = new Map<number, ResumePreviewResponse>();
+
+export function clearResumeBlobCache() {
+  resumeBlobCache.clear();
+  resumePreviewCache.clear();
+}
+
 export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   return (await fetchApiResponse(endpoint, options)).json();
+}
+
+export async function fetchResumePreview(
+  resumeId: number,
+  useCache = true
+): Promise<ResumePreviewResponse> {
+  if (useCache && resumePreviewCache.has(resumeId)) {
+    return resumePreviewCache.get(resumeId)!;
+  }
+
+  const data = await fetchApi<ResumePreviewResponse>(`/resumes/${resumeId}/preview/`);
+
+  if (useCache) {
+    if (resumePreviewCache.size >= 30) {
+      const oldestKey = resumePreviewCache.keys().next().value;
+      if (oldestKey !== undefined) resumePreviewCache.delete(oldestKey);
+    }
+    resumePreviewCache.set(resumeId, data);
+  }
+
+  return data;
+}
+
+export async function fetchApiBlob(
+  endpoint: string,
+  options: RequestInit = {},
+  useCache = true
+): Promise<Blob> {
+  const normalizedEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+  const isGet = !options.method || options.method.toUpperCase() === "GET";
+
+  if (useCache && isGet && resumeBlobCache.has(normalizedEndpoint)) {
+    return resumeBlobCache.get(normalizedEndpoint)!;
+  }
+
+  const response = await fetchApiResponse(normalizedEndpoint, options);
+  const blob = await response.blob();
+
+  if (useCache && isGet) {
+    // Keep cache bounded to 30 recent resume blobs to avoid memory bloat
+    if (resumeBlobCache.size >= 30) {
+      const oldestKey = resumeBlobCache.keys().next().value;
+      if (oldestKey) resumeBlobCache.delete(oldestKey);
+    }
+    resumeBlobCache.set(normalizedEndpoint, blob);
+  }
+
+  return blob;
 }
 
 export async function downloadApiFile(endpoint: string, filename: string, options: RequestInit) {

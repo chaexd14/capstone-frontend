@@ -14,10 +14,7 @@ import { JobProfileView } from "./JobProfileView";
 import { ConfirmJobActionModal, JobActionType } from "./ConfirmJobActionModal";
 import { fetchApi } from "@/lib/api";
 import { toast } from "@/components/ui/sonner";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -842,6 +839,7 @@ export function RecruiterPortal({
         isOpen={isAnalysisOpen}
         onClose={() => setIsAnalysisOpen(false)}
         application={selectedApplication}
+        job={jobs.find((j) => j.id === selectedApplication?.job) || null}
         anonymize={anonymize}
         onStatusUpdated={onApplicationUpdated}
       />

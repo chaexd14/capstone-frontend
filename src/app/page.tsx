@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -262,19 +262,23 @@ export default function HomePage() {
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [selectedSalary, setSelectedSalary] = useState("All");
 
-  const [mounted, setMounted] = useState(false);
-  const [bookmarkedIds, setBookmarkedIds] = useState<Set<number>>(new Set());
+  const mounted = useSyncExternalStore(
+    () => () => undefined,
+    () => true,
+    () => false
+  );
+  const [bookmarkedIds, setBookmarkedIds] = useState<Set<number>>(() => {
+    if (typeof window === "undefined") return new Set<number>();
+    try {
+      const saved = localStorage.getItem("talentmatch_bookmarked_jobs");
+      return saved ? new Set<number>(JSON.parse(saved)) : new Set<number>();
+    } catch {
+      return new Set<number>();
+    }
+  });
 
   const [isScrolled, setIsScrolled] = useState(false);
   const [activeModal, setActiveModal] = useState<"terms" | "privacy" | null>(null);
-
-  useEffect(() => {
-    setMounted(true);
-    try {
-      const saved = localStorage.getItem("talentmatch_bookmarked_jobs");
-      if (saved) setBookmarkedIds(new Set<number>(JSON.parse(saved)));
-    } catch { }
-  }, []);
 
   useEffect(() => {
     const handleScroll = () => {

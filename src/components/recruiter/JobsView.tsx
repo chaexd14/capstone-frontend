@@ -3,10 +3,8 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Job, ArchivedJob } from "@/types/job";
-import { Application } from "@/types/application";
-import { Plus, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -40,7 +38,6 @@ export function JobsView() {
     applications,
     onJobUpdated,
     onJobArchived,
-    setIsCreateJobOpen,
   } = useRecruiter();
 
   const [displayMode, setDisplayMode] = useState<"cards" | "table">("cards");

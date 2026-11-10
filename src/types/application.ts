@@ -14,7 +14,7 @@ export type ReviewPriority = "High" | "Medium" | "Low";
 
 export interface SkillEvidenceItem {
   skill: string;
-  status: "met" | "unclear" | "not found" | string;
+  status: "met" | "verify_in_screening" | "unclear" | "not found" | string;
   evidence?: string;
   source?: string;
   note?: string;

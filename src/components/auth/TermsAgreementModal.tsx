@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { Loader2 } from "lucide-react";
+import { legalConfig } from "@/lib/legal-config";
 import {
   Dialog,
   DialogContent,
@@ -261,10 +262,11 @@ export function TermsAgreementModal({
                   2.5 Data Retention &amp; Security Controls
                 </h4>
                 <p>
-                  Your data is stored in encrypted databases using industry-standard
-                  AES-256 encryption at rest and TLS 1.3 in transit. Inactive accounts
-                  and unattached resumes are archived or purged in accordance with our
-                  statutory retention guidelines.
+                  Your data is protected in transit and at rest using the safeguards
+                  provided by the configured hosting, database, and storage services.
+                  Candidate records are retained for up to {legalConfig.retentionDays} days
+                  after the applicable job is closed or archived, unless a legal obligation
+                  requires a different period.
                 </p>
               </div>
 
@@ -277,10 +279,10 @@ export function TermsAgreementModal({
                   or privacy compliance questions, contact the TalentMatch compliance
                   team at{" "}
                   <a
-                    href="mailto:privacy@talentmatch.ph"
+                    href={`mailto:${legalConfig.privacyContactEmail}`}
                     className="font-semibold text-primary hover:underline"
                   >
-                    privacy@talentmatch.ph
+                    {legalConfig.privacyContactEmail}
                   </a>
                   .
                 </p>
@@ -290,7 +292,7 @@ export function TermsAgreementModal({
 
           {/* End of Document Subtitle */}
           <div className="pt-2 text-center text-xs text-muted-foreground font-mono">
-            &bull; &bull; &bull;
+            {legalConfig.organizationName} privacy policy · Version {legalConfig.policyVersion}
           </div>
         </div>
 

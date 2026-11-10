@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Job } from "@/types/job";
 import { Application } from "@/types/application";
 import type { User } from "@supabase/supabase-js";
@@ -26,12 +26,10 @@ import {
   Sparkles,
   Calendar,
   WifiOff,
-  Scale,
 } from "lucide-react";
 import { ApplyModal } from "./ApplyModal";
 import { JobDetailSheet } from "./JobDetailSheet";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { toast } from "@/components/ui/sonner";
 import {
@@ -287,7 +285,6 @@ export function ApplicantPortal({
   onLogout,
   backendOnline = true,
 }: ApplicantPortalProps) {
-  const router = useRouter();
   const searchParams = useSearchParams();
 
   // Active top navigation tab: "Explore" | "Bookmark" | "My Applications"
@@ -301,13 +298,16 @@ export function ApplicantPortal({
   const [navTab, setNavTab] = useState<"Explore" | "Bookmark" | "My Applications">(initialNavTab);
 
   useEffect(() => {
-    if (tabParam === "MY_APPLICATIONS") {
-      setNavTab("My Applications");
-    } else if (tabParam === "BOOKMARK") {
-      setNavTab("Bookmark");
-    } else if (tabParam === "EXPLORE") {
-      setNavTab("Explore");
-    }
+    const frame = requestAnimationFrame(() => {
+      if (tabParam === "MY_APPLICATIONS") {
+        setNavTab("My Applications");
+      } else if (tabParam === "BOOKMARK") {
+        setNavTab("Bookmark");
+      } else if (tabParam === "EXPLORE") {
+        setNavTab("Explore");
+      }
+    });
+    return () => cancelAnimationFrame(frame);
   }, [tabParam]);
 
   // Search and Filter states
@@ -328,14 +328,17 @@ export function ApplicantPortal({
   );
 
   useEffect(() => {
-    const nextQ = searchParams.get("q") ?? searchParams.get("search");
-    const nextCat = searchParams.get("category");
-    const nextType = searchParams.get("type");
-    const nextSal = searchParams.get("salary");
-    if (nextQ !== null) setSearchQuery(nextQ);
-    if (nextCat !== null && CATEGORIES.includes(nextCat)) setSelectedCategory(nextCat);
-    if (nextType !== null && JOB_TYPES.includes(nextType)) setSelectedJobType(nextType);
-    if (nextSal !== null && SALARY_RANGES.includes(nextSal)) setSelectedSalary(nextSal);
+    const frame = requestAnimationFrame(() => {
+      const nextQ = searchParams.get("q") ?? searchParams.get("search");
+      const nextCat = searchParams.get("category");
+      const nextType = searchParams.get("type");
+      const nextSal = searchParams.get("salary");
+      if (nextQ !== null) setSearchQuery(nextQ);
+      if (nextCat !== null && CATEGORIES.includes(nextCat)) setSelectedCategory(nextCat);
+      if (nextType !== null && JOB_TYPES.includes(nextType)) setSelectedJobType(nextType);
+      if (nextSal !== null && SALARY_RANGES.includes(nextSal)) setSelectedSalary(nextSal);
+    });
+    return () => cancelAnimationFrame(frame);
   }, [searchParams]);
 
   // User menu dropdown
@@ -472,15 +475,18 @@ export function ApplicantPortal({
 
   // Deep link auto-sheet open
   useEffect(() => {
-    const jobIdParam = searchParams.get("jobId");
-    if (jobIdParam) {
-      const targetId = Number(jobIdParam);
-      const targetJob = jobs.find((j) => j.id === targetId);
-      if (targetJob) {
-        setSelectedJobForSheet(targetJob);
-        setIsSheetOpen(true);
+    const frame = requestAnimationFrame(() => {
+      const jobIdParam = searchParams.get("jobId");
+      if (jobIdParam) {
+        const targetId = Number(jobIdParam);
+        const targetJob = jobs.find((j) => j.id === targetId);
+        if (targetJob) {
+          setSelectedJobForSheet(targetJob);
+          setIsSheetOpen(true);
+        }
       }
-    }
+    });
+    return () => cancelAnimationFrame(frame);
   }, [searchParams, jobs]);
 
   // Intra-sheet cycling

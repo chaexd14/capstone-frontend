@@ -25,7 +25,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { FieldError, FormAlertNote } from "@/components/ui/form-error";
 import {
@@ -126,52 +125,94 @@ export function ApplyModal({
   const trackingToken = successResult?.tracking_token;
   useEffect(() => {
     let intervalId: NodeJS.Timeout | null = null;
+    let initialPollTimer: NodeJS.Timeout | null = null;
     let progressTimer: NodeJS.Timeout | null = null;
+    let fallbackTimer: NodeJS.Timeout | null = null;
+    let fallbackFinishTimer: NodeJS.Timeout | null = null;
     let isCancelled = false;
 
     if (resultId && isEvaluating) {
-      progressTimer = setInterval(() => {
-        setEvalProgress((prev) => (prev < 90 ? prev + 6 : prev));
-      }, 700);
+      let cachedHeadersPromise: Promise<Record<string, string>> | null = null;
+      const getCachedHeaders = () => {
+        if (!cachedHeadersPromise) {
+          cachedHeadersPromise = getAuthHeaders();
+        }
+        return cachedHeadersPromise;
+      };
 
-      intervalId = setInterval(async () => {
+      const stopTimers = () => {
+        if (initialPollTimer) clearTimeout(initialPollTimer);
+        if (progressTimer) clearInterval(progressTimer);
+        if (intervalId) clearInterval(intervalId);
+        if (fallbackTimer) clearTimeout(fallbackTimer);
+        if (fallbackFinishTimer) clearTimeout(fallbackFinishTimer);
+      };
+
+      progressTimer = setInterval(() => {
+        setEvalProgress((prev) => (prev < 92 ? prev + 8 : prev));
+      }, 500);
+
+      const pollApplicationStatus = async () => {
         try {
-          const authHeaders = await getAuthHeaders();
+          const authHeaders = await getCachedHeaders();
+          if (isCancelled) return;
           const response = await fetch(`${API_BASE_URL}/applications/${resultId}/`, {
             headers: authHeaders,
           });
-          if (!response.ok) return;
+          if (!response.ok || isCancelled) return;
 
           const data: Application = await response.json();
           if (isCancelled) return;
 
           const isFinished = data.resume?.processing_status === "COMPLETED";
           if (isFinished) {
+            isCancelled = true;
+            stopTimers();
             setSuccessResult(data);
-            setIsEvaluating(false);
             setEvalProgress(100);
+            setIsEvaluating(false);
             if (onApplicationCreatedRef.current) {
               onApplicationCreatedRef.current(data);
             } else if (onSuccessRef.current) {
               onSuccessRef.current(data);
             }
-            if (progressTimer) clearInterval(progressTimer);
-            if (intervalId) clearInterval(intervalId);
           } else if (data.resume?.processing_status === "FAILED") {
+            isCancelled = true;
+            stopTimers();
             setSuccessResult(data);
             setIsEvaluating(false);
-            if (progressTimer) clearInterval(progressTimer);
-            if (intervalId) clearInterval(intervalId);
           }
         } catch (err) {
           console.error("Polling application status error:", err);
         }
-      }, 1500);
+      };
+
+      initialPollTimer = setTimeout(() => {
+        void pollApplicationStatus();
+      }, 800);
+
+      intervalId = setInterval(() => {
+        void pollApplicationStatus();
+      }, 1000);
+
+      // Graceful 8-second fallback so the user is never stuck at 90% if background evaluation takes longer
+      fallbackTimer = setTimeout(() => {
+        if (isCancelled) return;
+        if (initialPollTimer) clearTimeout(initialPollTimer);
+        if (progressTimer) clearInterval(progressTimer);
+        if (intervalId) clearInterval(intervalId);
+        setEvalProgress(100);
+        fallbackFinishTimer = setTimeout(() => {
+          if (!isCancelled) {
+            isCancelled = true;
+            setIsEvaluating(false);
+          }
+        }, 350);
+      }, 8000);
 
       return () => {
         isCancelled = true;
-        if (progressTimer) clearInterval(progressTimer);
-        if (intervalId) clearInterval(intervalId);
+        stopTimers();
       };
     }
   }, [resultId, trackingToken, isEvaluating]);

@@ -77,6 +77,7 @@ function AdminPageContent() {
       <CandidateAnalysisModal
         isOpen={selectedApplication !== null}
         application={selectedApplication}
+        job={jobs.find((j) => j.id === selectedApplication?.job) || null}
         onClose={() => setSelectedApplication(null)}
         anonymize={anonymize}
         onStatusUpdated={onApplicationUpdated}

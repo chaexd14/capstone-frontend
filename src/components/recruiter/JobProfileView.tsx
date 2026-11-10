@@ -20,10 +20,19 @@ import {
   Lock,
   Unlock,
   Archive,
+  Columns2,
+  ClipboardCheck,
+  Maximize2,
+  Minimize2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Briefcase,
 } from "lucide-react";
 import { CandidateAnalysisModal } from "./CandidateAnalysisModal";
 import { JobReportPanel } from "./JobReportPanel";
 import { CandidatePinpointDossier } from "./CandidatePinpointDossier";
+import { CandidateResumePreview } from "./CandidateResumePreview";
+import { JobDetailsReferencePane } from "./JobDetailsReferencePane";
 import { ConfirmJobActionModal, JobActionType } from "./ConfirmJobActionModal";
 import { fetchApi } from "@/lib/api";
 import { toast } from "@/components/ui/sonner";
@@ -79,7 +88,10 @@ export function JobProfileView({
 
   const [activeTab, setActiveTab] = useState<"rankings" | "all">("rankings");
   const [viewMode, setViewMode] = useState<"table" | "split">("table");
-  const [mobileSplitView, setMobileSplitView] = useState<"roster" | "dossier">("roster");
+  const [mobileSplitView, setMobileSplitView] = useState<"roster" | "resume" | "dossier" | "job">("resume");
+  const [splitPaneLayout, setSplitPaneLayout] = useState<"split" | "resume" | "evaluation">("split");
+  const [splitRightPaneView, setSplitRightPaneView] = useState<"evaluation" | "job">("evaluation");
+  const [isRosterDrawerOpen, setIsRosterDrawerOpen] = useState<boolean>(false);
   const [activeCandidateId, setActiveCandidateId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
@@ -906,36 +918,220 @@ export function JobProfileView({
           {/* TAB 1: AI APPLICANT RANKINGS LEADERBOARD */}
           {activeTab === "rankings" && (
             <div>
-              {/* FAST-SCREEN SPLIT MODE */}
+              {/* FAST-SCREEN SPLIT MODE: [Applicant Actual Resume Preview] | [The Evaluated Result] */}
               {viewMode === "split" ? (
                 <div className="border-t border-border">
-                  {/* High Velocity Guidance Bar */}
-                  <div className="px-6 py-2.5 bg-slate-50 border-b border-slate-200/90 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
-                    <div>
-                      <span className="font-semibold text-slate-800">Split-Screen Screening</span>
-                      <span className="hidden sm:inline text-slate-400"> · Fast triage mode</span>
+                  {/* 1. High-Velocity Fast-Triage Top Control Bar */}
+                  <div className="px-4 sm:px-6 py-3 bg-slate-50 border-b border-slate-200/90 flex flex-wrap items-center justify-between gap-3">
+                    {/* Left: Collapsible Roster Toggle + Candidate Prev/Next Switcher */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsRosterDrawerOpen((open) => !open)}
+                        className={`hidden lg:inline-flex h-8.5 px-3 text-xs font-semibold gap-1.5 rounded-xl cursor-pointer transition-all ${
+                          isRosterDrawerOpen
+                            ? "bg-blue-50 text-[#1976D2] border-blue-200 shadow-2xs"
+                            : "bg-white text-slate-700 border-slate-200/90 hover:bg-slate-100"
+                        }`}
+                        title={
+                          isRosterDrawerOpen
+                            ? "Hide candidate roster drawer to maximize side-by-side width"
+                            : "Open candidate roster drawer to jump to any applicant"
+                        }
+                      >
+                        {isRosterDrawerOpen ? (
+                          <PanelLeftClose className="w-3.5 h-3.5 text-[#2196F3]" />
+                        ) : (
+                          <PanelLeftOpen className="w-3.5 h-3.5 text-slate-500" />
+                        )}
+                        <span>Roster ({rankedApplicants.length})</span>
+                      </Button>
+
+                      {activeCandidate && (
+                        <>
+                          <div className="hidden lg:block h-4 w-px bg-slate-200" />
+
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const cIdx = rankedApplicants.findIndex(
+                                (a) => a.id === activeCandidate.id
+                              );
+                              if (cIdx > 0) {
+                                setActiveCandidateId(rankedApplicants[cIdx - 1].id);
+                              }
+                            }}
+                            disabled={
+                              rankedApplicants.findIndex(
+                                (a) => a.id === activeCandidate.id
+                              ) <= 0
+                            }
+                            className="h-8.5 px-2.5 gap-1 text-xs bg-white rounded-xl cursor-pointer"
+                            title="Previous candidate (or press K)"
+                            aria-label="Previous candidate"
+                          >
+                            <ChevronUp className="h-3.5 w-3.5" />
+                            <span>Prev (K)</span>
+                          </Button>
+
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              const cIdx = rankedApplicants.findIndex(
+                                (a) => a.id === activeCandidate.id
+                              );
+                              if (cIdx < rankedApplicants.length - 1) {
+                                setActiveCandidateId(rankedApplicants[cIdx + 1].id);
+                              }
+                            }}
+                            disabled={
+                              rankedApplicants.findIndex(
+                                (a) => a.id === activeCandidate.id
+                              ) >=
+                              rankedApplicants.length - 1
+                            }
+                            className="h-8.5 px-2.5 gap-1 text-xs bg-white rounded-xl cursor-pointer"
+                            title="Next candidate (or press J)"
+                            aria-label="Next candidate"
+                          >
+                            <span>Next (J)</span>
+                            <ChevronDown className="h-3.5 w-3.5" />
+                          </Button>
+
+                          <div className="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-white border border-slate-200/90 shadow-2xs text-xs">
+                            <span className="font-mono font-bold text-[#1976D2]">
+                              #{rankedApplicants.findIndex((a) => a.id === activeCandidate.id) + 1}
+                            </span>
+                            <span className="font-mono font-bold text-slate-900">
+                              {activeCandidate.candidate_code}
+                            </span>
+                            <span className="text-slate-300">&middot;</span>
+                            <span className="font-mono text-[11px] text-slate-500 tabular-nums">
+                              {rankedApplicants.findIndex((a) => a.id === activeCandidate.id) + 1} of{" "}
+                              {rankedApplicants.length}
+                            </span>
+                          </div>
+                        </>
+                      )}
                     </div>
-                    <div className="flex items-center gap-2 font-mono text-[11px]">
-                      <span className="hidden md:inline-flex items-center gap-1 bg-white px-2 py-0.5 rounded border border-slate-200 shadow-2xs">
-                        <span className="font-semibold text-slate-700">J/K</span>
-                        <span className="text-slate-400">Cycle</span>
-                      </span>
-                      <span className="hidden md:inline-flex items-center gap-1 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-emerald-800 shadow-2xs font-semibold">
-                        <span>S</span>
-                        <span className="text-emerald-700 font-normal">Shortlist</span>
-                      </span>
-                      <span className="hidden md:inline-flex items-center gap-1 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 text-[#2196F3] shadow-2xs font-semibold">
-                        <span>U</span>
-                        <span className="text-[#2196F3]/80 font-normal">Review</span>
-                      </span>
-                      <span className="hidden md:inline-flex items-center gap-1 bg-rose-50 px-2 py-0.5 rounded border border-rose-200 text-rose-800 shadow-2xs font-semibold">
-                        <span>R</span>
-                        <span className="text-rose-700 font-normal">Reject</span>
-                      </span>
-                      <span className="font-bold text-slate-900 ml-1.5">
-                        {rankedApplicants.length} Candidates
-                      </span>
-                    </div>
+
+                    {/* Right: Pane Proportions Switcher + Fast-Triage Decisions */}
+                    {activeCandidate && (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {/* Desktop Pane Layout Switcher */}
+                        <div
+                          className="hidden lg:flex items-center bg-slate-200/70 p-0.5 rounded-xl border border-slate-200"
+                          role="group"
+                          aria-label="Split view pane proportions"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setSplitPaneLayout("split")}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                              splitPaneLayout === "split"
+                                ? "bg-white text-slate-900 shadow-2xs"
+                                : "text-slate-600 hover:text-slate-900"
+                            }`}
+                            title="50/50 Side-by-Side: Resume Preview and Evaluated Result"
+                          >
+                            <Columns2 className="w-3.5 h-3.5 text-[#2196F3]" />
+                            <span>50/50 Split</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSplitPaneLayout("resume")}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                              splitPaneLayout === "resume"
+                                ? "bg-white text-slate-900 shadow-2xs"
+                                : "text-slate-600 hover:text-slate-900"
+                            }`}
+                            title="Maximize Applicant Resume Preview"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                            <span>Resume</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSplitPaneLayout("evaluation")}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                              splitPaneLayout === "evaluation"
+                                ? "bg-white text-slate-900 shadow-2xs"
+                                : "text-slate-600 hover:text-slate-900"
+                            }`}
+                            title="Maximize Evaluated Result"
+                          >
+                            <ClipboardCheck className="w-3.5 h-3.5" />
+                            <span>Evaluation</span>
+                          </button>
+                        </div>
+
+                        <div className="hidden xl:block h-4 w-px bg-slate-200" />
+
+                        {/* Decision Buttons */}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={updatingId === activeCandidate.id}
+                          onClick={() =>
+                            handleDirectStatusChange(activeCandidate, "SHORTLISTED")
+                          }
+                          className={`h-8.5 px-3 text-xs font-semibold gap-1.5 rounded-xl transition-all cursor-pointer ${
+                            activeCandidate.status === "SHORTLISTED"
+                              ? "bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700 hover:text-white"
+                              : "bg-white text-emerald-800 border-emerald-300 hover:bg-emerald-50"
+                          }`}
+                        >
+                          Shortlist (S)
+                        </Button>
+
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={updatingId === activeCandidate.id}
+                          onClick={() =>
+                            handleDirectStatusChange(activeCandidate, "UNDER_REVIEW")
+                          }
+                          className={`h-8.5 px-3 text-xs font-semibold rounded-xl transition-all cursor-pointer ${
+                            activeCandidate.status === "UNDER_REVIEW" ||
+                            activeCandidate.status === "PROCESSING"
+                              ? "bg-[#2196F3] text-white border-[#2196F3] hover:bg-[#1976D2]"
+                              : "bg-white text-[#1976D2] border-blue-200 hover:bg-blue-50"
+                          }`}
+                        >
+                          <span>Review (U)</span>
+                        </Button>
+
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={updatingId === activeCandidate.id}
+                          onClick={() =>
+                            handleDirectStatusChange(activeCandidate, "REJECTED")
+                          }
+                          className={`h-8.5 px-3 text-xs font-semibold gap-1.5 rounded-xl transition-all cursor-pointer ${
+                            activeCandidate.status === "REJECTED"
+                              ? "bg-destructive text-destructive-foreground border-destructive hover:bg-destructive/90"
+                              : "bg-white text-rose-800 border-rose-300 hover:bg-rose-50"
+                          }`}
+                        >
+                          Reject (R)
+                        </Button>
+
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openAnalysis(activeCandidate)}
+                          className="h-8.5 px-3 text-xs font-semibold bg-white text-slate-700 hover:text-slate-900 rounded-xl border-slate-200/90 cursor-pointer"
+                          title="Open in full-screen modal dialog"
+                        >
+                          Full Modal
+                        </Button>
+                      </div>
+                    )}
                   </div>
 
                   {rankedApplicants.length === 0 ? (
@@ -943,38 +1139,78 @@ export function JobProfileView({
                       No applicants found matching this filter.
                     </div>
                   ) : (
-                    <div className="min-h-[700px]">
-                      {/* Mobile Split View Segmented Switcher */}
-                      <div className="flex lg:hidden items-center justify-between p-3 bg-muted/20 border-b border-border">
-                        <div className="flex items-center gap-1.5 p-1 bg-background rounded-lg border border-border w-full">
+                    <div className="min-h-[760px]">
+                      {/* Mobile Split View Segmented Switcher (< lg) */}
+                      <div className="flex lg:hidden items-center justify-between p-2.5 bg-slate-100/70 border-b border-slate-200/90">
+                        <div className="flex items-center gap-1 p-1 bg-white rounded-xl border border-slate-200/90 w-full">
                           <button
                             type="button"
                             onClick={() => setMobileSplitView("roster")}
-                            className={`flex-1 py-1.5 px-3 rounded-md text-xs font-semibold transition-all ${
+                            className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                               mobileSplitView === "roster"
-                                ? "bg-primary text-primary-foreground shadow-xs"
-                                : "text-muted-foreground hover:text-foreground"
+                                ? "bg-[#2196F3] text-white shadow-2xs"
+                                : "text-slate-600 hover:text-slate-900"
                             }`}
                           >
-                            Candidate Roster ({rankedApplicants.length})
+                            Roster ({rankedApplicants.length})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setMobileSplitView("resume")}
+                            className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                              mobileSplitView === "resume"
+                                ? "bg-[#2196F3] text-white shadow-2xs"
+                                : "text-slate-600 hover:text-slate-900"
+                            }`}
+                          >
+                            Resume
                           </button>
                           <button
                             type="button"
                             onClick={() => setMobileSplitView("dossier")}
-                            className={`flex-1 py-1.5 px-3 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                            className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                               mobileSplitView === "dossier"
                                 ? "bg-[#2196F3] text-white shadow-2xs"
                                 : "text-slate-600 hover:text-slate-900"
                             }`}
                           >
-                            Evaluation {activeCandidate ? `(${activeCandidate.candidate_code})` : ""}
+                            Evaluation
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setMobileSplitView("job")}
+                            className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                              mobileSplitView === "job"
+                                ? "bg-[#2196F3] text-white shadow-2xs"
+                                : "text-slate-600 hover:text-slate-900"
+                            }`}
+                          >
+                            Job Details
                           </button>
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-1 lg:grid-cols-12 min-h-[700px]">
-                        {/* Left Roster Panel (40% width on desktop) */}
-                        <div className={`lg:col-span-5 xl:col-span-4 border-r border-border max-h-[820px] overflow-y-auto divide-y divide-border bg-card/50 ${mobileSplitView === "dossier" ? "hidden lg:block" : "block"}`}>
+                      {/* Main Screening Workspace Container */}
+                      <div className="flex flex-col lg:flex-row h-[820px] min-h-[720px] overflow-hidden">
+                        {/* Collapsible Candidate Roster Drawer (On-Demand on Desktop, Tab on Mobile) */}
+                        <div
+                          className={`lg:w-80 xl:w-84 shrink-0 border-r border-slate-200/90 h-full overflow-y-auto divide-y divide-slate-100 bg-white [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-slate-300/80 [&::-webkit-scrollbar-thumb]:rounded-full ${
+                            mobileSplitView === "roster" ? "block" : "hidden"
+                          } ${isRosterDrawerOpen ? "lg:block" : "lg:hidden"}`}
+                        >
+                          <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200/80 flex items-center justify-between sticky top-0 z-10">
+                            <span className="text-xs font-bold text-slate-800">
+                              Ranked Candidates ({rankedApplicants.length})
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setIsRosterDrawerOpen(false)}
+                              className="hidden lg:inline-flex text-xs font-semibold text-slate-500 hover:text-slate-900 cursor-pointer"
+                            >
+                              Close
+                            </button>
+                          </div>
+
                           {rankedApplicants.map((app, index) => {
                             const isSelected = activeCandidate?.id === app.id;
                             const score = app.match_result?.match_score ?? 0;
@@ -987,19 +1223,19 @@ export function JobProfileView({
                                 aria-pressed={isSelected}
                                 onClick={() => {
                                   setActiveCandidateId(app.id);
-                                  setMobileSplitView("dossier");
+                                  setMobileSplitView("resume");
                                 }}
                                 onKeyDown={(e) => {
                                   if (e.key === "Enter" || e.key === " ") {
                                     e.preventDefault();
                                     setActiveCandidateId(app.id);
-                                    setMobileSplitView("dossier");
+                                    setMobileSplitView("resume");
                                   }
                                 }}
-                                className={`p-4 transition-all cursor-pointer relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                                className={`p-3.5 transition-all cursor-pointer relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
                                   isSelected
-                                    ? "bg-secondary/70 ring-1 ring-inset ring-primary/25 shadow-xs"
-                                    : "hover:bg-muted/40"
+                                    ? "bg-blue-50/70 ring-1 ring-inset ring-[#2196F3]/30"
+                                    : "hover:bg-slate-50"
                                 }`}
                               >
                                 <div className="flex items-start justify-between gap-2">
@@ -1007,22 +1243,22 @@ export function JobProfileView({
                                     <input
                                       type="checkbox"
                                       checked={selectedCandidateIds.has(app.id)}
-                                      onChange={(e) => toggleSelectCandidate(app.id, e as unknown as React.MouseEvent)}
+                                      onChange={(e) =>
+                                        toggleSelectCandidate(
+                                          app.id,
+                                          e as unknown as React.MouseEvent
+                                        )
+                                      }
                                       onClick={(e) => e.stopPropagation()}
                                       className="h-3.5 w-3.5 rounded border-slate-300 text-[#2196F3] focus:ring-[#2196F3] accent-[#2196F3] cursor-pointer"
                                       aria-label={`Select candidate ${app.candidate_code}`}
                                     />
-                                    <span className="font-mono text-xs font-bold text-muted-foreground">
+                                    <span className="font-mono text-xs font-bold text-slate-400">
                                       #{index + 1}
                                     </span>
-                                    <span className="font-mono font-bold text-primary text-sm">
+                                    <span className="font-mono font-bold text-[#1976D2] text-xs">
                                       {app.candidate_code}
                                     </span>
-                                    {index < 3 && score > 0 && (
-                                      <Badge variant="outline" className="text-[10px] py-0 h-4 font-bold">
-                                        Top {index + 1}
-                                      </Badge>
-                                    )}
                                   </div>
 
                                   <div className="flex items-center gap-1.5">
@@ -1036,34 +1272,38 @@ export function JobProfileView({
                                           ? "warning"
                                           : "secondary"
                                       }
-                                      className="font-mono font-bold text-xs px-2 py-0.5"
+                                      className="font-mono font-bold text-[11px] px-2 py-0"
                                     >
                                       {score}%
                                     </Badge>
-                                    <Badge variant={getStatusBadgeVariant(app.status)} className="text-[10px] py-0 h-5 font-semibold">
+                                    <Badge
+                                      variant={getStatusBadgeVariant(app.status)}
+                                      className="text-[10px] py-0 h-4.5 font-semibold"
+                                    >
                                       {app.status}
                                     </Badge>
                                   </div>
                                 </div>
 
-                                <div className="font-semibold text-foreground text-sm mt-1">
-                                  {anonymize && app.status !== "SHORTLISTED" ? "Demographics Masked" : app.applicant_name}
+                                <div className="font-semibold text-slate-900 text-xs mt-1 truncate">
+                                  {anonymize && app.status !== "SHORTLISTED"
+                                    ? "Demographics Masked"
+                                    : app.applicant_name}
                                 </div>
 
-                                {/* Instant Pinpoint 1-liner */}
                                 {insights?.executive_headline ? (
-                                  <p className="text-xs text-muted-foreground line-clamp-1 italic mt-1 font-medium">
+                                  <p className="text-[11px] text-slate-500 line-clamp-1 italic mt-0.5">
                                     &ldquo;{insights.executive_headline}&rdquo;
                                   </p>
-                                ) : insights?.key_pinpoints?.[0] ? (
-                                  <p className="text-xs text-muted-foreground line-clamp-1 mt-1">
-                                    ⭐ {insights.key_pinpoints[0].headline}
-                                  </p>
                                 ) : (
-                                  <div className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
-                                    <span>{app.resume?.extracted_experience_years || 0} yrs exp</span>
-                                    <span>·</span>
-                                    <span>{app.match_result?.matched_skills.length || 0} skills matched</span>
+                                  <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-2">
+                                    <span>
+                                      {app.resume?.extracted_experience_years || 0} yrs exp
+                                    </span>
+                                    <span>&middot;</span>
+                                    <span>
+                                      {app.match_result?.matched_skills.length || 0} skills matched
+                                    </span>
                                   </div>
                                 )}
                               </div>
@@ -1071,125 +1311,144 @@ export function JobProfileView({
                           })}
                         </div>
 
-                        {/* Right Active Candidate Dossier Panel (60% width) */}
-                        <div className={`lg:col-span-7 xl:col-span-8 p-4 sm:p-6 max-h-[820px] overflow-y-auto space-y-4 bg-background ${mobileSplitView === "roster" ? "hidden lg:block" : "block"}`}>
-                          {activeCandidate ? (
-                            <>
-                              {/* Fast-Triage Action Bar */}
-                              <div className="p-3 rounded-xl border border-border bg-card shadow-xs flex flex-wrap items-center justify-between gap-3 sticky top-0 z-10 backdrop-blur-md bg-card/95">
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => setMobileSplitView("roster")}
-                                    className="lg:hidden h-8.5 px-2.5 text-xs font-semibold text-primary"
-                                  >
-                                    &larr; Roster
-                                  </Button>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
+                        {/* 2-Pane Split Screening Area: [Applicant Actual Resume Preview] | [The Evaluated Result] */}
+                        {activeCandidate ? (
+                          <div className="flex-1 min-w-0 h-full grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
+                            {/* LEFT PANE: Applicant Actual Resume Preview */}
+                            <div
+                              className={`min-h-0 h-full overflow-hidden ${
+                                mobileSplitView === "resume" ? "flex flex-col" : "hidden"
+                              } ${
+                                splitPaneLayout === "evaluation"
+                                  ? "lg:hidden"
+                                  : splitPaneLayout === "resume"
+                                  ? "lg:flex lg:col-span-12"
+                                  : "lg:flex lg:col-span-6"
+                              }`}
+                            >
+                              <CandidateResumePreview
+                                application={activeCandidate}
+                                isExpanded={splitPaneLayout === "resume"}
+                                onToggleExpand={() =>
+                                  setSplitPaneLayout((prev) =>
+                                    prev === "resume" ? "split" : "resume"
+                                  )
+                                }
+                                className="h-full"
+                              />
+                            </div>
+
+                            {/* RIGHT PANE: Switchable between Evaluated Result Dossier & Job Details */}
+                            <div
+                              className={`min-h-0 h-full flex-col bg-[#f8fafc] overflow-hidden ${
+                                mobileSplitView === "dossier" || mobileSplitView === "job"
+                                  ? "flex"
+                                  : "hidden"
+                              } ${
+                                splitPaneLayout === "resume"
+                                  ? "lg:hidden"
+                                  : splitPaneLayout === "evaluation"
+                                  ? "lg:flex lg:col-span-12"
+                                  : "lg:flex lg:col-span-6"
+                              }`}
+                            >
+                              {/* Right Pane Header Bar with Evaluated Result / Job Details Switcher */}
+                              <div className="px-4 py-2 bg-white border-b border-slate-200/90 flex items-center justify-between gap-2 shrink-0">
+                                <div
+                                  className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200/80"
+                                  role="tablist"
+                                  aria-label="Right pane view mode"
+                                >
+                                  <button
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={splitRightPaneView === "evaluation"}
                                     onClick={() => {
-                                      const cIdx = rankedApplicants.findIndex((a) => a.id === activeCandidate.id);
-                                      if (cIdx > 0) setActiveCandidateId(rankedApplicants[cIdx - 1].id);
-                                    }}
-                                    disabled={rankedApplicants.findIndex((a) => a.id === activeCandidate.id) <= 0}
-                                    className="h-8.5 px-2.5 gap-1 text-xs"
-                                    title="Previous candidate (or press K)"
-                                    aria-label="Previous candidate"
-                                  >
-                                    <ChevronUp className="h-3.5 w-3.5" />
-                                    <span>Prev (K)</span>
-                                  </Button>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => {
-                                      const cIdx = rankedApplicants.findIndex((a) => a.id === activeCandidate.id);
-                                      if (cIdx < rankedApplicants.length - 1) {
-                                        setActiveCandidateId(rankedApplicants[cIdx + 1].id);
+                                      setSplitRightPaneView("evaluation");
+                                      if (mobileSplitView === "job") {
+                                        setMobileSplitView("dossier");
                                       }
                                     }}
-                                    disabled={
-                                      rankedApplicants.findIndex((a) => a.id === activeCandidate.id) >=
-                                      rankedApplicants.length - 1
-                                    }
-                                    className="h-8.5 px-2.5 gap-1 text-xs"
-                                    title="Next candidate (or press J)"
-                                    aria-label="Next candidate"
+                                    className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                      splitRightPaneView === "evaluation"
+                                        ? "bg-white text-slate-900 shadow-2xs"
+                                        : "text-slate-600 hover:text-slate-900"
+                                    }`}
                                   >
-                                    <span>Next (J)</span>
-                                    <ChevronDown className="h-3.5 w-3.5" />
-                                  </Button>
-                                  <span className="text-xs font-mono text-muted-foreground ml-1">
-                                    Candidate {rankedApplicants.findIndex((a) => a.id === activeCandidate.id) + 1} of{" "}
-                                    {rankedApplicants.length}
-                                  </span>
+                                    <ClipboardCheck className="w-3.5 h-3.5 text-[#2196F3]" />
+                                    <span>Evaluated Result</span>
+                                    <span className="font-mono text-[11px] font-extrabold text-[#1976D2] bg-blue-50 px-1.5 py-0 rounded border border-blue-200/70 tabular-nums">
+                                      {activeCandidate.match_result?.match_score ?? 0}%
+                                    </span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={splitRightPaneView === "job"}
+                                    onClick={() => {
+                                      setSplitRightPaneView("job");
+                                      if (mobileSplitView === "dossier") {
+                                        setMobileSplitView("job");
+                                      }
+                                    }}
+                                    className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                                      splitRightPaneView === "job"
+                                        ? "bg-white text-slate-900 shadow-2xs"
+                                        : "text-slate-600 hover:text-slate-900"
+                                    }`}
+                                  >
+                                    <Briefcase className="w-3.5 h-3.5 text-[#2196F3]" />
+                                    <span>Job Details</span>
+                                  </button>
                                 </div>
 
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    disabled={updatingId === activeCandidate.id}
-                                    onClick={() => handleDirectStatusChange(activeCandidate, "SHORTLISTED")}
-                                    className={`h-8.5 px-3 text-xs font-semibold gap-1.5 transition-all ${
-                                      activeCandidate.status === "SHORTLISTED"
-                                        ? "bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700 hover:text-white"
-                                        : "text-emerald-800 border-emerald-300 hover:bg-emerald-50"
-                                    }`}
-                                  >
-                                    Shortlist (S)
-                                  </Button>
-
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    disabled={updatingId === activeCandidate.id}
-                                    onClick={() => handleDirectStatusChange(activeCandidate, "UNDER_REVIEW")}
-                                    className={`h-8.5 px-3 text-xs font-semibold transition-all cursor-pointer ${
-                                      activeCandidate.status === "UNDER_REVIEW" || activeCandidate.status === "PROCESSING"
-                                        ? "bg-[#2196F3] text-white border-[#2196F3] hover:bg-[#1976D2]"
-                                        : "text-[#1976D2] border-blue-200 bg-blue-50/50 hover:bg-blue-100/70"
-                                    }`}
-                                  >
-                                    <span>Review (U)</span>
-                                  </Button>
-
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    disabled={updatingId === activeCandidate.id}
-                                    onClick={() => handleDirectStatusChange(activeCandidate, "REJECTED")}
-                                    className={`h-8.5 px-3 text-xs font-semibold gap-1.5 transition-all ${
-                                      activeCandidate.status === "REJECTED"
-                                        ? "bg-destructive text-destructive-foreground border-destructive hover:bg-destructive/90"
-                                        : "text-rose-800 border-rose-300 hover:bg-rose-50"
-                                    }`}
-                                  >
-                                    Reject (R)
-                                  </Button>
-
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => openAnalysis(activeCandidate)}
-                                    className="h-8.5 px-2.5 text-xs text-muted-foreground hover:text-foreground cursor-pointer"
-                                    title="Open full dialog modal"
-                                  >
-                                    Full Modal
-                                  </Button>
-                                </div>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() =>
+                                    setSplitPaneLayout((prev) =>
+                                      prev === "evaluation" ? "split" : "evaluation"
+                                    )
+                                  }
+                                  className="h-7.5 w-7.5 p-0 rounded-lg border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 hidden lg:inline-flex items-center justify-center cursor-pointer"
+                                  title={
+                                    splitPaneLayout === "evaluation"
+                                      ? "Restore 50/50 split view"
+                                      : "Maximize right pane"
+                                  }
+                                  aria-label={
+                                    splitPaneLayout === "evaluation"
+                                      ? "Restore 50/50 split view"
+                                      : "Maximize right pane"
+                                  }
+                                >
+                                  {splitPaneLayout === "evaluation" ? (
+                                    <Minimize2 className="w-3.5 h-3.5" />
+                                  ) : (
+                                    <Maximize2 className="w-3.5 h-3.5" />
+                                  )}
+                                </Button>
                               </div>
 
-                              {/* Instant Candidate Dossier */}
-                              <CandidatePinpointDossier
-                                application={activeCandidate}
-                                anonymize={anonymize}
-                              />
-                            </>
-                          ) : null}
-                        </div>
+                              {/* Independently Scrollable Evaluation Dossier or Job Details Reference */}
+                              <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-slate-300/80 [&::-webkit-scrollbar-thumb]:rounded-full">
+                                {mobileSplitView === "job" ||
+                                (mobileSplitView !== "dossier" && splitRightPaneView === "job") ? (
+                                  <JobDetailsReferencePane
+                                    application={activeCandidate}
+                                    job={currentJob}
+                                  />
+                                ) : (
+                                  <CandidatePinpointDossier
+                                    application={activeCandidate}
+                                    anonymize={anonymize}
+                                  />
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   )}
@@ -1682,6 +1941,7 @@ export function JobProfileView({
       {/* Candidate Analysis Modal */}
       <CandidateAnalysisModal
         application={selectedApplication}
+        job={currentJob}
         isOpen={isAnalysisOpen}
         onClose={() => setIsAnalysisOpen(false)}
         anonymize={anonymize}

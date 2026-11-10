@@ -38,8 +38,6 @@ export function SignupPageComponent({}: SignupPageComponentProps = {}) {
   const searchParams = useSearchParams();
   const nextParam = searchParams.get("next");
 
-  // Public signup is strictly applicant-only. Recruiter accounts are provisioned by administrators.
-  const portalRole = "applicant" as const;
   const [loading, setLoading] = useState(false);
 
   // Form Fields matching Sign up.png

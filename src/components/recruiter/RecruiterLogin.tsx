@@ -5,7 +5,6 @@ import Link from "next/link";
 import {
   Lock,
   Mail,
-  Sparkles,
   ShieldCheck,
   Loader2,
   AlertCircle,
@@ -17,7 +16,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 
 export interface RecruiterUser {
   id: number;

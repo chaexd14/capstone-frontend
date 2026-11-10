@@ -1,0 +1,46 @@
+name: Frontend CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:8000/api
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-key
+      NEXT_PUBLIC_ORGANIZATION_NAME: TalentMatch CI
+      NEXT_PUBLIC_PRIVACY_CONTACT_EMAIL: privacy@example.test
+      NEXT_PUBLIC_PRIVACY_POLICY_VERSION: ci-draft
+      NEXT_PUBLIC_DATA_RETENTION_DAYS: "365"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Audit dependencies
+        run: npm audit --audit-level=moderate
+      - name: Lint
+        run: npm run lint
+      - name: Validate production environment contract
+        run: npm run check:production-env
+      - name: Build production bundle
+        run: npm run build
+      - name: Install browser for end-to-end tests
+        run: npx playwright install --with-deps chromium
+      - name: Run critical browser tests
+        run: npm run test:e2e
