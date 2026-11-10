@@ -4,7 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { useRouter } from "next/navigation";
 import { Job } from "@/types/job";
 import { Application } from "@/types/application";
-import { fetchApi } from "@/lib/api";
+import { ApiError, fetchApi } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
 
 export interface RecruiterUserInfo {
@@ -27,7 +27,6 @@ interface RecruiterContextValue {
   loadData: () => Promise<void>;
   onJobCreated: (newJob: Job) => void;
   onJobUpdated: (updatedJob: Job) => void;
-  onJobDeleted: (jobId: number) => void;
   onJobArchived: (jobId: number) => void;
   onApplicationUpdated: (updatedApp: Application) => void;
   handleLogout: () => Promise<void>;
@@ -50,7 +49,16 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [isCreateJobOpen, setIsCreateJobOpen] = useState(false);
 
-  // Check Supabase session on mount
+  const clearRecruiterStorage = useCallback(() => {
+    try {
+      sessionStorage.removeItem("tm_cached_apps");
+      sessionStorage.removeItem("tm_cached_jobs");
+      localStorage.removeItem("talentmatch_recruiter_user");
+      localStorage.removeItem("talentmatch_recruiter_token");
+    } catch {}
+  }, []);
+
+  // Check Supabase session on mount and verify authoritative role with backend
   useEffect(() => {
     const checkAuth = async () => {
       try {
@@ -59,43 +67,56 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
         } = await supabase.auth.getUser();
 
         if (!user) {
+          clearRecruiterStorage();
           router.replace("/recruiter/login?next=/admin");
           return;
         }
 
-        const role = user.user_metadata?.role;
-        if (role === "applicant") {
+        // Authoritatively verify role with Django backend
+        const meData = await fetchApi<{
+          user: { role: string; email?: string; name?: string };
+        }>("/auth/me/");
+
+        const verifiedRole = meData?.user?.role?.toLowerCase();
+
+        // Fail-closed authorization boundary: only authorized recruiters or superadmins allowed
+        if (verifiedRole !== "recruiter" && verifiedRole !== "superadmin") {
+          clearRecruiterStorage();
           router.replace("/careers?error=recruiter_only");
           return;
         }
 
+        clearRecruiterStorage();
         setCurrentUser({
           id: user.id,
-          email: user.email,
-          name: user.user_metadata?.full_name || user.email?.split("@")[0] || "Recruiter",
-          role: role || "recruiter",
+          email: meData?.user?.email || user.email,
+          name: meData?.user?.name || user.user_metadata?.full_name || user.email?.split("@")[0] || "Recruiter",
+          role: verifiedRole,
           company: user.user_metadata?.company || "Talent Operations",
         });
       } catch (err) {
         console.error("Auth check failed:", err);
+        clearRecruiterStorage();
+        if (err instanceof ApiError && err.status === 401) {
+          await supabase.auth.signOut({ scope: "local" });
+        }
         router.replace("/recruiter/login");
       } finally {
         setAuthChecked(true);
       }
     };
     void checkAuth();
-  }, [router, supabase]);
+  }, [router, supabase, clearRecruiterStorage]);
 
+  const isPlatformAdmin = currentUser?.role === "superadmin";
   const loadData = useCallback(async () => {
     try {
-      const cachedJobs = sessionStorage.getItem("tm_cached_jobs");
-      const cachedApps = sessionStorage.getItem("tm_cached_apps");
-      if (cachedJobs) setJobs(JSON.parse(cachedJobs));
-      if (cachedApps) setApplications(JSON.parse(cachedApps));
-      if (cachedJobs || cachedApps) setLoading(false);
-    } catch {}
-
-    try {
+      if (isPlatformAdmin) {
+        await fetchApi("/auth/me/");
+        setBackendOnline(true);
+        setLoading(false);
+        return;
+      }
       const [jobsData, appsData] = await Promise.all([
         fetchApi<Job[]>("/jobs/"),
         fetchApi<Application[]>("/applications/"),
@@ -103,18 +124,22 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
 
       setJobs(jobsData);
       setApplications(appsData);
-      try {
-        sessionStorage.setItem("tm_cached_jobs", JSON.stringify(jobsData));
-        sessionStorage.setItem("tm_cached_apps", JSON.stringify(appsData));
-      } catch {}
       setBackendOnline(true);
       setLoading(false);
     } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        setJobs([]);
+        setApplications([]);
+        setCurrentUser(null);
+        clearRecruiterStorage();
+        await supabase.auth.signOut({ scope: "local" });
+        router.replace("/recruiter/login");
+      }
       console.error("Data load error:", err);
       setBackendOnline(false);
       setLoading(false);
     }
-  }, []);
+  }, [clearRecruiterStorage, isPlatformAdmin, router, supabase]);
 
   useEffect(() => {
     if (currentUser) {
@@ -157,11 +182,6 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
     setJobs((prev) => prev.map((j) => (j.id === updatedJob.id ? updatedJob : j)));
   }, []);
 
-  const onJobDeleted = useCallback((jobId: number) => {
-    setJobs((prev) => prev.filter((j) => j.id !== jobId));
-    setApplications((prev) => prev.filter((a) => a.job !== jobId));
-  }, []);
-
   const onJobArchived = useCallback((jobId: number) => {
     setJobs((prev) => prev.filter((j) => j.id !== jobId));
     setApplications((prev) => prev.filter((a) => a.job !== jobId));
@@ -186,7 +206,6 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
       loadData,
       onJobCreated,
       onJobUpdated,
-      onJobDeleted,
       onJobArchived,
       onApplicationUpdated,
       handleLogout,
@@ -204,7 +223,6 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
       loadData,
       onJobCreated,
       onJobUpdated,
-      onJobDeleted,
       onJobArchived,
       onApplicationUpdated,
       handleLogout,

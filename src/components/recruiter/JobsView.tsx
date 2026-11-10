@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Job, ArchivedJob } from "@/types/job";
 import { Application } from "@/types/application";
-import { Plus, Trash2, RefreshCw } from "lucide-react";
+import { Plus, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -39,7 +39,6 @@ export function JobsView() {
     jobs,
     applications,
     onJobUpdated,
-    onJobDeleted,
     onJobArchived,
     setIsCreateJobOpen,
   } = useRecruiter();
@@ -53,7 +52,6 @@ export function JobsView() {
   // Action Confirmation Modal State
   const [actionModalType, setActionModalType] = useState<JobActionType | null>(null);
   const [actionJob, setActionJob] = useState<Job | null>(null);
-  const [actionArchivedJob, setActionArchivedJob] = useState<ArchivedJob | null>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
 
   const loadArchivedJobs = useCallback(async () => {
@@ -112,14 +110,6 @@ export function JobsView() {
         onJobArchived(actionJob.id);
         toast.success("Position Archived", { description: `"${actionJob.title}" moved to archive.` });
         void loadArchivedJobs();
-      } else if (actionModalType === "delete" && actionJob) {
-        await fetchApi(`/jobs/${actionJob.id}/`, { method: "DELETE" });
-        onJobDeleted(actionJob.id);
-        toast.success("Position Deleted", { description: `"${actionJob.title}" was deleted.` });
-      } else if (actionModalType === "delete_archived" && actionArchivedJob) {
-        await fetchApi(`/archived-jobs/${actionArchivedJob.id}/`, { method: "DELETE" });
-        setArchivedJobs((prev) => prev.filter((a) => a.id !== actionArchivedJob.id));
-        toast.success("Permanently Deleted", { description: "Requisition removed from archive." });
       }
     } catch (err: unknown) {
       console.error("Job action failed:", err);
@@ -129,7 +119,6 @@ export function JobsView() {
       setIsActionLoading(false);
       setActionModalType(null);
       setActionJob(null);
-      setActionArchivedJob(null);
     }
   };
 
@@ -513,18 +502,6 @@ export function JobsView() {
                             >
                               Restore
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setActionArchivedJob(archived);
-                                setActionModalType("delete_archived");
-                              }}
-                              className="h-7 text-xs text-rose-600 hover:bg-rose-50 hover:text-rose-700 px-2 font-medium"
-                              title="Delete permanently from archive"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -543,11 +520,10 @@ export function JobsView() {
         onClose={() => {
           setActionModalType(null);
           setActionJob(null);
-          setActionArchivedJob(null);
-        }}
+            }}
         onConfirm={handleConfirmAction}
         actionType={actionModalType}
-        jobTitle={actionJob?.title || actionArchivedJob?.title || ""}
+        jobTitle={actionJob?.title || ""}
         isLoading={isActionLoading}
       />
     </div>

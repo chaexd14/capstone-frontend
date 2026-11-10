@@ -37,7 +37,7 @@ function AdminPageContent() {
 
   const activeView = searchParams.get("view") || "dashboard";
 
-  if (loading && jobs.length === 0 && applications.length === 0) {
+  if (activeView !== "platform" && loading && jobs.length === 0 && applications.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[50vh] gap-3">
         <Loader2 className="h-6 w-6 animate-spin text-[#2196F3]" />
@@ -50,7 +50,11 @@ function AdminPageContent() {
 
   return (
     <>
-      {activeView === "jobs" ? (
+      {activeView === "platform" ? (
+        <p role="alert" className="py-6 text-sm text-muted-foreground">
+          Companies and staff management requires a Super Admin account.
+        </p>
+      ) : activeView === "jobs" ? (
         <JobsView />
       ) : activeView === "applicants" ? (
         <AllApplicantsView onSelectApplication={setSelectedApplication} />

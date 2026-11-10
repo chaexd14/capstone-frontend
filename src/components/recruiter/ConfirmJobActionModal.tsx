@@ -11,23 +11,18 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import {
-  AlertTriangle,
   Archive,
-  Trash2,
   Lock,
   RotateCcw,
-  Users,
-  FileText,
   Loader2,
 } from "lucide-react";
 
-export type JobActionType = "close" | "reopen" | "archive" | "delete" | "delete_archived";
+export type JobActionType = "close" | "reopen" | "archive";
 
 interface ConfirmJobActionModalProps {
   isOpen: boolean;
   actionType: JobActionType | null;
   jobTitle: string;
-  applicantCount?: number;
   isLoading?: boolean;
   onConfirm: () => void;
   onClose: () => void;
@@ -37,7 +32,6 @@ export function ConfirmJobActionModal({
   isOpen,
   actionType,
   jobTitle,
-  applicantCount = 0,
   isLoading = false,
   onConfirm,
   onClose,
@@ -98,89 +92,16 @@ export function ConfirmJobActionModal({
         return {
           title: "Archive Job Requisition",
           icon: <Archive className="h-5 w-5 text-rose-500" />,
-          variant: "destructive" as const,
-          confirmLabel: "Archive & Purge Applicants",
-          confirmClass: "bg-destructive hover:bg-destructive/90 text-destructive-foreground",
+          variant: "default" as const,
+          confirmLabel: "Archive Position",
           description: (
-            <div className="space-y-3 text-sm text-muted-foreground pt-1">
-              <p>
-                Move <strong className="text-foreground">&ldquo;{jobTitle}&rdquo;</strong> to the Archived Jobs repository?
-              </p>
-              <div className="p-3.5 rounded-xl border border-destructive/30 bg-destructive/10 text-destructive text-xs space-y-2 leading-relaxed">
-                <div className="font-bold flex items-center gap-1.5 text-sm">
-                  <AlertTriangle className="h-4 w-4 text-destructive shrink-0" />
-                  <span>Permanent Applicant Deletion Warning</span>
-                </div>
-                <p className="text-foreground/90">
-                  Archiving this job will <strong>permanently and irreversibly delete</strong>:
-                </p>
-                <div className="flex flex-col gap-1.5 pt-1 text-foreground/80 font-medium">
-                  <div className="flex items-center gap-2">
-                    <Users className="h-3.5 w-3.5 text-destructive" />
-                    <span>
-                      {applicantCount} applicant candidate record{applicantCount === 1 ? "" : "s"} &amp; AI rankings
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <FileText className="h-3.5 w-3.5 text-destructive" />
-                    <span>All uploaded resume files quarantined in cloud storage</span>
-                  </div>
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                The role requirements will be safely stored in the <strong>Archived Jobs</strong> repository,
-                from where you can reopen it anytime with 0 applicants.
-              </p>
-            </div>
+            <p className="text-sm text-muted-foreground">
+              Move <strong className="text-foreground">&ldquo;{jobTitle}&rdquo;</strong> to Archived Jobs?
+              Applications and resumes will be available when the position is restored.
+            </p>
           ),
         };
 
-      case "delete":
-        return {
-          title: "Permanently Delete Job",
-          icon: <Trash2 className="h-5 w-5 text-destructive" />,
-          variant: "destructive" as const,
-          confirmLabel: "Delete Job Permanently",
-          confirmClass: "bg-destructive hover:bg-destructive/90 text-destructive-foreground",
-          description: (
-            <div className="space-y-3 text-sm text-muted-foreground pt-1">
-              <p>
-                Permanently delete <strong className="text-foreground">&ldquo;{jobTitle}&rdquo;</strong>?
-              </p>
-              <div className="p-3.5 rounded-xl border border-destructive/30 bg-destructive/10 text-destructive text-xs space-y-2 leading-relaxed">
-                <div className="font-bold flex items-center gap-1.5 text-sm">
-                  <AlertTriangle className="h-4 w-4 text-destructive shrink-0" />
-                  <span>Irreversible Action</span>
-                </div>
-                <p className="text-foreground/90">
-                  This active job requisition along with all{" "}
-                  <strong>{applicantCount} applicant record{applicantCount === 1 ? "" : "s"}</strong> and
-                  their uploaded resume files will be permanently erased. This cannot be undone.
-                </p>
-              </div>
-            </div>
-          ),
-        };
-
-      case "delete_archived":
-        return {
-          title: "Delete Archived Job Requisition",
-          icon: <Trash2 className="h-5 w-5 text-destructive" />,
-          variant: "destructive" as const,
-          confirmLabel: "Delete Permanently",
-          confirmClass: "bg-destructive hover:bg-destructive/90 text-destructive-foreground",
-          description: (
-            <div className="space-y-3 text-sm text-muted-foreground pt-1">
-              <p>
-                Permanently delete archived job <strong className="text-foreground">&ldquo;{jobTitle}&rdquo;</strong>?
-              </p>
-              <p className="text-xs text-muted-foreground leading-relaxed">
-                This will remove the archived specification completely from the database. This action
-                cannot be undone.
-              </p>
-            </div>
-          ),
-        };
     }
   };
 

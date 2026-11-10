@@ -6,7 +6,6 @@ import { Application } from "@/types/application";
 import {
   Plus,
   Search,
-  Trash2,
   RefreshCw,
 } from "lucide-react";
 import { CreateJobModal } from "./CreateJobModal";
@@ -47,7 +46,6 @@ interface RecruiterPortalProps {
   anonymize: boolean;
   onJobCreated: (job: Job) => void;
   onJobUpdated?: (job: Job) => void;
-  onJobDeleted?: (jobId: number) => void;
   onJobArchived?: (jobId: number) => void;
   onRefreshData?: () => void;
   onApplicationUpdated: (app: Application) => void;
@@ -59,7 +57,6 @@ export function RecruiterPortal({
   anonymize,
   onJobCreated,
   onJobUpdated,
-  onJobDeleted,
   onJobArchived,
   onApplicationUpdated,
 }: RecruiterPortalProps) {
@@ -80,7 +77,6 @@ export function RecruiterPortal({
   // Action Confirmation Modal State
   const [actionModalType, setActionModalType] = useState<JobActionType | null>(null);
   const [actionJob, setActionJob] = useState<Job | null>(null);
-  const [actionArchivedJob, setActionArchivedJob] = useState<ArchivedJob | null>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
 
   const loadArchivedJobs = useCallback(async () => {
@@ -141,14 +137,6 @@ export function RecruiterPortal({
         if (onJobArchived) onJobArchived(actionJob.id);
         toast.success("Requisition Archived", { description: `"${actionJob.title}" archived.` });
         void loadArchivedJobs();
-      } else if (actionModalType === "delete" && actionJob) {
-        await fetchApi(`/jobs/${actionJob.id}/`, { method: "DELETE" });
-        if (onJobDeleted) onJobDeleted(actionJob.id);
-        toast.success("Position Deleted", { description: `"${actionJob.title}" deleted.` });
-      } else if (actionModalType === "delete_archived" && actionArchivedJob) {
-        await fetchApi(`/archived-jobs/${actionArchivedJob.id}/`, { method: "DELETE" });
-        setArchivedJobs((prev) => prev.filter((j) => j.id !== actionArchivedJob.id));
-        toast.success("Archived Requisition Deleted");
       }
     } catch (err: unknown) {
       console.error("Action error:", err);
@@ -158,7 +146,6 @@ export function RecruiterPortal({
       setIsActionLoading(false);
       setActionModalType(null);
       setActionJob(null);
-      setActionArchivedJob(null);
     }
   };
 
@@ -224,10 +211,6 @@ export function RecruiterPortal({
             if (onJobArchived) onJobArchived(jobId);
             setSelectedJob(null);
             void loadArchivedJobs();
-          }}
-          onJobDeleted={(jobId) => {
-            if (onJobDeleted) onJobDeleted(jobId);
-            setSelectedJob(null);
           }}
         />
       </div>
@@ -687,18 +670,6 @@ export function RecruiterPortal({
                               >
                                 Restore
                               </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => {
-                                  setActionArchivedJob(aj);
-                                  setActionModalType("delete_archived");
-                                }}
-                                disabled={isActionLoading}
-                                className="h-8 text-xs text-rose-600 hover:bg-rose-50 cursor-pointer"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </Button>
                             </div>
                           </TableCell>
                         </TableRow>
@@ -880,11 +851,10 @@ export function RecruiterPortal({
         onClose={() => {
           setActionModalType(null);
           setActionJob(null);
-          setActionArchivedJob(null);
-        }}
+            }}
         onConfirm={handleConfirmAction}
         actionType={actionModalType}
-        jobTitle={actionJob?.title || actionArchivedJob?.title || ""}
+        jobTitle={actionJob?.title || ""}
         isLoading={isActionLoading}
       />
     </div>

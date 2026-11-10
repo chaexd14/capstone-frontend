@@ -1,12 +1,13 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-export async function updateSession(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({
-    request: {
-      headers: request.headers,
-    },
-  });
+export async function updateSession(request: NextRequest, policy: string) {
+  const nextResponse = () => {
+    const headers = new Headers(request.headers);
+    headers.set("Content-Security-Policy", policy);
+    return NextResponse.next({ request: { headers } });
+  };
+  let supabaseResponse = nextResponse();
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -20,9 +21,7 @@ export async function updateSession(request: NextRequest) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
-          supabaseResponse = NextResponse.next({
-            request,
-          });
+          supabaseResponse = nextResponse();
           cookiesToSet.forEach(({ name, value, options }) =>
             supabaseResponse.cookies.set(name, value, options)
           );
@@ -36,11 +35,13 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const pathname = request.nextUrl.pathname;
-  const role = user?.user_metadata?.role as string | undefined;
+  // Read only server-controlled claims (app_metadata). Client user_metadata is never trusted.
+  // Authoritative API permissions and RecruiterContext enforce database checks with the backend.
+  const role = (user?.app_metadata?.role as string | undefined)?.toLowerCase();
 
   // 1. Recruiter Route Protection (/recruiter/*, /admin, /admin/*)
   const isRecruiterRoute =
-    (pathname.startsWith("/recruiter") && !pathname.startsWith("/recruiter/login")) ||
+    (pathname.startsWith("/recruiter") && !["/recruiter/login", "/recruiter/signup"].includes(pathname)) ||
     pathname.startsWith("/admin");
 
   if (isRecruiterRoute) {
@@ -51,18 +52,11 @@ export async function updateSession(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    if (role !== "recruiter" && role !== "superadmin") {
-      // Logged in as applicant, tried to access recruiter portal
-      const url = request.nextUrl.clone();
-      url.pathname = "/careers";
-      url.searchParams.set("error", "recruiter_only");
-      return NextResponse.redirect(url);
-    }
   }
 
   // 2. Applicant Protected Routes (/applicant/* except /applicant/login)
   const isApplicantProtectedRoute =
-    pathname.startsWith("/applicant") && !pathname.startsWith("/applicant/login");
+    pathname.startsWith("/applicant") && !["/applicant/login", "/applicant/signup"].includes(pathname);
 
   if (isApplicantProtectedRoute) {
     if (!user) {
@@ -87,10 +81,6 @@ export async function updateSession(request: NextRequest) {
       url.pathname = "/recruiter";
       return NextResponse.redirect(url);
     }
-    // Applicant visiting recruiter login
-    const url = request.nextUrl.clone();
-    url.pathname = "/careers";
-    return NextResponse.redirect(url);
   }
 
   if (pathname === "/applicant/login" && user) {

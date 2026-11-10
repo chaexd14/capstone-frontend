@@ -1,7 +1,6 @@
 import { createClient } from "@/lib/supabase/client";
 
 export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api").replace(/\/+$/, "");
-export const APP_CLIENT_KEY = process.env.NEXT_PUBLIC_APP_CLIENT_KEY || "talentmatch-client-key-2026";
 
 export class ApiError extends Error {
   status: number;
@@ -70,17 +69,9 @@ export async function getAuthToken(): Promise<string | null> {
   }
 }
 
-export function getSecurityHeaders(): Record<string, string> {
-  return {
-    "X-Requested-With": "XMLHttpRequest",
-    "X-App-Client-Key": APP_CLIENT_KEY,
-  };
-}
-
 export async function getAuthHeaders(): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
     "X-Requested-With": "XMLHttpRequest",
-    "X-App-Client-Key": APP_CLIENT_KEY,
   };
   const token = await getAuthToken();
   if (token) {
@@ -89,12 +80,11 @@ export async function getAuthHeaders(): Promise<Record<string, string>> {
   return headers;
 }
 
-export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+async function fetchApiResponse(endpoint: string, options: RequestInit): Promise<Response> {
   const url = `${API_BASE_URL}${endpoint.startsWith("/") ? endpoint : `/${endpoint}`}`;
   
   const headers = new Headers(options.headers || {});
   headers.set("X-Requested-With", "XMLHttpRequest");
-  headers.set("X-App-Client-Key", APP_CLIENT_KEY);
 
   if (!headers.has("Authorization")) {
     const token = await getAuthToken();
@@ -110,7 +100,7 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): 
   const response = await fetch(url, {
     ...options,
     headers,
-    credentials: "include",
+    credentials: "omit",
   });
 
   if (!response.ok) {
@@ -125,5 +115,22 @@ export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): 
     throw new ApiError(parsed.message, response.status, parsed.fieldErrors);
   }
 
-  return response.json();
+  return response;
+}
+
+export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+  return (await fetchApiResponse(endpoint, options)).json();
+}
+
+export async function downloadApiFile(endpoint: string, filename: string, options: RequestInit) {
+  const response = await fetchApiResponse(endpoint, options);
+  const url = URL.createObjectURL(await response.blob());
+  const link = document.createElement("a");
+  link.href = url;
+  const serverFilename = response.headers.get("Content-Disposition")?.match(/filename="([a-z0-9._-]+)"/i)?.[1];
+  link.download = serverFilename ?? filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }

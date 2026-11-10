@@ -1,5 +1,6 @@
 "use client";
 
+import { getSafeRedirectUrl } from "@/lib/auth-redirect";
 import React, { useState, useId, useMemo } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -27,18 +28,18 @@ import {
 import { TermsAgreementModal } from "@/components/auth/TermsAgreementModal";
 
 interface SignupPageComponentProps {
-  initialRole?: "recruiter" | "applicant";
+  initialRole?: "applicant";
 }
 
 type SignupField = "firstName" | "lastName" | "email" | "password" | "repeatPassword";
 
-export function SignupPageComponent({ initialRole = "applicant" }: SignupPageComponentProps) {
+export function SignupPageComponent({}: SignupPageComponentProps = {}) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const nextParam = searchParams.get("next");
-  const roleParam = searchParams.get("role") as "recruiter" | "applicant" | null;
 
-  const [portalRole] = useState<"recruiter" | "applicant">(roleParam || initialRole);
+  // Public signup is strictly applicant-only. Recruiter accounts are provisioned by administrators.
+  const portalRole = "applicant" as const;
   const [loading, setLoading] = useState(false);
 
   // Form Fields matching Sign up.png
@@ -71,11 +72,8 @@ export function SignupPageComponent({ initialRole = "applicant" }: SignupPageCom
   const passwordInputId = useId();
   const repeatPasswordInputId = useId();
 
-  const resolvedNextUrl =
-    nextParam || (portalRole === "recruiter" ? "/recruiter" : "/careers");
-
-  // Login URL depends on current role
-  const loginUrl = portalRole === "recruiter" ? "/recruiter/login" : "/login";
+  const resolvedNextUrl = getSafeRedirectUrl(nextParam, "/careers");
+  const loginUrl = "/login";
 
   const passwordValidation = useMemo(() => validatePasswordStrength(password), [password]);
   const passwordsMatch =
@@ -195,11 +193,10 @@ export function SignupPageComponent({ initialRole = "applicant" }: SignupPageCom
         password: password,
         options: {
           data: {
-            role: portalRole,
+            role: "applicant",
             full_name: fullName,
             first_name: cleanFirst,
             last_name: cleanLast,
-            company: portalRole === "recruiter" ? "Talent Acquisition Team" : undefined,
             terms_accepted: true,
             terms_accepted_at: new Date().toISOString(),
             terms_version: "2026.1",
@@ -207,6 +204,9 @@ export function SignupPageComponent({ initialRole = "applicant" }: SignupPageCom
         },
       });
 
+      if (error?.status === 429) {
+        throw new Error("Signup is temporarily limited. Please wait before trying again.");
+      }
       if (error) {
         throw error;
       }
@@ -283,9 +283,7 @@ export function SignupPageComponent({ initialRole = "applicant" }: SignupPageCom
               Create your account today
             </h1>
             <p className="text-sm text-slate-500 mt-2 leading-relaxed max-w-sm mx-auto">
-              {portalRole === "recruiter"
-                ? "Register your talent acquisition team to start screening candidates with explainable AI."
-                : "Create your applicant account to unlock instant AI resume matching and feedback."}
+              Create your applicant account to unlock instant AI resume matching and feedback.
             </p>
           </div>
 

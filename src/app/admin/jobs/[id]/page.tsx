@@ -19,7 +19,6 @@ export default function JobDetailPage() {
     loading,
     onJobUpdated,
     onJobArchived,
-    onJobDeleted,
     onApplicationUpdated,
   } = useRecruiter();
 
@@ -68,10 +67,6 @@ export default function JobDetailPage() {
         onJobUpdated={onJobUpdated}
         onJobArchived={(id) => {
           onJobArchived(id);
-          router.push("/admin?view=jobs");
-        }}
-        onJobDeleted={(id) => {
-          onJobDeleted(id);
           router.push("/admin?view=jobs");
         }}
       />

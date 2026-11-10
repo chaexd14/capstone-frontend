@@ -6,6 +6,7 @@ import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   Briefcase,
+  Building2,
   Users,
   Shield,
   LogOut,
@@ -52,13 +53,21 @@ export function RecruiterSidebar({ onCloseMobile }: RecruiterSidebarProps) {
   }, [userMenuOpen]);
 
   const activeView = searchParams.get("view") || "dashboard";
+  const isSuperAdmin = currentUser?.role === "superadmin";
   const isJobDetail = pathname.startsWith("/admin/jobs/");
 
   const activeJobsCount = jobs.filter(
     (j) => j.status === "PUBLISHED" || (!j.status && j.status !== "CLOSED")
   ).length;
 
-  const navItems = [
+  const navItems = isSuperAdmin ? [{
+    id: "platform",
+    label: "Companies & staff",
+    icon: Building2,
+    href: "/admin?view=platform",
+    isActive: true,
+    badge: null,
+  }] : [
     {
       id: "dashboard",
       label: "Dashboard",
@@ -101,7 +110,7 @@ export function RecruiterSidebar({ onCloseMobile }: RecruiterSidebarProps) {
         {/* Brand Header */}
         <div className="h-10 flex items-center px-2 mb-3">
           <Link
-            href="/admin?view=dashboard"
+            href={isSuperAdmin ? "/admin?view=platform" : "/admin?view=dashboard"}
             onClick={() => onCloseMobile && onCloseMobile()}
             className="flex items-center gap-2.5 group"
           >
@@ -113,30 +122,31 @@ export function RecruiterSidebar({ onCloseMobile }: RecruiterSidebarProps) {
                 TalentMatch
               </span>
               <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mt-0.5">
-                Recruiter Studio
+                {isSuperAdmin ? "Super Admin" : "Recruiter Studio"}
               </span>
             </div>
           </Link>
         </div>
 
-        {/* Quick Action Row: TalentMatch Brand CTA + Notifications */}
-        <div className="flex items-center gap-2 mb-4 px-1">
-          <button
-            type="button"
-            onClick={() => setIsCreateJobOpen(true)}
-            className="flex-1 h-9.5 bg-[#2196F3] hover:bg-[#1976D2] text-white font-semibold text-xs rounded-xl shadow-2xs hover:shadow-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Post New Job</span>
-          </button>
+        {!isSuperAdmin && (
+          <div className="flex items-center gap-2 mb-4 px-1">
+            <button
+              type="button"
+              onClick={() => setIsCreateJobOpen(true)}
+              className="flex-1 h-9.5 bg-[#2196F3] hover:bg-[#1976D2] text-white font-semibold text-xs rounded-xl shadow-2xs hover:shadow-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Post New Job</span>
+            </button>
 
-          <div className="h-9.5 w-9.5 rounded-xl border border-slate-200/90 bg-white hover:bg-blue-50/50 hover:border-blue-200 flex items-center justify-center shrink-0 shadow-2xs transition-colors">
-            <NotificationBell
-              role={currentUser?.role || "recruiter"}
-              userId={currentUser?.id || null}
-            />
+            <div className="h-9.5 w-9.5 rounded-xl border border-slate-200/90 bg-white hover:bg-blue-50/50 hover:border-blue-200 flex items-center justify-center shrink-0 shadow-2xs transition-colors">
+              <NotificationBell
+                role={currentUser?.role || "recruiter"}
+                userId={currentUser?.id || null}
+              />
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Primary Workspace Navigation */}
         <nav className="space-y-1 px-1" aria-label="Recruiter Studio Navigation">
@@ -178,46 +188,47 @@ export function RecruiterSidebar({ onCloseMobile }: RecruiterSidebarProps) {
           })}
         </nav>
 
-        {/* Workspace Controls / Preferences */}
-        <div className="mt-6 px-1 space-y-1.5">
-          <div className="px-3 pb-0.5">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-              Workspace Settings
-            </span>
-          </div>
-
-          {/* Demographic Masking Toggle */}
-          <button
-            type="button"
-            onClick={() => setAnonymize(!anonymize)}
-            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs transition-all cursor-pointer border ${
-              anonymize
-                ? "bg-white text-[#1976D2] font-semibold border-blue-200/80 shadow-2xs"
-                : "text-slate-600 hover:text-slate-900 hover:bg-white/70 border-transparent"
-            }`}
-          >
-            <div className="flex items-center gap-2.5">
-              <Shield className={`w-4 h-4 ${anonymize ? "text-[#2196F3]" : "text-slate-500"}`} />
-              <div className="text-left">
-                <span className="block leading-none">Blind Screening</span>
-                <span className="text-[10px] text-slate-400 font-normal block mt-0.5">
-                  {anonymize ? "PII masked for fair review" : "Candidate names visible"}
-                </span>
-              </div>
+        {!isSuperAdmin && (
+          <div className="mt-6 px-1 space-y-1.5">
+            <div className="px-3 pb-0.5">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                Workspace Settings
+              </span>
             </div>
-            <div
-              className={`w-8 h-4.5 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
-                anonymize ? "bg-[#2196F3]" : "bg-slate-300"
+
+            {/* Demographic Masking Toggle */}
+            <button
+              type="button"
+              onClick={() => setAnonymize(!anonymize)}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs transition-all cursor-pointer border ${
+                anonymize
+                  ? "bg-white text-[#1976D2] font-semibold border-blue-200/80 shadow-2xs"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-white/70 border-transparent"
               }`}
             >
+              <div className="flex items-center gap-2.5">
+                <Shield className={`w-4 h-4 ${anonymize ? "text-[#2196F3]" : "text-slate-500"}`} />
+                <div className="text-left">
+                  <span className="block leading-none">Blind Screening</span>
+                  <span className="text-[10px] text-slate-400 font-normal block mt-0.5">
+                    {anonymize ? "PII masked for fair review" : "Candidate names visible"}
+                  </span>
+                </div>
+              </div>
               <div
-                className={`w-3.5 h-3.5 rounded-full bg-white shadow-xs transition-transform transform ${
-                  anonymize ? "translate-x-3.5" : "translate-x-0"
+                className={`w-8 h-4.5 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
+                  anonymize ? "bg-[#2196F3]" : "bg-slate-300"
                 }`}
-              />
-            </div>
-          </button>
-        </div>
+              >
+                <div
+                  className={`w-3.5 h-3.5 rounded-full bg-white shadow-xs transition-transform transform ${
+                    anonymize ? "translate-x-3.5" : "translate-x-0"
+                  }`}
+                />
+              </div>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Bottom Section: User Profile Pill */}
@@ -230,7 +241,7 @@ export function RecruiterSidebar({ onCloseMobile }: RecruiterSidebarProps) {
               <div className="text-[11px] text-slate-400 font-mono truncate">{userEmail}</div>
               <div className="mt-1">
                 <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-[#1976D2] border border-blue-100">
-                  Hiring Team Recruiter
+                  {isSuperAdmin ? "Platform Administrator" : "Hiring Team Recruiter"}
                 </span>
               </div>
             </div>

@@ -231,13 +231,13 @@ export function TermsAgreementModal({
 
               <div>
                 <h4 className="font-semibold text-foreground text-sm mb-1">
-                  2.3 Isolation from Public LLM Training
+                  2.3 AI-assisted resume screening
                 </h4>
                 <p>
-                  Candidate resumes, contact details, and employer notes are strictly
-                  isolated. They are never sold, disclosed to data brokers, or used to
-                  train external public foundation models. All model calls strictly
-                  honor zero-retention enterprise privacy terms.
+                  If AI-assisted screening is enabled, TalentMatch removes common personal
+                  identifiers before sending resume text to its AI provider. Resume text can
+                  still contain identifying details. The deployment privacy notice explains
+                  which provider processes the data and how long it can retain it.
                 </p>
               </div>
 

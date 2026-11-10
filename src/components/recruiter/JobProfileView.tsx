@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useId } from "react";
 import { Job } from "@/types/job";
 import { Application, ApplicationStatus } from "@/types/application";
 import {
@@ -8,6 +8,7 @@ import {
   Mail,
   Phone,
   FileText,
+  Download,
   ChevronUp,
   ChevronDown,
   ChevronRight,
@@ -19,9 +20,9 @@ import {
   Lock,
   Unlock,
   Archive,
-  Trash2,
 } from "lucide-react";
 import { CandidateAnalysisModal } from "./CandidateAnalysisModal";
+import { JobReportPanel } from "./JobReportPanel";
 import { CandidatePinpointDossier } from "./CandidatePinpointDossier";
 import { ConfirmJobActionModal, JobActionType } from "./ConfirmJobActionModal";
 import { fetchApi } from "@/lib/api";
@@ -55,7 +56,6 @@ interface JobProfileViewProps {
   onApplicationUpdated: (updatedApp: Application) => void;
   onJobUpdated?: (updatedJob: Job) => void;
   onJobArchived?: (jobId: number) => void;
-  onJobDeleted?: (jobId: number) => void;
 }
 
 export function JobProfileView({
@@ -66,7 +66,6 @@ export function JobProfileView({
   onApplicationUpdated,
   onJobUpdated,
   onJobArchived,
-  onJobDeleted,
 }: JobProfileViewProps) {
   const [currentJob, setCurrentJob] = useState<Job>(job);
   const [prevJob, setPrevJob] = useState<Job>(job);
@@ -91,6 +90,8 @@ export function JobProfileView({
   const [isAnalysisOpen, setIsAnalysisOpen] = useState(false);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [showDetails, setShowDetails] = useState(false);
+  const [showReport, setShowReport] = useState(false);
+  const reportPanelId = useId();
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<Set<number>>(new Set());
   const [isBulkUpdating, setIsBulkUpdating] = useState(false);
   const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState(false);
@@ -162,13 +163,6 @@ export function JobProfileView({
         if (onJobArchived) onJobArchived(currentJob.id);
         toast.success("Requisition Archived", {
           description: `"${currentJob.title}" has been moved to archives.`,
-        });
-        onBack();
-      } else if (actionModalType === "delete") {
-        await fetchApi(`/jobs/${currentJob.id}/`, { method: "DELETE" });
-        if (onJobDeleted) onJobDeleted(currentJob.id);
-        toast.success("Position Deleted", {
-          description: `"${currentJob.title}" has been permanently deleted.`,
         });
         onBack();
       }
@@ -416,7 +410,7 @@ export function JobProfileView({
         </div>
 
         {/* Right: Status Badges & Protected Requisition Settings */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
           {currentJob.status === "CLOSED" ? (
             <Badge variant="outline" className="py-1 px-2.5 text-xs font-semibold border-amber-200 text-amber-800 bg-amber-50">
               Closed · Submissions Locked
@@ -433,6 +427,18 @@ export function JobProfileView({
               Demographics Masked
             </Badge>
           )}
+
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={() => setShowReport((open) => !open)}
+            aria-expanded={showReport}
+            aria-controls={reportPanelId}
+          >
+            <Download aria-hidden="true" />
+            Generate report
+          </Button>
 
           {/* Protected Settings Dropdown Menu */}
           <div className="relative" ref={settingsMenuRef}>
@@ -531,25 +537,15 @@ export function JobProfileView({
                     </div>
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActionModalType("delete");
-                      setIsSettingsMenuOpen(false);
-                    }}
-                    className="w-full flex items-center gap-2.5 px-2.5 py-2 text-left rounded-xl text-rose-700 hover:bg-rose-50 cursor-pointer font-medium transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4 text-rose-600 shrink-0" />
-                    <div>
-                      <div className="font-semibold text-xs text-rose-700">Delete Position</div>
-                      <div className="text-[10px] text-rose-500">Permanently delete requisition & data</div>
-                    </div>
-                  </button>
                 </div>
               </div>
             )}
           </div>
         </div>
+      </div>
+
+      <div id={reportPanelId} hidden={!showReport}>
+        {showReport && <JobReportPanel key={currentJob.id} jobId={currentJob.id} />}
       </div>
 
       {/* 2. Requisition Title, Meta & Compact Metrics Hero */}
@@ -1700,7 +1696,6 @@ export function JobProfileView({
         isOpen={actionModalType !== null}
         actionType={actionModalType}
         jobTitle={currentJob.title}
-        applicantCount={totalCount}
         isLoading={isActionLoading}
         onConfirm={handleConfirmAction}
         onClose={() => setActionModalType(null)}

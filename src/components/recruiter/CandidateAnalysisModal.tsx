@@ -9,7 +9,7 @@ import {
   User,
 } from "lucide-react";
 import { Application, ApplicationStatus } from "@/types/application";
-import { fetchApi } from "@/lib/api";
+import { downloadApiFile, fetchApi } from "@/lib/api";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -34,8 +34,27 @@ export function CandidateAnalysisModal({
   const [updating, setUpdating] = useState(false);
   const [reprocessing, setReprocessing] = useState(false);
   const [showRawText, setShowRawText] = useState(false);
+  const [downloadingResume, setDownloadingResume] = useState(false);
 
   if (!application) return null;
+
+  const handleDownloadResume = async () => {
+    if (!application.resume) return;
+    setDownloadingResume(true);
+    try {
+      await downloadApiFile(
+        `/resumes/${application.resume.id}/download/`,
+        application.resume.original_filename,
+        { redirect: "error" },
+      );
+    } catch {
+      toast.error("Download Failed", {
+        description: "Unable to download this resume. Please try again.",
+      });
+    } finally {
+      setDownloadingResume(false);
+    }
+  };
 
   const handleStatusChange = async (newStatus: ApplicationStatus) => {
     setUpdating(true);
@@ -84,8 +103,8 @@ export function CandidateAnalysisModal({
         method: "POST",
       });
       onStatusUpdated(updated);
-      toast.success("AI Re-evaluation Completed", {
-        description: `Scores and evidence for ${application.candidate_code} were recomputed.`,
+      toast.success("AI Re-evaluation Queued", {
+        description: `Scores and evidence for ${application.candidate_code} will update after processing.`,
       });
     } catch (err) {
       console.error("Error reprocessing:", err);
@@ -161,12 +180,16 @@ export function CandidateAnalysisModal({
         {/* Persistent Sticky Footer Actions */}
         <div className="p-4 px-6 border-t border-border bg-slate-50/90 backdrop-blur-sm shrink-0 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            {resume?.file_url && (
-              <Button asChild variant="outline" size="sm" className="h-9 gap-2 text-xs">
-                <a href={resume.file_url} target="_blank" rel="noopener noreferrer">
-                  <Download className="h-4 w-4" />
-                  <span>Resume File</span>
-                </a>
+            {resume && !resume.is_purged && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDownloadResume}
+                disabled={downloadingResume}
+                className="h-9 gap-2 text-xs"
+              >
+                <Download className="h-4 w-4" />
+                <span>{downloadingResume ? "Retrieving..." : "Resume File"}</span>
               </Button>
             )}
 

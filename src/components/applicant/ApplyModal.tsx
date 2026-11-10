@@ -88,12 +88,16 @@ export function ApplyModal({
   }, [onSuccess, onApplicationCreated]);
 
   useEffect(() => {
+    if (!isOpen) return;
+    let active = true;
+
     async function loadUser() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
+        if (!active) return;
+        setUserId(user?.id ?? null);
+        setEmail(user?.email ?? "");
         if (user) {
-          setUserId(user.id);
-          setEmail((prev) => (!prev && user.email ? user.email : prev));
           const metaFirst = user.user_metadata?.first_name;
           const metaLast = user.user_metadata?.last_name;
           const fullName = user.user_metadata?.full_name || "";
@@ -106,17 +110,15 @@ export function ApplyModal({
             setLastName((prev) => (!prev ? parts.slice(1).join(" ") || "" : prev));
           }
         }
-      } catch {}
+      } catch {
+        if (active) {
+          setUserId(null);
+          setEmail("");
+        }
+      }
     }
-    if (isOpen) {
-      setStep("form");
-      setAcknowledged(false);
-      setDisclosureError(null);
-      setError(null);
-      setFieldErrors({});
-      setTouched({});
-      void loadUser();
-    }
+    void loadUser();
+    return () => { active = false; };
   }, [isOpen, supabase]);
 
   // Polling effect for real-time background AI evaluation
@@ -143,7 +145,7 @@ export function ApplyModal({
           const data: Application = await response.json();
           if (isCancelled) return;
 
-          const isFinished = data.resume?.processing_status === "COMPLETED" || !!data.match_result;
+          const isFinished = data.resume?.processing_status === "COMPLETED";
           if (isFinished) {
             setSuccessResult(data);
             setIsEvaluating(false);
@@ -354,7 +356,7 @@ export function ApplyModal({
       });
 
       const alreadyCompleted =
-        applicationData.resume?.processing_status === "COMPLETED" || !!applicationData.match_result;
+        applicationData.resume?.processing_status === "COMPLETED";
 
       if (alreadyCompleted) {
         // Show smooth verification progress before displaying the final confirmation card
@@ -388,6 +390,7 @@ export function ApplyModal({
     setFirstName("");
     setLastName("");
     setEmail("");
+    setUserId(null);
     setPhone("");
     setFile(null);
     setError(null);
@@ -537,21 +540,6 @@ export function ApplyModal({
                       {job.title} ({job.department})
                     </span>
                   </div>
-
-                  {successResult.match_result?.matched_skills && successResult.match_result.matched_skills.length > 0 && (
-                    <div className="pt-3 border-t border-border space-y-2">
-                      <div className="text-xs font-semibold text-foreground">
-                        Key Verified Qualifications:
-                      </div>
-                      <div className="flex flex-wrap gap-1.5 pt-0.5">
-                        {successResult.match_result.matched_skills.slice(0, 6).map((s, idx) => (
-                          <Badge key={idx} variant="outline" className="text-xs font-normal bg-slate-50 border-slate-200 text-slate-700">
-                            ✓ {s}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
 
                 <Button onClick={handleResetAndClose} size="lg" className="w-full text-sm font-semibold">
@@ -646,30 +634,17 @@ export function ApplyModal({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="email" className="text-sm font-semibold">
-                    Email Address <span className="text-rose-500">*</span>
+                    Account email
                   </Label>
                   <Input
                     id="email"
                     type="email"
                     value={email}
                     error={!!fieldErrors.email}
-                    aria-describedby={fieldErrors.email ? "apply-email-error" : undefined}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setEmail(val);
-                      if (error) setError(null);
-                      if (touched.email || fieldErrors.email) {
-                        const err = validateEmail(val);
-                        if (!err) setFieldError("email", null);
-                        else if (touched.email) setFieldError("email", err);
-                      }
-                    }}
-                    onBlur={() => {
-                      setTouched((prev) => ({ ...prev, email: true }));
-                      setFieldError("email", validateEmail(email));
-                    }}
-                    placeholder="e.g. juan@example.com"
+                    aria-describedby={fieldErrors.email ? "apply-email-error apply-email-help" : "apply-email-help"}
+                    readOnly
                   />
+                  <p id="apply-email-help" className="text-xs text-slate-600">Uses the email on your signed-in account.</p>
                   <FieldError id="apply-email-error" message={fieldErrors.email} />
                 </div>
 

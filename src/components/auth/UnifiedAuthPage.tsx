@@ -1,5 +1,6 @@
 "use client";
 
+import { getSafeRedirectUrl } from "@/lib/auth-redirect";
 import React, { useState, useEffect, useId } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -108,7 +109,7 @@ export function UnifiedAuthPage({ initialRole = "applicant" }: UnifiedAuthPagePr
 
   // Update next URL depending on role
   const resolvedNextUrl =
-    nextParam || (portalRole === "recruiter" ? "/recruiter" : "/careers");
+    getSafeRedirectUrl(nextParam, portalRole === "recruiter" ? "/recruiter" : "/careers");
 
   // Handle Sign In
   const handleSignIn = async (e: React.FormEvent) => {
@@ -142,40 +143,57 @@ export function UnifiedAuthPage({ initialRole = "applicant" }: UnifiedAuthPagePr
         throw error;
       }
 
-      const userRole = data.user?.user_metadata?.role;
+      const token = data.session?.access_token || "";
+      let serverRole = "applicant";
 
-      // Handle role-specific warning or auto-route
-      if (portalRole === "recruiter" && userRole === "applicant") {
+      try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api"}/auth/me/`, {
+          headers: {
+            "Authorization": `Bearer ${token}`,
+          },
+        });
+        if (res.ok) {
+          const body = await res.json();
+          serverRole = body?.user?.role || "applicant";
+        }
+      } catch {
+        serverRole = "applicant";
+      }
+
+      if (portalRole === "recruiter" && serverRole !== "recruiter" && serverRole !== "superadmin") {
         await supabase.auth.signOut();
-        setErrorMsg("Access Denied: This account is registered as a Candidate / Applicant. Please switch portal to Candidate.");
+        try {
+          localStorage.removeItem("talentmatch_recruiter_token");
+          localStorage.removeItem("talentmatch_recruiter_user");
+        } catch {}
+        setErrorMsg("Access Denied: This account is not provisioned with Recruiter or Admin privileges. Please sign in as an Applicant or contact support.");
         setLoading(false);
         return;
       }
 
       // Also persist session keys for legacy backend integration
       try {
-        const token = data.session?.access_token || "";
         const userInfo = {
           id: data.user?.id,
           email: data.user?.email,
           name: data.user?.user_metadata?.full_name || cleanEmail.split("@")[0],
-          role: userRole || portalRole,
+          role: serverRole,
         };
-        if (userRole === "recruiter" || portalRole === "recruiter") {
+        if (serverRole === "recruiter" || serverRole === "superadmin") {
           localStorage.setItem("talentmatch_recruiter_user", JSON.stringify(userInfo));
-          localStorage.setItem("talentmatch_recruiter_token", token);
+          localStorage.removeItem("talentmatch_recruiter_token");
         } else {
           localStorage.setItem("talentmatch_user", JSON.stringify(userInfo));
-          localStorage.setItem("talentmatch_token", token);
+          localStorage.removeItem("talentmatch_token");
         }
       } catch {}
 
       setSuccessMsg("Signed in successfully! Redirecting...");
       setTimeout(() => {
-        if (userRole === "recruiter") {
-          router.push(nextParam || "/recruiter");
+        if (serverRole === "recruiter" || serverRole === "superadmin") {
+          router.push(getSafeRedirectUrl(nextParam, "/recruiter"));
         } else {
-          router.push(nextParam || "/careers");
+          router.push(getSafeRedirectUrl(nextParam, "/careers"));
         }
         router.refresh();
       }, 500);
@@ -221,13 +239,15 @@ export function UnifiedAuthPage({ initialRole = "applicant" }: UnifiedAuthPagePr
         password: signUpPassword,
         options: {
           data: {
-            role: portalRole,
+            role: "applicant",
             full_name: cleanName,
-            ...(portalRole === "recruiter" ? { company: organization.trim() || "Talent Team" } : {}),
           },
         },
       });
 
+      if (error?.status === 429) {
+        throw new Error("Signup is temporarily limited. Please wait before trying again.");
+      }
       if (error) {
         throw error;
       }
@@ -251,68 +271,6 @@ export function UnifiedAuthPage({ initialRole = "applicant" }: UnifiedAuthPagePr
     }
   };
 
-  // Quick 1-Click Demo Login
-  const handleDemoLogin = async () => {
-    setErrorMsg("");
-    setSuccessMsg("");
-    setLoading(true);
-
-    const demoEmail = portalRole === "recruiter" ? "recruiter@talentmatch.ai" : "applicant@talentmatch.ai";
-    const demoPassword = "password123";
-
-    setEmail(demoEmail);
-    setPassword(demoPassword);
-
-    try {
-      // First try Django backend quick auth
-      try {
-        const response = await fetchApi<{ message: string; user: any; token: string }>("/auth/login/", {
-          method: "POST",
-          body: JSON.stringify({ email: demoEmail, password: demoPassword }),
-        });
-        if (response && response.user) {
-          localStorage.setItem("talentmatch_recruiter_user", JSON.stringify(response.user));
-          localStorage.setItem("talentmatch_recruiter_token", response.token || "demo-token");
-        }
-      } catch {}
-
-      // Supabase sign-in
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: demoEmail,
-        password: demoPassword,
-      });
-
-      if (error) {
-        const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
-          email: demoEmail,
-          password: demoPassword,
-          options: {
-            data: {
-              role: portalRole,
-              full_name: portalRole === "recruiter" ? "Sarah Jenkins (Lead Recruiter)" : "Alex Taylor (Candidate)",
-              company: "TalentMatch AI Ops",
-            },
-          },
-        });
-        if (signUpErr) throw signUpErr;
-        if (signUpData.session) {
-          router.push(resolvedNextUrl);
-          router.refresh();
-          return;
-        }
-      }
-
-      setSuccessMsg("Demo credentials accepted! Entering workspace...");
-      setTimeout(() => {
-        router.push(resolvedNextUrl);
-        router.refresh();
-      }, 500);
-    } catch (err: unknown) {
-      setErrorMsg(err instanceof Error ? err.message : "Demo sign in failed. Please type credentials manually.");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   // Send Password Reset
   const handlePasswordReset = async (e: React.FormEvent) => {
@@ -328,7 +286,7 @@ export function UnifiedAuthPage({ initialRole = "applicant" }: UnifiedAuthPagePr
 
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail.trim(), {
-        redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
+        redirectTo: `${window.location.origin}/reset-password`,
       });
 
       if (error) throw error;
@@ -944,19 +902,8 @@ export function UnifiedAuthPage({ initialRole = "applicant" }: UnifiedAuthPagePr
           </div>
         </div>
 
-        {/* Bottom Bar: Clean subtle demo access + Careers Link */}
-        <div className="w-full flex flex-col sm:flex-row items-center justify-between text-xs text-slate-400 pt-6 border-t border-slate-100 gap-2">
-          <button
-            type="button"
-            onClick={handleDemoLogin}
-            disabled={loading}
-            className="text-slate-400 hover:text-[#2196F3] flex items-center gap-1 transition-colors cursor-pointer"
-            title="Fast demo sign in with test credentials"
-          >
-            <KeyRound className="w-3.5 h-3.5" />
-            <span>1-Click Test Demo ({portalRole === "recruiter" ? "Recruiter" : "Applicant"})</span>
-          </button>
-
+        {/* Bottom Bar: Careers Link */}
+        <div className="w-full flex items-center justify-end text-xs text-slate-400 pt-6 border-t border-slate-100">
           <Link href="/careers" className="hover:text-slate-600 hover:underline transition-colors">
             Browse Careers Directory →
           </Link>
@@ -1097,7 +1044,7 @@ export function UnifiedAuthPage({ initialRole = "applicant" }: UnifiedAuthPagePr
                   </p>
                   <p className="font-semibold text-slate-800">2. Data Confidentiality</p>
                   <p>
-                    Uploaded resumes are processed securely and never sold, shared with third-party advertisers, or used to train external public models.
+                    When a deployment enables AI-assisted screening, TalentMatch removes common identifiers before sending resume text to its AI provider. The deployment privacy notice describes the provider and its data handling.
                   </p>
                   <p className="font-semibold text-slate-800">3. Applicant Rights</p>
                   <p>

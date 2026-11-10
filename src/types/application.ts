@@ -136,7 +136,8 @@ export interface Resume {
   id: number;
   application: number;
   file?: string;
-  file_url: string;
+  file_url?: string;
+  is_purged?: boolean;
   original_filename: string;
   file_type: string;
   file_size: number;

@@ -1,9 +1,11 @@
 "use client";
 
+import { getSafeRedirectUrl } from "@/lib/auth-redirect";
 import React, { useState, useEffect, useId } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { fetchApi } from "@/lib/api";
 import { ShowcasePanel } from "@/components/auth/ShowcasePanel";
 import { toast } from "@/components/ui/sonner";
 import {
@@ -120,11 +122,19 @@ export function LoginPageComponent({ initialRole = "applicant" }: LoginPageCompo
         description: msg,
       });
       toast.warning("Session Switched", { description: msg });
+    } else if (errorParam === "signup_disabled") {
+      const msg = "Self-service recruiter registration is disabled. Recruiter accounts must be provisioned by a system administrator.";
+      setFormNotice({
+        variant: "warning",
+        title: "Registration Restricted",
+        description: msg,
+      });
+      toast.warning("Registration Restricted", { description: msg });
     }
   }, [errorParam]);
 
-  // Signup URL depends on current role
-  const signupUrl = portalRole === "recruiter" ? "/recruiter/signup" : "/signup";
+  // Public signup is only available for applicants
+  const signupUrl = "/signup";
 
   const handleEmailChange = (value: string) => {
     setEmail(value);
@@ -200,11 +210,31 @@ export function LoginPageComponent({ initialRole = "applicant" }: LoginPageCompo
         throw error;
       }
 
-      const userRole = data.user?.user_metadata?.role;
+      // Authoritatively verify role with Django backend /api/auth/me/
+      let verifiedRole = "applicant";
+      try {
+        const meRes = await fetchApi<{
+          authenticated: boolean;
+          user: { role: string; email?: string; name?: string };
+        }>("/auth/me/", {
+          headers: {
+            Authorization: `Bearer ${data.session?.access_token}`,
+          },
+        });
+        if (meRes?.user?.role) {
+          verifiedRole = meRes.user.role.toLowerCase();
+        }
+      } catch (err) {
+        console.warn("Backend auth verification during login failed:", err);
+      }
 
-      if (portalRole === "recruiter" && userRole === "applicant") {
+      if (portalRole === "recruiter" && verifiedRole !== "recruiter" && verifiedRole !== "superadmin") {
         await supabase.auth.signOut();
-        const roleMsg = "This account is registered as a Candidate. Please sign in through the Candidate portal.";
+        try {
+          localStorage.removeItem("talentmatch_recruiter_user");
+          localStorage.removeItem("talentmatch_recruiter_token");
+        } catch {}
+        const roleMsg = "This account does not have authorized recruiter access. Please sign in through the Candidate portal or contact an administrator.";
         setFormNotice({
           variant: "error",
           title: "Recruiter Access Denied",
@@ -217,20 +247,21 @@ export function LoginPageComponent({ initialRole = "applicant" }: LoginPageCompo
         return;
       }
 
+      const isAuthorizedRecruiter = verifiedRole === "recruiter" || verifiedRole === "superadmin";
+
       try {
-        const token = data.session?.access_token || "";
         const userInfo = {
           id: data.user?.id,
           email: data.user?.email,
           name: data.user?.user_metadata?.full_name || cleanEmail.split("@")[0],
-          role: userRole || portalRole,
+          role: verifiedRole,
         };
-        if (userRole === "recruiter" || portalRole === "recruiter") {
+        if (isAuthorizedRecruiter) {
           localStorage.setItem("talentmatch_recruiter_user", JSON.stringify(userInfo));
-          localStorage.setItem("talentmatch_recruiter_token", token);
+          localStorage.removeItem("talentmatch_recruiter_token");
         } else {
           localStorage.setItem("talentmatch_user", JSON.stringify(userInfo));
-          localStorage.setItem("talentmatch_token", token);
+          localStorage.removeItem("talentmatch_token");
         }
       } catch { }
 
@@ -238,12 +269,12 @@ export function LoginPageComponent({ initialRole = "applicant" }: LoginPageCompo
         description: "Signing you in to your workspace...",
       });
 
+      const targetDestination = isAuthorizedRecruiter
+        ? getSafeRedirectUrl(nextParam, "/recruiter")
+        : getSafeRedirectUrl(nextParam, "/careers");
+
       setTimeout(() => {
-        if (userRole === "recruiter") {
-          router.push(nextParam || "/recruiter");
-        } else {
-          router.push(nextParam || "/careers");
-        }
+        router.push(targetDestination);
         router.refresh();
       }, 500);
     } catch (err: unknown) {
@@ -294,7 +325,7 @@ export function LoginPageComponent({ initialRole = "applicant" }: LoginPageCompo
 
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(forgotEmail.trim(), {
-        redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
+        redirectTo: `${window.location.origin}/reset-password`,
       });
 
       if (error) throw error;
@@ -505,17 +536,23 @@ export function LoginPageComponent({ initialRole = "applicant" }: LoginPageCompo
             </p>
           </form>
 
-          {/* Bottom Switch Link: Navigates directly to /signup (matches Login.png bottom) */}
+          {/* Bottom Switch Link */}
           <div className="text-center text-sm text-slate-600 mt-10">
-            <span>
-              Don&apos;t have an Account?{" "}
-              <Link
-                href={signupUrl}
-                className="font-semibold text-[#2196F3] hover:underline ml-1 cursor-pointer"
-              >
-                Signup instead
-              </Link>
-            </span>
+            {portalRole === "recruiter" ? (
+              <span className="text-xs text-slate-500">
+                Need a Recruiter workspace? Access must be provisioned by your system administrator.
+              </span>
+            ) : (
+              <span>
+                Don&apos;t have an Account?{" "}
+                <Link
+                  href={signupUrl}
+                  className="font-semibold text-[#2196F3] hover:underline ml-1 cursor-pointer"
+                >
+                  Signup instead
+                </Link>
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -677,7 +714,7 @@ export function LoginPageComponent({ initialRole = "applicant" }: LoginPageCompo
             <div>
               <p className="font-semibold text-slate-800 mb-0.5">2. Data Confidentiality</p>
               <p>
-                Uploaded resumes are processed securely and never sold, shared with third-party advertisers, or used to train external public models.
+                When a deployment enables AI-assisted screening, TalentMatch removes common identifiers before sending resume text to its AI provider. The deployment privacy notice describes the provider and its data handling.
               </p>
             </div>
             <div>

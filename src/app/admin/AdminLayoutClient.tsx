@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import { useRecruiter } from "@/context/RecruiterContext";
 import { RecruiterSidebar } from "@/components/recruiter/RecruiterSidebar";
 import { RecruiterTopBar } from "@/components/recruiter/RecruiterTopBar";
+import { PlatformManagement } from "@/components/recruiter/PlatformManagement";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 
 export function AdminLayoutClient({ children }: { children: React.ReactNode }) {
@@ -39,7 +40,7 @@ export function AdminLayoutClient({ children }: { children: React.ReactNode }) {
         <RecruiterTopBar onOpenMobileMenu={() => setMobileOpen(true)} />
         <main className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 lg:p-8 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-slate-300/80 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 [&::-webkit-scrollbar-track]:bg-transparent">
           <div className="max-w-[1600px] w-full mx-auto">
-            {children}
+            {currentUser.role === "superadmin" ? <PlatformManagement /> : children}
           </div>
         </main>
       </div>
