@@ -38,12 +38,20 @@ interface CandidateWorkflowPanelProps {
   onApplicationUpdated?: (application: Application) => void;
 }
 
+async function fetchTemplates(): Promise<CommunicationTemplate[]> {
+  try {
+    return await fetchApi<CommunicationTemplate[]>("/communication-templates/");
+  } catch {
+    return await fetchApi<CommunicationTemplate[]>("/applications/communication-templates/");
+  }
+}
+
 function fetchWorkspace(applicationId: number) {
   return Promise.all([
     fetchApi<CandidateNote[]>(`/applications/${applicationId}/notes/`),
     fetchApi<RecruiterTask[]>(`/applications/${applicationId}/tasks/`),
     fetchApi<ApplicationActivity[]>(`/applications/${applicationId}/activity/`),
-    fetchApi<CommunicationTemplate[]>("/applications/communication-templates/"),
+    fetchTemplates(),
   ]);
 }
 
@@ -85,9 +93,21 @@ export function CandidateWorkflowPanel({
       value
         .replaceAll("{{candidate_name}}", candidateName)
         .replaceAll("{{job_title}}", application?.job_title || "the role")
+        .replaceAll("{{company_name}}", "our company")
         .replaceAll("{{recruiter_name}}", "TalentMatch Recruiting Team"),
     [application?.job_title, candidateName]
   );
+
+  useEffect(() => {
+    if (templates.length > 0 && application && !selectedTemplate) {
+      const match = templates.find((t) => t.stage === application.status);
+      if (match) {
+        setSelectedTemplate(String(match.id));
+        setMessageSubject(hydrateTemplate(match.subject));
+        setMessageBody(hydrateTemplate(match.body));
+      }
+    }
+  }, [templates, application, selectedTemplate, hydrateTemplate]);
 
   const loadWorkspace = async (applicationId: number) => {
     setLoading(true);
@@ -199,7 +219,7 @@ export function CandidateWorkflowPanel({
 
   const applyTemplate = (templateId: string) => {
     setSelectedTemplate(templateId);
-    const template = templates.find((item) => item.id === templateId);
+    const template = templates.find((item) => String(item.id) === String(templateId));
     if (!template) return;
     setMessageSubject(hydrateTemplate(template.subject));
     setMessageBody(hydrateTemplate(template.body));
@@ -338,15 +358,77 @@ export function CandidateWorkflowPanel({
               Prepare a draft, then open it in Gmail or copy it. TalentMatch records the draft action, not email delivery.
             </div>
             <div className="space-y-2">
-              <Label htmlFor="workflow-template">Template</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="workflow-template">Template</Label>
+                <a
+                  href="/admin?view=templates"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-[#2196F3] hover:underline flex items-center gap-1 font-semibold"
+                >
+                  Manage templates
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
               <Select value={selectedTemplate} onValueChange={applyTemplate}>
-                <SelectTrigger id="workflow-template"><SelectValue placeholder="Choose a template" /></SelectTrigger>
-                <SelectContent>{templates.map((template) => <SelectItem key={template.id} value={template.id}>{template.name}</SelectItem>)}</SelectContent>
+                <SelectTrigger id="workflow-template">
+                  <SelectValue placeholder="Choose a template" />
+                </SelectTrigger>
+                <SelectContent>
+                  {templates.map((template) => (
+                    <SelectItem key={template.id} value={String(template.id)}>
+                      <span className="flex items-center gap-2">
+                        {template.stage && template.stage !== "GENERAL" && (
+                          <span className="text-[10px] uppercase font-bold px-1.5 py-0.2 rounded bg-slate-100 text-slate-600">
+                            {template.stage.toLowerCase()}
+                          </span>
+                        )}
+                        <span>{template.name}</span>
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2"><Label htmlFor="workflow-recipient">To</Label><Input id="workflow-recipient" value={application?.email || ""} readOnly className="bg-slate-50 text-slate-600" /></div>
-            <div className="space-y-2"><Label htmlFor="workflow-subject">Subject</Label><Input id="workflow-subject" maxLength={200} value={messageSubject} onChange={(event) => setMessageSubject(event.target.value)} /></div>
-            <div className="space-y-2"><Label htmlFor="workflow-message">Message</Label><Textarea id="workflow-message" maxLength={5000} rows={10} value={messageBody} onChange={(event) => setMessageBody(event.target.value)} /></div>
+            <div className="space-y-2">
+              <Label htmlFor="workflow-recipient">To</Label>
+              <Input id="workflow-recipient" value={application?.email || ""} readOnly className="bg-slate-50 text-slate-600" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="workflow-subject">Subject</Label>
+              <Input id="workflow-subject" maxLength={200} value={messageSubject} onChange={(event) => setMessageSubject(event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="workflow-message">Message</Label>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] text-slate-400">Insert:</span>
+                  <button
+                    type="button"
+                    onClick={() => setMessageBody((prev) => prev + " {{candidate_name}}")}
+                    className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
+                    title="Insert candidate name"
+                  >
+                    + candidate
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMessageBody((prev) => prev + " {{job_title}}")}
+                    className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
+                    title="Insert job title"
+                  >
+                    + role
+                  </button>
+                </div>
+              </div>
+              <Textarea
+                id="workflow-message"
+                maxLength={5000}
+                rows={10}
+                value={messageBody}
+                onChange={(event) => setMessageBody(event.target.value)}
+              />
+            </div>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               {canComposeEmail ? (
                 <Button asChild className="gap-2">

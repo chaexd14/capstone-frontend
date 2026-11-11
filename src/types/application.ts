@@ -211,9 +211,22 @@ export interface ApplicationActivity {
   created_at: string;
 }
 
+export type TemplateStage =
+  | "SHORTLISTED"
+  | "INTERVIEW"
+  | "HIRED"
+  | "REJECTED"
+  | "SCREENING"
+  | "GENERAL";
+
 export interface CommunicationTemplate {
-  id: string;
+  id: number | string;
   name: string;
+  stage: TemplateStage;
   subject: string;
   body: string;
+  is_default?: boolean;
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
 }

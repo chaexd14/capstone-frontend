@@ -30,6 +30,8 @@ export interface Job {
 
 export interface ArchivedJob {
   id: number;
+  active_job_id?: number | null;
+  applicant_count?: number;
   company?: number;
   company_name?: string;
   title: string;

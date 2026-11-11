@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Job, ArchivedJob } from "@/types/job";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, Copy, RotateCcw, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -32,11 +32,38 @@ function getDepartmentMonogram(department?: string, title?: string): string {
   return (department || "HR").slice(0, 2).toUpperCase();
 }
 
+function formatJobCohort(dateStr?: string | null): string {
+  if (!dateStr) return "Cohort N/A";
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return "Cohort N/A";
+  return date.toLocaleDateString("en-US", { month: "short", year: "numeric" }) + " Cohort";
+}
+
+function formatLifecycleDate(dateStr?: string | null): string {
+  if (!dateStr) return "—";
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function calculateDuration(startStr?: string | null, endStr?: string | null): string {
+  if (!startStr || !endStr) return "Active duration unspecified";
+  const start = new Date(startStr);
+  const end = new Date(endStr);
+  if (isNaN(start.getTime()) || isNaN(end.getTime())) return "Active duration unspecified";
+  const diffMs = Math.max(0, end.getTime() - start.getTime());
+  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) return "Active for < 1 day";
+  if (diffDays === 1) return "Active for 1 day";
+  return `Active for ${diffDays} days`;
+}
+
 export function JobsView() {
   const router = useRouter();
   const {
     jobs,
     applications,
+    loadData,
     onJobUpdated,
     onJobArchived,
   } = useRecruiter();
@@ -52,6 +79,24 @@ export function JobsView() {
   const [actionJob, setActionJob] = useState<Job | null>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [editingJob, setEditingJob] = useState<Job | null>(null);
+  const [duplicatingTemplate, setDuplicatingTemplate] = useState<Partial<Job> | null>(null);
+
+  const handleDuplicateArchivedJob = (archivedJob: ArchivedJob) => {
+    setDuplicatingTemplate({
+      id: archivedJob.id,
+      title: archivedJob.title,
+      department: archivedJob.department,
+      employment_type: archivedJob.employment_type,
+      location: archivedJob.location,
+      description: archivedJob.description,
+      minimum_experience: archivedJob.minimum_experience,
+      education_requirement: archivedJob.education_requirement,
+      required_skills: archivedJob.required_skills || [],
+      preferred_skills: archivedJob.preferred_skills || [],
+      rubric_weights: archivedJob.rubric_weights,
+      status: "PUBLISHED",
+    });
+  };
 
   const loadArchivedJobs = useCallback(async () => {
     setArchivedLoading(true);
@@ -66,6 +111,13 @@ export function JobsView() {
   }, []);
 
   useEffect(() => {
+    const timer = setTimeout(() => {
+      void loadArchivedJobs();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [loadArchivedJobs]);
+
+  useEffect(() => {
     if (jobTab === "ARCHIVED") {
       const timer = setTimeout(() => {
         void loadArchivedJobs();
@@ -73,6 +125,19 @@ export function JobsView() {
       return () => clearTimeout(timer);
     }
   }, [jobTab, loadArchivedJobs]);
+
+  const titleCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const j of jobs) {
+      const key = (j.title || "").trim().toLowerCase();
+      if (key) counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    for (const aj of archivedJobs) {
+      const key = (aj.title || "").trim().toLowerCase();
+      if (key) counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    return counts;
+  }, [jobs, archivedJobs]);
 
   const activeJobs = jobs.filter((j) => j.status === "PUBLISHED" || (!j.status && j.status !== "CLOSED"));
   const draftJobs = jobs.filter((j) => j.status === "DRAFT");
@@ -84,7 +149,9 @@ export function JobsView() {
       const restored = await fetchApi<Job>(`/archived-jobs/${archivedJob.id}/restore/`, { method: "POST" });
       setArchivedJobs((prev) => prev.filter((j) => j.id !== archivedJob.id));
       onJobUpdated(restored);
+      void loadData();
       toast.success("Position Restored", { description: `"${archivedJob.title}" has been restored to active requisitions.` });
+      setJobTab("ACTIVE");
     } catch (err: unknown) {
       console.error("Failed to restore archived job:", err);
       toast.error("Restore Failed", { description: "Failed to restore requisition." });
@@ -229,6 +296,7 @@ export function JobsView() {
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
                 {displayedJobs.map((job) => {
                   const jobApps = applications.filter((a) => a.job === job.id);
+                  const isDuplicateTitle = (titleCounts.get((job.title || "").trim().toLowerCase()) || 0) > 1;
                   const topScore = jobApps.reduce((max, a) => {
                     const s = a.match_result?.match_score || 0;
                     return s > max ? s : max;
@@ -255,9 +323,19 @@ export function JobsView() {
                             {getDepartmentMonogram(job.department, job.title)}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <h3 className="font-bold text-slate-900 text-base group-hover:text-[#2196F3] transition-colors truncate">
-                              {job.title}
-                            </h3>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <h3 className="font-bold text-slate-900 text-base group-hover:text-[#2196F3] transition-colors truncate">
+                                {job.title}
+                              </h3>
+                              {isDuplicateTitle && (
+                                <span
+                                  className="px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-blue-50 text-[#1976D2] border border-blue-200 shrink-0"
+                                  title={`Requisition #${job.id}`}
+                                >
+                                  #{job.id}
+                                </span>
+                              )}
+                            </div>
                             <p className="text-xs text-slate-500 mt-0.5 truncate">
                               {job.department || "Operations"} &bull; {job.location || "Makati City"}
                             </p>
@@ -275,8 +353,17 @@ export function JobsView() {
                         </div>
 
                         {/* Metadata Tag Row */}
-                        <div className="flex flex-wrap gap-1.5 my-3.5 text-xs text-slate-500">
-                          <span className="font-medium text-slate-700">
+                        <div className="flex flex-wrap items-center gap-1.5 my-3 text-xs text-slate-500">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-blue-50/80 text-[#1976D2] border border-blue-200/80">
+                            {formatJobCohort(job.created_at)}
+                          </span>
+                          {isDuplicateTitle && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200/80">
+                              Req #{job.id}
+                            </span>
+                          )}
+                          <span className="text-slate-300">&bull;</span>
+                          <span className="font-medium text-slate-600 truncate">
                             {job.location || "Manila"} &bull; {job.employment_type || "Full time"}
                           </span>
                         </div>
@@ -398,6 +485,7 @@ export function JobsView() {
                   <TableBody>
                     {displayedJobs.map((job) => {
                       const jobApps = applications.filter((a) => a.job === job.id);
+                      const isDuplicateTitle = (titleCounts.get((job.title || "").trim().toLowerCase()) || 0) > 1;
                       const topScore =
                         jobApps.length > 0
                           ? Math.max(...jobApps.map((a) => a.match_result?.match_score || 0))
@@ -424,7 +512,17 @@ export function JobsView() {
                                 {getDepartmentMonogram(job.department, job.title)}
                               </span>
                               <div>
-                                <div className="font-bold text-slate-900">{job.title}</div>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-bold text-slate-900">{job.title}</span>
+                                  <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-semibold bg-blue-50/80 text-[#1976D2] border border-blue-200/80">
+                                    {formatJobCohort(job.created_at)}
+                                  </span>
+                                  {isDuplicateTitle && (
+                                    <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200/80">
+                                      Req #{job.id}
+                                    </span>
+                                  )}
+                                </div>
                                 <div className="text-[11px] text-slate-400 font-mono">ID: #{job.id}</div>
                               </div>
                             </div>
@@ -521,45 +619,84 @@ export function JobsView() {
                 <Table>
                   <TableHeader className="bg-slate-50/80">
                     <TableRow>
-                      <TableHead className="text-xs font-bold text-slate-700">Requisition Title</TableHead>
-                      <TableHead className="text-xs font-bold text-slate-700">Department</TableHead>
-                      <TableHead className="text-xs font-bold text-slate-700">Archived Date</TableHead>
-                      <TableHead className="text-xs font-bold text-slate-700">Archive Reason</TableHead>
+                      <TableHead className="text-xs font-bold text-slate-700">Requisition &amp; Cohort</TableHead>
+                      <TableHead className="text-xs font-bold text-slate-700">Department &amp; Setup</TableHead>
+                      <TableHead className="text-xs font-bold text-slate-700">Active Lifecycle</TableHead>
+                      <TableHead className="text-xs font-bold text-slate-700 text-center w-[130px]">Historical Applicants</TableHead>
                       <TableHead className="text-xs font-bold text-slate-700 text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {archivedJobs.map((archived) => (
-                      <TableRow key={archived.id} className="hover:bg-slate-50/60 transition-colors">
-                        <TableCell className="font-semibold text-slate-900 text-xs sm:text-sm">
-                          <div className="font-bold text-slate-900">{archived.title}</div>
-                          <div className="text-[11px] text-slate-400 font-mono">
-                            ID: #{archived.id}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-xs font-medium text-slate-700">
-                          {archived.department || "Operations"}
-                        </TableCell>
-                        <TableCell className="text-xs text-slate-500 font-mono">
-                          {new Date(archived.archived_at).toLocaleDateString()}
-                        </TableCell>
-                        <TableCell className="text-xs text-slate-500 truncate max-w-xs">
-                          {archived.description || "Requisition fulfilled or archived"}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => void handleRestoreArchivedJob(archived)}
-                              className="h-7 text-xs border-blue-200 text-[#1976D2] hover:bg-blue-50 font-medium"
-                            >
-                              Restore
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    {archivedJobs.map((archived) => {
+                      const isArchivedDuplicate = (titleCounts.get((archived.title || "").trim().toLowerCase()) || 0) > 1;
+                      return (
+                        <TableRow key={archived.id} className="hover:bg-slate-50/60 transition-colors">
+                          <TableCell className="font-semibold text-slate-900 text-xs sm:text-sm">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-bold text-slate-900">{archived.title}</span>
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-[#1976D2] border border-blue-200">
+                                {formatJobCohort(archived.original_created_at || archived.archived_at)}
+                              </span>
+                              {isArchivedDuplicate && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                                  Req #{archived.id}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-slate-400 font-mono flex items-center gap-2 mt-0.5">
+                              <span>Archive Record #{archived.id}</span>
+                              {archived.active_job_id ? (
+                                <>
+                                  <span>&bull;</span>
+                                  <span>Origin Job #{archived.active_job_id}</span>
+                                </>
+                              ) : null}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-xs font-medium text-slate-700">
+                            <div>{archived.department || "Operations"}</div>
+                            <div className="text-[11px] text-slate-500 font-normal mt-0.5">
+                              {archived.location || "Manila"} &bull; {archived.employment_type || "Full-time"}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-xs text-slate-600">
+                            <div className="font-medium text-slate-800">
+                              {formatLifecycleDate(archived.original_created_at || archived.archived_at)} &rarr; {formatLifecycleDate(archived.archived_at)}
+                            </div>
+                            <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                              {calculateDuration(archived.original_created_at || archived.archived_at, archived.archived_at)}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-center font-mono font-bold text-slate-900 text-xs tabular-nums">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-slate-100 text-slate-800 border border-slate-200/80">
+                              <Users className="w-3.5 h-3.5 text-slate-500" />
+                              {archived.applicant_count ?? 0}
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <Button
+                                size="sm"
+                                onClick={() => handleDuplicateArchivedJob(archived)}
+                                className="h-7 text-xs bg-[#2196F3] hover:bg-[#1976D2] text-white font-medium gap-1.5 shadow-2xs cursor-pointer"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                                Duplicate as New Opening
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => void handleRestoreArchivedJob(archived)}
+                                className="h-7 text-xs border-slate-200 text-slate-700 hover:bg-slate-50 font-medium gap-1 cursor-pointer"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                                Restore
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               </div>
@@ -581,12 +718,20 @@ export function JobsView() {
         isLoading={isActionLoading}
       />
       <CreateJobModal
-        isOpen={editingJob !== null}
+        isOpen={editingJob !== null || duplicatingTemplate !== null}
         jobToEdit={editingJob}
-        onClose={() => setEditingJob(null)}
-        onJobCreated={(updatedJob) => {
-          onJobUpdated(updatedJob);
+        initialTemplate={duplicatingTemplate}
+        onClose={() => {
           setEditingJob(null);
+          setDuplicatingTemplate(null);
+        }}
+        onJobCreated={(newOrUpdatedJob) => {
+          onJobUpdated(newOrUpdatedJob);
+          setEditingJob(null);
+          setDuplicatingTemplate(null);
+        }}
+        onSuccessRedirect={(newJob) => {
+          router.push(`/admin/jobs/${newJob.id}`);
         }}
       />
     </div>

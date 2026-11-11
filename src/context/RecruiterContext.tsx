@@ -180,7 +180,10 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const onJobUpdated = useCallback((updatedJob: Job) => {
-    setJobs((prev) => prev.map((j) => (j.id === updatedJob.id ? updatedJob : j)));
+    setJobs((prev) => {
+      const exists = prev.some((j) => j.id === updatedJob.id);
+      return exists ? prev.map((j) => (j.id === updatedJob.id ? updatedJob : j)) : [updatedJob, ...prev];
+    });
   }, []);
 
   const onJobArchived = useCallback((jobId: number) => {

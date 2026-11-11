@@ -16,6 +16,7 @@ import {
   Pencil,
   ShieldCheck,
   ListChecks,
+  Copy,
 } from "lucide-react";
 import { Job, JobStatus } from "@/types/job";
 import { fetchApi, ApiError } from "@/lib/api";
@@ -39,6 +40,8 @@ interface CreateJobModalProps {
   onClose: () => void;
   onJobCreated: (job: Job) => void;
   jobToEdit?: Job | null;
+  initialTemplate?: Partial<Job> | null;
+  onSuccessRedirect?: (newJob: Job) => void;
 }
 
 interface LintFlag {
@@ -87,7 +90,14 @@ function parseQualificationItems(rawInput: string): string[] {
     .filter((item) => item.length > 0);
 }
 
-export function CreateJobModal({ isOpen, onClose, onJobCreated, jobToEdit = null }: CreateJobModalProps) {
+export function CreateJobModal({
+  isOpen,
+  onClose,
+  onJobCreated,
+  jobToEdit = null,
+  initialTemplate = null,
+  onSuccessRedirect,
+}: CreateJobModalProps) {
   // Stepper state (1: Role & Duties, 2: Qualifications & Credentials, 3: Screening Calibration)
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
@@ -168,27 +178,28 @@ export function CreateJobModal({ isOpen, onClose, onJobCreated, jobToEdit = null
   useEffect(() => {
     if (!isOpen) return;
     const timer = window.setTimeout(() => {
-      if (!jobToEdit) {
+      const source = jobToEdit || initialTemplate;
+      if (!source) {
         resetForm();
         return;
       }
       setStep(1);
-      setTitle(jobToEdit.title || "");
-      setDepartment(jobToEdit.department || "");
-      setEmploymentType(jobToEdit.employment_type || "");
-      setLocation(jobToEdit.location || "");
-      setDescription(jobToEdit.description || "");
-      setMinExp(jobToEdit.minimum_experience || "");
-      setEducation(jobToEdit.education_requirement || "");
-      setJobStatus(jobToEdit.status);
-      setRequiredSkills(jobToEdit.required_skills || []);
-      setPreferredSkills(jobToEdit.preferred_skills || []);
-      setRubricWeights(jobToEdit.rubric_weights || DEFAULT_RUBRIC_WEIGHTS);
+      setTitle(source.title || "");
+      setDepartment(source.department || "");
+      setEmploymentType(source.employment_type || "");
+      setLocation(source.location || "");
+      setDescription(source.description || "");
+      setMinExp(source.minimum_experience || "");
+      setEducation(source.education_requirement || "");
+      setJobStatus(source.status || "PUBLISHED");
+      setRequiredSkills(source.required_skills || []);
+      setPreferredSkills(source.preferred_skills || []);
+      setRubricWeights(source.rubric_weights || DEFAULT_RUBRIC_WEIGHTS);
       setFieldErrors({});
       setFormError(null);
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [isOpen, jobToEdit, resetForm]);
+  }, [isOpen, jobToEdit, initialTemplate, resetForm]);
 
   // Determine if role is regulated dynamically
   const isRegulated = useMemo(() => {
@@ -692,7 +703,7 @@ export function CreateJobModal({ isOpen, onClose, onJobCreated, jobToEdit = null
     setLoading(true);
 
     try {
-      const payload = {
+      const payload: Record<string, unknown> = {
         title: title.trim(),
         department: department.trim(),
         employment_type: employmentType.trim(),
@@ -706,18 +717,32 @@ export function CreateJobModal({ isOpen, onClose, onJobCreated, jobToEdit = null
         status: jobStatus,
       };
 
+      if (!jobToEdit && initialTemplate && initialTemplate.id) {
+        payload.source_job_id = initialTemplate.id;
+      }
+
       const savedJob = await fetchApi<Job>(jobToEdit ? `/jobs/${jobToEdit.id}/` : "/jobs/", {
         method: jobToEdit ? "PATCH" : "POST",
         body: JSON.stringify(payload),
       });
 
-      toast.success(jobToEdit ? "Draft Updated" : "Job Requisition Created!", {
-        description: jobToEdit
-          ? `${savedJob.title} has been saved.`
-          : `${savedJob.title} is ready for AI resume screening.`,
-      });
+      toast.success(
+        jobToEdit
+          ? "Draft Updated"
+          : initialTemplate
+          ? "New Opening Created!"
+          : "Job Requisition Created!",
+        {
+          description: jobToEdit
+            ? `${savedJob.title} has been saved.`
+            : `${savedJob.title} is ready for AI resume screening.`,
+        }
+      );
       resetForm();
       onJobCreated(savedJob);
+      if (onSuccessRedirect) {
+        onSuccessRedirect(savedJob);
+      }
       onClose();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to create job profile";
@@ -758,10 +783,16 @@ export function CreateJobModal({ isOpen, onClose, onJobCreated, jobToEdit = null
           <div className="flex items-center justify-between">
             <div>
               <DialogTitle className="text-xl font-bold tracking-tight text-foreground">
-                {jobToEdit ? "Edit Draft Requisition" : "Create Job Requisition"}
+                {jobToEdit
+                  ? "Edit Draft Requisition"
+                  : initialTemplate
+                  ? "Duplicate as New Opening"
+                  : "Create Job Requisition"}
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground mt-0.5">
-                Define role specifications, qualification statements, and benchmark criteria for objective screening.
+                {initialTemplate
+                  ? "Review role specifications and rubric weights to publish a fresh opening with zero applicants."
+                  : "Define role specifications, qualification statements, and benchmark criteria for objective screening."}
               </DialogDescription>
             </div>
             <Badge
@@ -876,6 +907,20 @@ export function CreateJobModal({ isOpen, onClose, onJobCreated, jobToEdit = null
               description={formError}
               onDismiss={() => setFormError(null)}
             />
+          )}
+
+          {initialTemplate && !jobToEdit && (
+            <div className="flex items-start gap-3 p-3.5 rounded-xl bg-blue-50/80 border border-blue-200/90 text-blue-900 text-xs shadow-2xs">
+              <Copy className="w-4 h-4 text-[#2196F3] shrink-0 mt-0.5" />
+              <div className="space-y-0.5">
+                <div className="font-semibold text-blue-950">
+                  Duplicating from {initialTemplate.title || "Archived Requisition"}
+                </div>
+                <p className="text-blue-800/90 leading-relaxed">
+                  This creates a fresh, separate opening with <strong>0 applicants</strong>. All role criteria and rubric weights have been copied over. The archived requisition remains untouched for compliance.
+                </p>
+              </div>
+            </div>
           )}
 
           {/* ========================================================

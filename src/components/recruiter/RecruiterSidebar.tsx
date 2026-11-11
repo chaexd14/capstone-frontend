@@ -13,6 +13,7 @@ import {
   MoreVertical,
   Plus,
   Columns3,
+  Mail,
 } from "lucide-react";
 import { useRecruiter } from "@/context/RecruiterContext";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -100,6 +101,14 @@ export function RecruiterSidebar({ onCloseMobile }: RecruiterSidebarProps) {
       href: "/admin?view=applicants",
       isActive: !isJobDetail && activeView === "applicants",
       badge: applications.length,
+    },
+    {
+      id: "templates",
+      label: "Email Templates",
+      icon: Mail,
+      href: "/admin?view=templates",
+      isActive: !isJobDetail && activeView === "templates",
+      badge: null,
     },
   ];
 
