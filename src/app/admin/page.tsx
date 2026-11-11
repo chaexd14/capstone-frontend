@@ -7,6 +7,7 @@ import { useRecruiter } from "@/context/RecruiterContext";
 import { DashboardOverview } from "@/components/recruiter/DashboardOverview";
 import { JobsView } from "@/components/recruiter/JobsView";
 import { AllApplicantsView } from "@/components/recruiter/AllApplicantsView";
+import { RecruitmentPipelineView } from "@/components/recruiter/RecruitmentPipelineView";
 import { CreateJobModal } from "@/components/recruiter/CreateJobModal";
 import { CandidateAnalysisModal } from "@/components/recruiter/CandidateAnalysisModal";
 import { Application } from "@/types/application";
@@ -58,6 +59,8 @@ function AdminPageContent() {
         <JobsView />
       ) : activeView === "applicants" ? (
         <AllApplicantsView onSelectApplication={setSelectedApplication} />
+      ) : activeView === "pipeline" ? (
+        <RecruitmentPipelineView />
       ) : (
         <DashboardOverview
           jobs={jobs}

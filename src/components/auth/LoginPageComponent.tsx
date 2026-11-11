@@ -338,7 +338,7 @@ export function LoginPageComponent({ initialRole = "applicant" }: LoginPageCompo
       if (error) throw error;
 
       toast.success("Password Reset Link Sent", {
-        description: "Please check your inbox for instructions to reset your password.",
+        description: "If an account matches that email, a password reset link will arrive shortly.",
       });
       setShowForgotModal(false);
       setForgotEmail("");

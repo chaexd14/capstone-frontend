@@ -12,6 +12,7 @@ import {
   LogOut,
   MoreVertical,
   Plus,
+  Columns3,
 } from "lucide-react";
 import { useRecruiter } from "@/context/RecruiterContext";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -83,6 +84,14 @@ export function RecruiterSidebar({ onCloseMobile }: RecruiterSidebarProps) {
       href: "/admin?view=jobs",
       isActive: isJobDetail || activeView === "jobs",
       badge: activeJobsCount,
+    },
+    {
+      id: "pipeline",
+      label: "Recruitment Pipeline",
+      icon: Columns3,
+      href: "/admin?view=pipeline",
+      isActive: !isJobDetail && activeView === "pipeline",
+      badge: applications.filter((application) => !["HIRED", "REJECTED"].includes(application.status)).length,
     },
     {
       id: "applicants",

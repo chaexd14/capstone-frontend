@@ -169,6 +169,51 @@ export interface Application {
   status: ApplicationStatus;
   resume?: Resume;
   match_result?: MatchResult;
+  open_task_count?: number;
+  latest_activity_at?: string | null;
   applied_at: string;
   updated_at: string;
+}
+
+export interface CandidateNote {
+  id: number;
+  application: number;
+  author_id: string;
+  author_name: string;
+  body: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RecruiterTask {
+  id: number;
+  application: number;
+  title: string;
+  priority: "LOW" | "MEDIUM" | "HIGH";
+  due_at?: string | null;
+  assigned_to: string;
+  assigned_to_name: string;
+  created_by: string;
+  completed_at?: string | null;
+  is_complete: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApplicationActivity {
+  id: number;
+  application: number;
+  kind: "STATUS" | "NOTE" | "TASK" | "COMMUNICATION";
+  actor_id: string;
+  actor_name: string;
+  summary: string;
+  details: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface CommunicationTemplate {
+  id: string;
+  name: string;
+  subject: string;
+  body: string;
 }

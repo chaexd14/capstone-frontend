@@ -15,6 +15,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ConfirmJobActionModal, JobActionType } from "./ConfirmJobActionModal";
+import { CreateJobModal } from "./CreateJobModal";
 import { fetchApi } from "@/lib/api";
 import { toast } from "@/components/ui/sonner";
 import { useRecruiter } from "@/context/RecruiterContext";
@@ -41,7 +42,7 @@ export function JobsView() {
   } = useRecruiter();
 
   const [displayMode, setDisplayMode] = useState<"cards" | "table">("cards");
-  const [jobTab, setJobTab] = useState<"ACTIVE" | "CLOSED" | "ARCHIVED">("ACTIVE");
+  const [jobTab, setJobTab] = useState<"ACTIVE" | "DRAFT" | "CLOSED" | "ARCHIVED">("ACTIVE");
 
   const [archivedJobs, setArchivedJobs] = useState<ArchivedJob[]>([]);
   const [archivedLoading, setArchivedLoading] = useState(false);
@@ -50,6 +51,7 @@ export function JobsView() {
   const [actionModalType, setActionModalType] = useState<JobActionType | null>(null);
   const [actionJob, setActionJob] = useState<Job | null>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
+  const [editingJob, setEditingJob] = useState<Job | null>(null);
 
   const loadArchivedJobs = useCallback(async () => {
     setArchivedLoading(true);
@@ -73,6 +75,7 @@ export function JobsView() {
   }, [jobTab, loadArchivedJobs]);
 
   const activeJobs = jobs.filter((j) => j.status === "PUBLISHED" || (!j.status && j.status !== "CLOSED"));
+  const draftJobs = jobs.filter((j) => j.status === "DRAFT");
   const closedJobs = jobs.filter((j) => j.status === "CLOSED");
 
   const handleRestoreArchivedJob = async (archivedJob: ArchivedJob) => {
@@ -107,6 +110,10 @@ export function JobsView() {
         onJobArchived(actionJob.id);
         toast.success("Position Archived", { description: `"${actionJob.title}" moved to archive.` });
         void loadArchivedJobs();
+      } else if (actionModalType === "delete-draft" && actionJob) {
+        await fetchApi(`/jobs/${actionJob.id}/`, { method: "DELETE" });
+        onJobArchived(actionJob.id);
+        toast.success("Draft Permanently Deleted", { description: `"${actionJob.title}" was removed.` });
       }
     } catch (err: unknown) {
       console.error("Job action failed:", err);
@@ -119,15 +126,15 @@ export function JobsView() {
     }
   };
 
-  const displayedJobs = jobTab === "ACTIVE" ? activeJobs : closedJobs;
+  const displayedJobs = jobTab === "ACTIVE" ? activeJobs : jobTab === "DRAFT" ? draftJobs : closedJobs;
 
   return (
     <div className="space-y-4">
       {/* Canvas-Level Control Toolbar: Tabs & View Mode (De-containerized) */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        {/* Tab Selector: Active | Closed | Archived */}
-        <Tabs value={jobTab} onValueChange={(v) => setJobTab(v as "ACTIVE" | "CLOSED" | "ARCHIVED")}>
-          <TabsList className="bg-slate-200/60 p-1 rounded-xl">
+        {/* Tab Selector: Active | Drafts | Closed | Archived */}
+        <Tabs value={jobTab} onValueChange={(v) => setJobTab(v as "ACTIVE" | "DRAFT" | "CLOSED" | "ARCHIVED")} className="max-w-full overflow-x-auto">
+          <TabsList className="w-max bg-slate-200/60 p-1 rounded-xl">
             <TabsTrigger
               value="ACTIVE"
               className="gap-2 text-xs font-semibold rounded-lg data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-2xs"
@@ -136,6 +143,16 @@ export function JobsView() {
               <span>Active Roles</span>
               <span className="px-1.5 py-0.5 rounded-full bg-white text-slate-700 font-mono text-[11px] font-bold shadow-2xs">
                 {activeJobs.length}
+              </span>
+            </TabsTrigger>
+            <TabsTrigger
+              value="DRAFT"
+              className="gap-2 text-xs font-semibold rounded-lg data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-2xs"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+              <span>Drafts</span>
+              <span className="px-1.5 py-0.5 rounded-full bg-white text-slate-700 font-mono text-[11px] font-bold shadow-2xs">
+                {draftJobs.length}
               </span>
             </TabsTrigger>
             <TabsTrigger
@@ -197,11 +214,13 @@ export function JobsView() {
             {displayedJobs.length === 0 ? (
               <div className="p-12 text-center rounded-xl border border-dashed border-slate-200 space-y-2">
                 <div className="font-semibold text-slate-800 text-sm">
-                  {jobTab === "ACTIVE" ? "No active positions found" : "No closed positions"}
+                  {jobTab === "ACTIVE" ? "No active positions found" : jobTab === "DRAFT" ? "No draft jobs" : "No closed positions"}
                 </div>
                 <p className="text-xs text-slate-500 max-w-sm mx-auto">
                   {jobTab === "ACTIVE"
                     ? "Click Post New Job above to create your first objective evaluation rubric."
+                    : jobTab === "DRAFT"
+                      ? "Jobs saved before publishing will appear here so you can continue editing them."
                     : "Closed jobs will appear here when you close an active role."}
                 </p>
               </div>
@@ -226,7 +245,7 @@ export function JobsView() {
                   return (
                     <div
                       key={job.id}
-                      onClick={() => router.push(`/admin/jobs/${job.id}`)}
+                      onClick={() => job.status === "DRAFT" ? setEditingJob(job) : router.push(`/admin/jobs/${job.id}`)}
                       className="bg-white rounded-2xl border border-slate-200/90 hover:border-[#2196F3]/40 p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between group cursor-pointer"
                     >
                       <div>
@@ -246,6 +265,11 @@ export function JobsView() {
                           {job.status === "CLOSED" && (
                             <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold border border-amber-200 bg-amber-50 text-amber-800 shrink-0">
                               Closed
+                            </span>
+                          )}
+                          {job.status === "DRAFT" && (
+                            <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold border border-slate-200 bg-slate-50 text-slate-700 shrink-0">
+                              Draft
                             </span>
                           )}
                         </div>
@@ -304,7 +328,7 @@ export function JobsView() {
                             >
                               Reopen
                             </Button>
-                          ) : (
+                          ) : job.status === "PUBLISHED" ? (
                             <Button
                               variant="ghost"
                               size="sm"
@@ -316,25 +340,39 @@ export function JobsView() {
                             >
                               Close
                             </Button>
+                          ) : null}
+                          {job.status === "DRAFT" ? (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setActionJob(job);
+                                setActionModalType("delete-draft");
+                              }}
+                              className="h-7 px-2 text-xs font-medium text-red-600 hover:bg-red-50 hover:text-red-700"
+                            >
+                              Delete permanently
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setActionJob(job);
+                                setActionModalType("archive");
+                              }}
+                              className="h-7 text-xs text-slate-500 hover:text-slate-800 hover:bg-slate-100 px-2 font-medium"
+                            >
+                              Archive
+                            </Button>
                           )}
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => {
-                              setActionJob(job);
-                              setActionModalType("archive");
-                            }}
-                            className="h-7 text-xs text-slate-500 hover:text-slate-800 hover:bg-slate-100 px-2 font-medium"
-                          >
-                            Archive
-                          </Button>
                         </div>
 
                         <Button
-                          onClick={() => router.push(`/admin/jobs/${job.id}`)}
+                          onClick={() => job.status === "DRAFT" ? setEditingJob(job) : router.push(`/admin/jobs/${job.id}`)}
                           className="h-8 text-xs font-semibold bg-blue-50 text-[#1976D2] hover:bg-[#2196F3] hover:text-white transition-colors px-3 rounded-lg cursor-pointer"
                         >
-                          Candidate Roster &rarr;
+                          {job.status === "DRAFT" ? "Continue draft" : "Candidate Roster"} &rarr;
                         </Button>
                       </div>
                     </div>
@@ -377,7 +415,7 @@ export function JobsView() {
                           key={job.id}
                           role="button"
                           tabIndex={0}
-                          onClick={() => router.push(`/admin/jobs/${job.id}`)}
+                          onClick={() => job.status === "DRAFT" ? setEditingJob(job) : router.push(`/admin/jobs/${job.id}`)}
                           className="cursor-pointer hover:bg-blue-50/40 transition-colors"
                         >
                           <TableCell className="font-semibold text-slate-900 text-xs sm:text-sm">
@@ -417,6 +455,10 @@ export function JobsView() {
                               <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold border border-amber-200 bg-amber-50 text-amber-800">
                                 Closed
                               </span>
+                            ) : job.status === "DRAFT" ? (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold border border-slate-200 bg-slate-50 text-slate-700">
+                                Draft
+                              </span>
                             ) : (
                               <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold border border-emerald-200 bg-emerald-50 text-emerald-700">
                                 Active
@@ -425,14 +467,29 @@ export function JobsView() {
                           </TableCell>
 
                           <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => router.push(`/admin/jobs/${job.id}`)}
-                              className="h-8 text-xs font-semibold text-[#2196F3] hover:bg-blue-50"
-                            >
-                              Review
-                            </Button>
+                            <div className="flex justify-end gap-1">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => job.status === "DRAFT" ? setEditingJob(job) : router.push(`/admin/jobs/${job.id}`)}
+                                className="h-8 text-xs font-semibold text-[#2196F3] hover:bg-blue-50"
+                              >
+                                {job.status === "DRAFT" ? "Edit" : "Review"}
+                              </Button>
+                              {job.status === "DRAFT" && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    setActionJob(job);
+                                    setActionModalType("delete-draft");
+                                  }}
+                                  className="h-8 text-xs font-semibold text-red-600 hover:bg-red-50 hover:text-red-700"
+                                >
+                                  Delete
+                                </Button>
+                              )}
+                            </div>
                           </TableCell>
                         </TableRow>
                       );
@@ -522,6 +579,15 @@ export function JobsView() {
         actionType={actionModalType}
         jobTitle={actionJob?.title || ""}
         isLoading={isActionLoading}
+      />
+      <CreateJobModal
+        isOpen={editingJob !== null}
+        jobToEdit={editingJob}
+        onClose={() => setEditingJob(null)}
+        onJobCreated={(updatedJob) => {
+          onJobUpdated(updatedJob);
+          setEditingJob(null);
+        }}
       />
     </div>
   );

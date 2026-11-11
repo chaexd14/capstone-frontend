@@ -141,7 +141,9 @@ export function clearResumeBlobCache() {
 }
 
 export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  return (await fetchApiResponse(endpoint, options)).json();
+  const response = await fetchApiResponse(endpoint, options);
+  if (response.status === 204) return undefined as T;
+  return response.json();
 }
 
 export async function fetchResumePreview(

@@ -190,6 +190,7 @@ export function SignupPageComponent({}: SignupPageComponentProps = {}) {
         email: cleanEmail,
         password: password,
         options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(resolvedNextUrl)}`,
           data: {
             role: "applicant",
             full_name: fullName,

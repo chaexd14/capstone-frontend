@@ -1,1 +1,1 @@
-export { default } from "@/components/auth/PasswordRecovery";
+export { default } from "@/components/auth/EmailConfirmation";

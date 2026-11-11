@@ -38,6 +38,7 @@ interface CreateJobModalProps {
   isOpen: boolean;
   onClose: () => void;
   onJobCreated: (job: Job) => void;
+  jobToEdit?: Job | null;
 }
 
 interface LintFlag {
@@ -86,7 +87,7 @@ function parseQualificationItems(rawInput: string): string[] {
     .filter((item) => item.length > 0);
 }
 
-export function CreateJobModal({ isOpen, onClose, onJobCreated }: CreateJobModalProps) {
+export function CreateJobModal({ isOpen, onClose, onJobCreated, jobToEdit = null }: CreateJobModalProps) {
   // Stepper state (1: Role & Duties, 2: Qualifications & Credentials, 3: Screening Calibration)
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
@@ -163,6 +164,31 @@ export function CreateJobModal({ isOpen, onClose, onJobCreated }: CreateJobModal
     setFieldErrors({});
     setFormError(null);
   }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const timer = window.setTimeout(() => {
+      if (!jobToEdit) {
+        resetForm();
+        return;
+      }
+      setStep(1);
+      setTitle(jobToEdit.title || "");
+      setDepartment(jobToEdit.department || "");
+      setEmploymentType(jobToEdit.employment_type || "");
+      setLocation(jobToEdit.location || "");
+      setDescription(jobToEdit.description || "");
+      setMinExp(jobToEdit.minimum_experience || "");
+      setEducation(jobToEdit.education_requirement || "");
+      setJobStatus(jobToEdit.status);
+      setRequiredSkills(jobToEdit.required_skills || []);
+      setPreferredSkills(jobToEdit.preferred_skills || []);
+      setRubricWeights(jobToEdit.rubric_weights || DEFAULT_RUBRIC_WEIGHTS);
+      setFieldErrors({});
+      setFormError(null);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [isOpen, jobToEdit, resetForm]);
 
   // Determine if role is regulated dynamically
   const isRegulated = useMemo(() => {
@@ -680,16 +706,18 @@ export function CreateJobModal({ isOpen, onClose, onJobCreated }: CreateJobModal
         status: jobStatus,
       };
 
-      const newJob = await fetchApi<Job>("/jobs/", {
-        method: "POST",
+      const savedJob = await fetchApi<Job>(jobToEdit ? `/jobs/${jobToEdit.id}/` : "/jobs/", {
+        method: jobToEdit ? "PATCH" : "POST",
         body: JSON.stringify(payload),
       });
 
-      toast.success("Job Requisition Created!", {
-        description: `${newJob.title} is now active and ready for AI resume screening.`,
+      toast.success(jobToEdit ? "Draft Updated" : "Job Requisition Created!", {
+        description: jobToEdit
+          ? `${savedJob.title} has been saved.`
+          : `${savedJob.title} is ready for AI resume screening.`,
       });
       resetForm();
-      onJobCreated(newJob);
+      onJobCreated(savedJob);
       onClose();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to create job profile";
@@ -705,7 +733,7 @@ export function CreateJobModal({ isOpen, onClose, onJobCreated }: CreateJobModal
         }));
       }
       setFormError(msg);
-      toast.error("Failed to Create Job", {
+      toast.error(jobToEdit ? "Failed to Update Draft" : "Failed to Create Job", {
         description: msg,
       });
     } finally {
@@ -730,7 +758,7 @@ export function CreateJobModal({ isOpen, onClose, onJobCreated }: CreateJobModal
           <div className="flex items-center justify-between">
             <div>
               <DialogTitle className="text-xl font-bold tracking-tight text-foreground">
-                Create Job Requisition
+                {jobToEdit ? "Edit Draft Requisition" : "Create Job Requisition"}
               </DialogTitle>
               <DialogDescription className="text-xs text-muted-foreground mt-0.5">
                 Define role specifications, qualification statements, and benchmark criteria for objective screening.
@@ -1995,7 +2023,9 @@ export function CreateJobModal({ isOpen, onClose, onJobCreated }: CreateJobModal
               >
                 {loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 <span>
-                  {jobStatus === "PUBLISHED" ? "Publish Job Benchmark" : "Save Requisition Draft"}
+                  {jobStatus === "PUBLISHED"
+                    ? jobToEdit ? "Save & Publish Job" : "Publish Job Benchmark"
+                    : jobToEdit ? "Save Draft Changes" : "Save Requisition Draft"}
                 </span>
               </Button>
             )}

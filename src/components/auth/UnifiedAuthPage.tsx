@@ -232,6 +232,7 @@ export function UnifiedAuthPage({ initialRole = "applicant" }: UnifiedAuthPagePr
         email: cleanEmail,
         password: signUpPassword,
         options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(resolvedNextUrl)}`,
           data: {
             role: "applicant",
             full_name: cleanName,
@@ -286,7 +287,7 @@ export function UnifiedAuthPage({ initialRole = "applicant" }: UnifiedAuthPagePr
       if (error) throw error;
 
       setForgotStatus("success");
-      setForgotMessage("Password reset email sent! Please check your inbox for instructions.");
+      setForgotMessage("If an account matches that email, a password reset link will arrive shortly.");
     } catch (err: unknown) {
       setForgotStatus("error");
       setForgotMessage(err instanceof Error ? err.message : "Failed to send reset link. Please verify your email.");

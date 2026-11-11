@@ -15,9 +15,10 @@ import {
   Lock,
   RotateCcw,
   Loader2,
+  Trash2,
 } from "lucide-react";
 
-export type JobActionType = "close" | "reopen" | "archive";
+export type JobActionType = "close" | "reopen" | "archive" | "delete-draft";
 
 interface ConfirmJobActionModalProps {
   isOpen: boolean;
@@ -99,6 +100,25 @@ export function ConfirmJobActionModal({
               Move <strong className="text-foreground">&ldquo;{jobTitle}&rdquo;</strong> to Archived Jobs?
               Applications and resumes will be available when the position is restored.
             </p>
+          ),
+        };
+
+      case "delete-draft":
+        return {
+          title: "Delete Draft Permanently",
+          icon: <Trash2 className="h-5 w-5 text-red-600" />,
+          variant: "default" as const,
+          confirmLabel: "Delete Draft Permanently",
+          confirmClass: "bg-red-600 hover:bg-red-700 text-white",
+          description: (
+            <div className="space-y-3 text-sm text-muted-foreground pt-1">
+              <p>
+                Permanently delete <strong className="text-foreground">&ldquo;{jobTitle}&rdquo;</strong>?
+              </p>
+              <p className="rounded-xl bg-red-50 p-3 text-xs leading-5 text-red-800">
+                This draft has never been published. Deletion cannot be undone and it will not appear in Archived Jobs.
+              </p>
+            </div>
           ),
         };
 
