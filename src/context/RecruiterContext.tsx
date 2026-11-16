@@ -10,9 +10,47 @@ import { createClient } from "@/lib/supabase/client";
 export interface RecruiterUserInfo {
   id: string;
   email?: string;
+  firstName?: string;
+  lastName?: string;
   name: string;
   role: string;
   company?: string;
+}
+
+const UUID_LIKE_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function cleanNameValue(value: unknown, opaqueIds: Array<string | undefined>): string {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (!trimmed || UUID_LIKE_PATTERN.test(trimmed)) return "";
+  if (opaqueIds.some((id) => id && id.trim().toLowerCase() === trimmed.toLowerCase())) {
+    return "";
+  }
+  return trimmed;
+}
+
+function splitFullName(fullName: string): { firstName: string; lastName: string } {
+  const parts = fullName.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return { firstName: "", lastName: "" };
+  if (parts.length === 1) return { firstName: parts[0], lastName: "" };
+  return { firstName: parts[0], lastName: parts.slice(1).join(" ") };
+}
+
+function nameFromEmail(email?: string): { firstName: string; lastName: string } {
+  if (!email) return { firstName: "", lastName: "" };
+  const local = email.split("@")[0]?.trim() || "";
+  if (!local || UUID_LIKE_PATTERN.test(local)) return { firstName: "", lastName: "" };
+  const tokens = local
+    .split(/[._-]+/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0 && !/^\d+$/.test(part));
+  if (tokens.length === 0) return { firstName: "", lastName: "" };
+  const formatted = tokens.map(
+    (part) => part.charAt(0).toUpperCase() + part.slice(1)
+  );
+  if (formatted.length === 1) return { firstName: formatted[0], lastName: "" };
+  return { firstName: formatted[0], lastName: formatted.slice(1).join(" ") };
 }
 
 interface RecruiterContextValue {
@@ -75,7 +113,15 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
 
         // Authoritatively verify role with Django backend
         const meData = await fetchApi<{
-          user: { role: string; email?: string; name?: string };
+          user: {
+            role: string;
+            email?: string;
+            first_name?: string;
+            last_name?: string;
+            name?: string;
+            username?: string;
+            supabase_id?: string;
+          };
         }>("/auth/me/");
 
         const verifiedRole = meData?.user?.role?.toLowerCase();
@@ -87,13 +133,53 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
           return;
         }
 
+        const resolvedEmail = meData?.user?.email || user.email;
+        const opaqueIds = [user.id, meData?.user?.username, meData?.user?.supabase_id];
+        const meta = (user.user_metadata ?? {}) as Record<string, unknown>;
+
+        const backendFirst = cleanNameValue(meData?.user?.first_name, opaqueIds);
+        const backendLast = cleanNameValue(meData?.user?.last_name, opaqueIds);
+        const metaFirst = cleanNameValue(meta.first_name, opaqueIds);
+        const metaLast = cleanNameValue(meta.last_name, opaqueIds);
+        const rawFullName =
+          cleanNameValue(meData?.user?.name, opaqueIds) ||
+          cleanNameValue(meta.full_name, opaqueIds) ||
+          cleanNameValue(meta.name, opaqueIds);
+
+        let firstName = backendFirst;
+        let lastName = backendLast;
+
+        if (!firstName && !lastName) {
+          firstName = metaFirst;
+          lastName = metaLast;
+        }
+        if (!firstName && !lastName && rawFullName) {
+          ({ firstName, lastName } = splitFullName(rawFullName));
+        }
+        if (!firstName && !lastName) {
+          ({ firstName, lastName } = nameFromEmail(resolvedEmail));
+        }
+        if (!firstName && !lastName) {
+          if (verifiedRole === "superadmin") {
+            firstName = "Platform";
+            lastName = "Admin";
+          } else {
+            firstName = "Recruiter";
+            lastName = "";
+          }
+        }
+
+        const resolvedFullName = [firstName, lastName].filter(Boolean).join(" ");
+
         clearRecruiterStorage();
         setCurrentUser({
           id: user.id,
-          email: meData?.user?.email || user.email,
-          name: meData?.user?.name || user.user_metadata?.full_name || user.email?.split("@")[0] || "Recruiter",
+          email: resolvedEmail,
+          firstName,
+          lastName,
+          name: resolvedFullName,
           role: verifiedRole,
-          company: user.user_metadata?.company || "Talent Operations",
+          company: cleanNameValue(meta.company, opaqueIds) || "Talent Operations",
         });
       } catch (err) {
         console.error("Auth check failed:", err);

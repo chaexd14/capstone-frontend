@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2 } from "lucide-react";
 import { useRecruiter } from "@/context/RecruiterContext";
 import { DashboardOverview } from "@/components/recruiter/DashboardOverview";
 import { JobsView } from "@/components/recruiter/JobsView";
@@ -12,6 +11,9 @@ import { MessageTemplatesView } from "@/components/recruiter/MessageTemplatesVie
 import { CreateJobModal } from "@/components/recruiter/CreateJobModal";
 import { CandidateAnalysisModal } from "@/components/recruiter/CandidateAnalysisModal";
 import { Application } from "@/types/application";
+import { ContextualLoading } from "@/components/ui/contextual-loading";
+import { PlatformManagement } from "@/components/recruiter/PlatformManagement";
+import { SystemMonitoring } from "@/components/recruiter/SystemMonitoring";
 
 function AdminPageContent() {
   const router = useRouter();
@@ -23,6 +25,7 @@ function AdminPageContent() {
     loading,
     isCreateJobOpen,
     setIsCreateJobOpen,
+    currentUser,
     onJobCreated,
     onApplicationUpdated,
   } = useRecruiter();
@@ -38,23 +41,23 @@ function AdminPageContent() {
   }, [searchParams, router]);
 
   const activeView = searchParams.get("view") || "dashboard";
+  const isSuperAdmin = currentUser?.role === "superadmin";
+
+  if (isSuperAdmin) {
+    return activeView === "platform" ? <PlatformManagement /> : <SystemMonitoring />;
+  }
 
   if (activeView !== "platform" && loading && jobs.length === 0 && applications.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[50vh] gap-3">
-        <Loader2 className="h-6 w-6 animate-spin text-[#2196F3]" />
-        <span className="text-xs text-slate-500 font-mono">
-          Loading Recruiter Management Studio...
-        </span>
-      </div>
+      <ContextualLoading label="Loading recruiter workspace" />
     );
   }
 
   return (
     <>
-      {activeView === "platform" ? (
+      {activeView === "platform" || activeView === "system" ? (
         <p role="alert" className="py-6 text-sm text-muted-foreground">
-          Companies and staff management requires a Super Admin account.
+          System administration requires a Super Admin account.
         </p>
       ) : activeView === "jobs" ? (
         <JobsView />
@@ -96,10 +99,7 @@ export default function AdminPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex flex-col items-center justify-center min-h-[50vh] gap-3">
-          <Loader2 className="h-6 w-6 animate-spin text-[#2196F3]" />
-          <span className="text-xs text-slate-500 font-mono">Loading workspace...</span>
-        </div>
+        <ContextualLoading label="Loading recruiter workspace" />
       }
     >
       <AdminPageContent />

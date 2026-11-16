@@ -1,12 +1,12 @@
 "use client";
 
 import React, { useState } from "react";
-import { Loader2 } from "lucide-react";
 import { useRecruiter } from "@/context/RecruiterContext";
 import { RecruiterSidebar } from "@/components/recruiter/RecruiterSidebar";
 import { RecruiterTopBar } from "@/components/recruiter/RecruiterTopBar";
-import { PlatformManagement } from "@/components/recruiter/PlatformManagement";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
+import { ContextualLoading } from "@/components/ui/contextual-loading";
+import { ResponsiveContent } from "@/components/ui/responsive-content";
 
 export function AdminLayoutClient({ children }: { children: React.ReactNode }) {
   const { authChecked, currentUser } = useRecruiter();
@@ -14,34 +14,31 @@ export function AdminLayoutClient({ children }: { children: React.ReactNode }) {
 
   if (!authChecked || !currentUser) {
     return (
-      <div className="min-h-screen bg-[#f8fafc] text-slate-900 flex flex-col items-center justify-center gap-3">
-        <Loader2 className="h-6 w-6 animate-spin text-[#2196F3]" />
-        <span className="text-xs text-slate-500 font-mono">Verifying recruiter authorization...</span>
-      </div>
+      <div className="min-h-screen bg-background text-foreground"><ContextualLoading label="Verifying recruiter access" className="min-h-screen" /></div>
     );
   }
 
   return (
-    <div className="h-dvh w-screen overflow-hidden bg-[#edf4fc] text-slate-900 flex p-0 md:p-2 md:gap-2 font-sans selection:bg-[#2196F3] selection:text-white">
+    <div className="flex h-dvh w-full overflow-hidden bg-background text-foreground font-sans selection:bg-primary selection:text-primary-foreground">
       {/* Desktop Persistent Sidebar (Pinned Left, 256px, Canvas-Level) */}
-      <div className="hidden md:block shrink-0 h-full">
+      <div className="hidden h-full w-64 shrink-0 md:block">
         <RecruiterSidebar />
       </div>
 
       {/* Mobile Drawer (Sheet) */}
       <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
-        <SheetContent side="left" className="p-2 w-68 bg-[#edf4fc] border-r border-slate-200/90">
+        <SheetContent side="left" className="w-72 bg-background p-2">
           <RecruiterSidebar onCloseMobile={() => setMobileOpen(false)} />
         </SheetContent>
       </Sheet>
 
       {/* Main Workspace: shadcn sidebar-08 Inset Island Frame */}
-      <div className="flex-1 flex flex-col h-full min-w-0 bg-white md:rounded-2xl md:border md:border-slate-200/90 md:shadow-2xs overflow-hidden">
+      <div className="m-0 flex h-full min-w-0 flex-1 flex-col overflow-hidden bg-card md:my-2 md:mr-2 md:rounded-2xl md:shadow-sm">
         <RecruiterTopBar onOpenMobileMenu={() => setMobileOpen(true)} />
-        <main className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 lg:p-8 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-slate-300/80 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 [&::-webkit-scrollbar-track]:bg-transparent">
-          <div className="max-w-[1600px] w-full mx-auto">
-            {currentUser.role === "superadmin" ? <PlatformManagement /> : children}
-          </div>
+        <main className="min-h-0 flex-1 overflow-y-auto bg-card px-4 py-5 sm:px-6 sm:py-7 lg:px-8 lg:py-8 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border">
+          <ResponsiveContent>
+            {children}
+          </ResponsiveContent>
         </main>
       </div>
     </div>

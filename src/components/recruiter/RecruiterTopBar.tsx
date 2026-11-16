@@ -2,6 +2,10 @@
 
 import React from "react";
 import { Menu } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { useRecruiter } from "@/context/RecruiterContext";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
+import { IconButton } from "@/components/ui/icon-button";
 
 interface RecruiterTopBarProps {
   onOpenMobileMenu: () => void;
@@ -9,27 +13,46 @@ interface RecruiterTopBarProps {
 }
 
 export function RecruiterTopBar({ onOpenMobileMenu }: RecruiterTopBarProps) {
+  const searchParams = useSearchParams();
+  const { currentUser } = useRecruiter();
+  const isSuperAdmin = currentUser?.role === "superadmin";
+
+  const labels: Record<string, string> = {
+    dashboard: "Dashboard",
+    jobs: "Jobs",
+    applicants: "Applicants",
+    pipeline: "Hiring Pipeline",
+    templates: "Message Templates",
+    platform: "Companies & Team",
+    system: "System Health",
+  };
+
+  const title = labels[searchParams.get("view") || "dashboard"] || "Recruiter Workspace";
+
   return (
-    <header className="md:hidden flex h-12 items-center justify-between border-b border-slate-100 px-4 bg-white shrink-0">
-      <button
+    <header className="flex h-14 shrink-0 items-center justify-between border-b border-border/70 bg-card px-3 md:hidden">
+      <IconButton
+        variant="ghost"
+        size="icon"
         type="button"
         onClick={onOpenMobileMenu}
-        className="p-1.5 -ml-1 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
-        aria-label="Open navigation menu"
+        label="Open navigation menu"
+        className="-ml-1 text-muted-foreground hover:text-foreground"
       >
-        <Menu className="w-5 h-5" />
-      </button>
+        <Menu className="size-5" aria-hidden="true" />
+      </IconButton>
 
-      <div className="flex items-center gap-2">
-        <div className="w-6 h-6 rounded-md bg-[#2196F3] text-white font-extrabold text-[10px] flex items-center justify-center shrink-0 shadow-2xs">
-          TM
-        </div>
-        <span className="font-bold text-xs tracking-tight text-slate-900">
-          TalentMatch
-        </span>
+      <div className="min-w-0 flex-1 px-2">
+        <p className="truncate text-sm font-bold tracking-tight text-foreground">{title}</p>
+        <p className="text-sm text-muted-foreground">
+          {isSuperAdmin ? "TalentMatch Admin" : "TalentMatch Recruiter"}
+        </p>
       </div>
 
-      <div className="w-6" role="presentation" />
+      <NotificationBell
+        role={currentUser?.role || "recruiter"}
+        userId={currentUser?.id || null}
+      />
     </header>
   );
 }

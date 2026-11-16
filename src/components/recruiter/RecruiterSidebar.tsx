@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import {
@@ -14,10 +14,23 @@ import {
   Plus,
   Columns3,
   Mail,
+  HeartPulse,
 } from "lucide-react";
 import { useRecruiter } from "@/context/RecruiterContext";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
+import { Switch } from "@/components/ui/switch";
+import { cn } from "@/lib/utils";
 
 interface RecruiterSidebarProps {
   onCloseMobile?: () => void;
@@ -38,22 +51,6 @@ export function RecruiterSidebar({ onCloseMobile }: RecruiterSidebarProps) {
     setIsCreateJobOpen,
   } = useRecruiter();
 
-  const [userMenuOpen, setUserMenuOpen] = useState(false);
-  const userMenuRef = useRef<HTMLDivElement>(null);
-
-  // Close user menu when clicking outside
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (userMenuRef.current && !userMenuRef.current.contains(event.target as Node)) {
-        setUserMenuOpen(false);
-      }
-    }
-    if (userMenuOpen) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [userMenuOpen]);
-
   const activeView = searchParams.get("view") || "dashboard";
   const isSuperAdmin = currentUser?.role === "superadmin";
   const isJobDetail = pathname.startsWith("/admin/jobs/");
@@ -62,251 +59,288 @@ export function RecruiterSidebar({ onCloseMobile }: RecruiterSidebarProps) {
     (j) => j.status === "PUBLISHED" || (!j.status && j.status !== "CLOSED")
   ).length;
 
-  const navItems = isSuperAdmin ? [{
-    id: "platform",
-    label: "Companies & staff",
-    icon: Building2,
-    href: "/admin?view=platform",
-    isActive: true,
-    badge: null,
-  }] : [
-    {
-      id: "dashboard",
-      label: "Dashboard",
-      icon: LayoutDashboard,
-      href: "/admin?view=dashboard",
-      isActive: !isJobDetail && activeView === "dashboard",
-      badge: null,
-    },
-    {
-      id: "jobs",
-      label: "Job Requisitions",
-      icon: Briefcase,
-      href: "/admin?view=jobs",
-      isActive: isJobDetail || activeView === "jobs",
-      badge: activeJobsCount,
-    },
-    {
-      id: "pipeline",
-      label: "Recruitment Pipeline",
-      icon: Columns3,
-      href: "/admin?view=pipeline",
-      isActive: !isJobDetail && activeView === "pipeline",
-      badge: applications.filter((application) => !["HIRED", "REJECTED"].includes(application.status)).length,
-    },
-    {
-      id: "applicants",
-      label: "Candidate Applications",
-      icon: Users,
-      href: "/admin?view=applicants",
-      isActive: !isJobDetail && activeView === "applicants",
-      badge: applications.length,
-    },
-    {
-      id: "templates",
-      label: "Email Templates",
-      icon: Mail,
-      href: "/admin?view=templates",
-      isActive: !isJobDetail && activeView === "templates",
-      badge: null,
-    },
-  ];
+  const navItems = isSuperAdmin
+    ? [
+        {
+          id: "system",
+          label: "System Health",
+          icon: HeartPulse,
+          href: "/admin?view=system",
+          isActive: activeView !== "platform",
+          badge: null as number | null,
+        },
+        {
+          id: "platform",
+          label: "Companies & Team",
+          icon: Building2,
+          href: "/admin?view=platform",
+          isActive: activeView === "platform",
+          badge: null as number | null,
+        },
+      ]
+    : [
+        {
+          id: "dashboard",
+          label: "Dashboard",
+          icon: LayoutDashboard,
+          href: "/admin?view=dashboard",
+          isActive: !isJobDetail && activeView === "dashboard",
+          badge: null as number | null,
+        },
+        {
+          id: "jobs",
+          label: "Jobs",
+          icon: Briefcase,
+          href: "/admin?view=jobs",
+          isActive: isJobDetail || activeView === "jobs",
+          badge: activeJobsCount,
+        },
+        {
+          id: "pipeline",
+          label: "Hiring Pipeline",
+          icon: Columns3,
+          href: "/admin?view=pipeline",
+          isActive: !isJobDetail && activeView === "pipeline",
+          badge: applications.filter(
+            (application) => !["HIRED", "REJECTED"].includes(application.status)
+          ).length,
+        },
+        {
+          id: "applicants",
+          label: "Applicants",
+          icon: Users,
+          href: "/admin?view=applicants",
+          isActive: !isJobDetail && activeView === "applicants",
+          badge: applications.length,
+        },
+        {
+          id: "templates",
+          label: "Message Templates",
+          icon: Mail,
+          href: "/admin?view=templates",
+          isActive: !isJobDetail && activeView === "templates",
+          badge: null as number | null,
+        },
+      ];
 
   const handleNavClick = (href: string) => {
     router.push(href);
     if (onCloseMobile) onCloseMobile();
   };
 
-  const displayName = currentUser?.name || currentUser?.email?.split("@")[0] || "Recruiter";
-  const userInitial = displayName.charAt(0).toUpperCase();
+  const firstName = (currentUser?.firstName || "").trim();
+  const lastName = (currentUser?.lastName || "").trim();
+  const fullNameFromParts = [firstName, lastName].filter(Boolean).join(" ").trim();
+  const fallbackName = (currentUser?.name || "").trim();
+  const displayName =
+    fullNameFromParts ||
+    (fallbackName && fallbackName !== currentUser?.id ? fallbackName : "") ||
+    (isSuperAdmin ? "Platform Admin" : "Recruiter");
+
+  const userInitials = (() => {
+    if (firstName && lastName) {
+      return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
+    }
+    const parts = displayName.trim().split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      return `${parts[0].charAt(0)}${parts[parts.length - 1].charAt(0)}`.toUpperCase();
+    }
+    if (parts.length === 1) {
+      return parts[0].charAt(0).toUpperCase();
+    }
+    return "R";
+  })();
+
   const userEmail = currentUser?.email || "recruiter@talentmatch.internal";
 
   return (
-    <aside className="w-64 h-full flex flex-col justify-between py-3.5 px-2 select-none overflow-hidden text-slate-800">
-      {/* Top Section: Brand Logo, Quick Create CTA & Nav */}
-      <div className="flex flex-col min-h-0 flex-1 overflow-hidden">
-        {/* Brand Header */}
-        <div className="h-10 flex items-center px-2 mb-3">
+    <aside className="flex h-full w-64 select-none flex-col justify-between overflow-hidden px-3 py-4 text-foreground">
+      {/* Top Section: Brand Header, Quick Action & Navigation */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <div className="mb-5 flex h-10 items-center px-2">
           <Link
-            href={isSuperAdmin ? "/admin?view=platform" : "/admin?view=dashboard"}
+            href={isSuperAdmin ? "/admin?view=system" : "/admin?view=dashboard"}
             onClick={() => onCloseMobile && onCloseMobile()}
-            className="flex items-center gap-2.5 group"
+            className="group flex items-center gap-2.5"
           >
-            <div className="w-8 h-8 rounded-lg bg-[#2196F3] text-white font-extrabold text-xs flex items-center justify-center shrink-0 shadow-2xs group-hover:bg-[#1976D2] transition-colors">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary text-sm font-extrabold text-primary-foreground shadow-2xs transition-colors group-hover:bg-primary/90">
               TM
             </div>
             <div className="flex flex-col">
-              <span className="font-bold text-sm tracking-tight text-slate-900 group-hover:text-[#2196F3] transition-colors leading-none">
+              <span className="text-sm font-bold leading-none tracking-tight text-foreground transition-colors group-hover:text-primary">
                 TalentMatch
               </span>
-              <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mt-0.5">
-                {isSuperAdmin ? "Super Admin" : "Recruiter Studio"}
+              <span className="mt-1 text-sm font-medium leading-none text-muted-foreground">
+                {isSuperAdmin ? "Admin Console" : "Recruiter Workspace"}
               </span>
             </div>
           </Link>
         </div>
 
-        {!isSuperAdmin && (
-          <div className="flex items-center gap-2 mb-4 px-1">
-            <button
+        {!isSuperAdmin ? (
+          <div className="mb-5 flex items-center gap-2 px-1">
+            <Button
               type="button"
               onClick={() => setIsCreateJobOpen(true)}
-              className="flex-1 h-9.5 bg-[#2196F3] hover:bg-[#1976D2] text-white font-semibold text-xs rounded-xl shadow-2xs hover:shadow-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+              className="h-10 flex-1"
             >
-              <Plus className="w-4 h-4" />
+              <Plus className="size-4" aria-hidden="true" />
               <span>Post New Job</span>
-            </button>
+            </Button>
 
-            <div className="h-9.5 w-9.5 rounded-xl border border-slate-200/90 bg-white hover:bg-blue-50/50 hover:border-blue-200 flex items-center justify-center shrink-0 shadow-2xs transition-colors">
+            <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-card shadow-xs">
               <NotificationBell
                 role={currentUser?.role || "recruiter"}
                 userId={currentUser?.id || null}
               />
             </div>
           </div>
-        )}
+        ) : null}
 
-        {/* Primary Workspace Navigation */}
-        <nav className="space-y-1 px-1" aria-label="Recruiter Studio Navigation">
+        <nav className="space-y-1 px-1" aria-label="Recruiter workspace navigation">
           {navItems.map((item) => {
             const Icon = item.icon;
             return (
-              <button
+              <Button
+                variant="ghost"
                 key={item.id}
                 type="button"
+                aria-current={item.isActive ? "page" : undefined}
                 onClick={() => handleNavClick(item.href)}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer border ${
+                className={cn(
+                  "w-full justify-between px-3 text-sm font-semibold",
                   item.isActive
-                    ? "bg-white text-slate-900 shadow-2xs border-slate-200/90"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-white/70 hover:border-slate-200/60 border-transparent"
-                }`}
+                    ? "bg-card text-foreground shadow-xs hover:bg-card hover:text-foreground"
+                    : "text-muted-foreground hover:bg-card/80 hover:text-foreground"
+                )}
               >
-                <div className="flex items-center gap-2.5 min-w-0">
+                <span className="flex min-w-0 items-center gap-2.5">
                   <Icon
-                    className={`w-4 h-4 shrink-0 transition-colors ${
-                      item.isActive ? "text-[#2196F3]" : "text-slate-500"
-                    }`}
+                    aria-hidden="true"
+                    className={cn(
+                      "size-4 shrink-0 transition-colors",
+                      item.isActive ? "text-primary" : "text-muted-foreground"
+                    )}
                   />
                   <span className="truncate">{item.label}</span>
-                </div>
+                </span>
 
-                {item.badge !== null && (
-                  <span
-                    className={`font-mono text-[11px] px-1.5 py-0.5 rounded-full font-bold tabular-nums shrink-0 ${
-                      item.isActive
-                        ? "bg-blue-50 text-[#1976D2] border border-blue-200/70"
-                        : "bg-slate-200/70 text-slate-600"
-                    }`}
+                {item.badge !== null ? (
+                  <Badge
+                    variant={item.isActive ? "secondary" : "outline"}
+                    className={cn(
+                      "shrink-0 px-2 py-0.5 tabular-nums",
+                      !item.isActive && "border-border/80 bg-card/70 text-muted-foreground"
+                    )}
                   >
                     {item.badge}
-                  </span>
-                )}
-              </button>
+                  </Badge>
+                ) : null}
+              </Button>
             );
           })}
         </nav>
 
-        {!isSuperAdmin && (
-          <div className="mt-6 px-1 space-y-1.5">
-            <div className="px-3 pb-0.5">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                Workspace Settings
-              </span>
-            </div>
-
-            {/* Demographic Masking Toggle */}
-            <button
-              type="button"
-              onClick={() => setAnonymize(!anonymize)}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs transition-all cursor-pointer border ${
+        {!isSuperAdmin ? (
+          <div className="mt-5 px-1">
+            <div
+              className={cn(
+                "flex items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-sm transition-colors",
                 anonymize
-                  ? "bg-white text-[#1976D2] font-semibold border-blue-200/80 shadow-2xs"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-white/70 border-transparent"
-              }`}
+                  ? "bg-card text-foreground shadow-xs"
+                  : "text-muted-foreground hover:bg-card/70 hover:text-foreground"
+              )}
             >
-              <div className="flex items-center gap-2.5">
-                <Shield className={`w-4 h-4 ${anonymize ? "text-[#2196F3]" : "text-slate-500"}`} />
-                <div className="text-left">
-                  <span className="block leading-none">Blind Screening</span>
-                  <span className="text-[10px] text-slate-400 font-normal block mt-0.5">
-                    {anonymize ? "PII masked for fair review" : "Candidate names visible"}
-                  </span>
-                </div>
-              </div>
-              <div
-                className={`w-8 h-4.5 rounded-full transition-colors relative flex items-center p-0.5 shrink-0 ${
-                  anonymize ? "bg-[#2196F3]" : "bg-slate-300"
-                }`}
+              <label
+                htmlFor="sidebar-anonymous-review"
+                className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5"
               >
-                <div
-                  className={`w-3.5 h-3.5 rounded-full bg-white shadow-xs transition-transform transform ${
-                    anonymize ? "translate-x-3.5" : "translate-x-0"
-                  }`}
+                <Shield
+                  aria-hidden="true"
+                  className={cn(
+                    "size-4 shrink-0",
+                    anonymize ? "text-primary" : "text-muted-foreground"
+                  )}
                 />
-              </div>
-            </button>
+                <span className="min-w-0">
+                  <span className="block truncate font-semibold leading-tight text-foreground">
+                    Anonymous Review
+                  </span>
+                  <span className="mt-0.5 block truncate text-sm font-normal text-muted-foreground">
+                    {anonymize ? "Names hidden" : "Names visible"}
+                  </span>
+                </span>
+              </label>
+
+              <Switch
+                id="sidebar-anonymous-review"
+                checked={anonymize}
+                onCheckedChange={setAnonymize}
+                aria-label="Anonymous review"
+              />
+            </div>
           </div>
-        )}
+        ) : null}
       </div>
 
-      {/* Bottom Section: User Profile Pill */}
-      <div className="px-1 pt-2 relative" ref={userMenuRef}>
-        {/* User Popover Menu */}
-        {userMenuOpen && (
-          <div className="absolute bottom-full left-1 right-1 mb-2 p-1.5 bg-white rounded-2xl border border-slate-200/90 shadow-lg z-50 animate-in fade-in-0 zoom-in-95 duration-100 text-xs">
-            <div className="px-3 py-2.5 border-b border-slate-100">
-              <div className="font-bold text-slate-900 truncate">{displayName}</div>
-              <div className="text-[11px] text-slate-400 font-mono truncate">{userEmail}</div>
-              <div className="mt-1">
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-[#1976D2] border border-blue-100">
-                  {isSuperAdmin ? "Platform Administrator" : "Hiring Team Recruiter"}
+      {/* Bottom Section: Canonical DropdownMenu User Profile */}
+      <div className="px-1 pt-2">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              type="button"
+              className="h-auto w-full justify-start gap-2.5 bg-card/80 p-2 text-left shadow-xs hover:bg-card data-[state=open]:bg-card"
+              aria-label="User profile and session options"
+            >
+              <Avatar className="size-8 shrink-0 border border-primary/15 bg-secondary text-secondary-foreground">
+                <AvatarFallback className="bg-secondary text-sm font-bold text-secondary-foreground">
+                  {userInitials}
+                </AvatarFallback>
+              </Avatar>
+              <span className="flex min-w-0 flex-1 flex-col leading-tight">
+                <span className="truncate text-sm font-semibold text-foreground">
+                  {displayName}
                 </span>
+                <span className="mt-0.5 truncate text-sm text-muted-foreground">
+                  {userEmail}
+                </span>
+              </span>
+              <MoreVertical
+                className="size-4 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
+            </Button>
+          </DropdownMenuTrigger>
+
+          <DropdownMenuContent
+            side="top"
+            align="start"
+            className="w-60 rounded-2xl p-1.5 shadow-lg"
+          >
+            <DropdownMenuLabel className="space-y-1 px-2.5 py-2 font-normal">
+              <p className="truncate text-sm font-semibold text-foreground">
+                {displayName}
+              </p>
+              <p className="truncate text-sm text-muted-foreground">{userEmail}</p>
+              <div className="pt-1">
+                <Badge variant="secondary">
+                  {isSuperAdmin ? "Platform Admin" : "Hiring Team"}
+                </Badge>
               </div>
-            </div>
+            </DropdownMenuLabel>
 
-            <div className="pt-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setUserMenuOpen(false);
-                  void handleLogout();
-                }}
-                className="w-full flex items-center gap-2 px-2.5 py-2 rounded-xl text-rose-600 hover:bg-rose-50 transition-colors font-medium cursor-pointer"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-                <span>Log out</span>
-              </button>
-            </div>
-          </div>
-        )}
+            <DropdownMenuSeparator />
 
-        {/* User Pill Button */}
-        <button
-          type="button"
-          onClick={() => setUserMenuOpen(!userMenuOpen)}
-          className={`w-full flex items-center gap-2.5 p-2 rounded-xl transition-all cursor-pointer text-left border ${
-            userMenuOpen
-              ? "bg-white border-slate-200/90 shadow-2xs"
-              : "bg-white/70 hover:bg-white border-slate-200/70 shadow-2xs"
-          }`}
-          aria-label="User profile and session options"
-          aria-expanded={userMenuOpen}
-        >
-          <Avatar className="h-8 w-8 rounded-full border border-blue-100 bg-blue-50 text-[#1976D2] shrink-0">
-            <AvatarFallback className="rounded-full font-bold text-xs bg-blue-50 text-[#1976D2]">
-              {userInitial}
-            </AvatarFallback>
-          </Avatar>
-          <div className="flex flex-col min-w-0 flex-1 leading-tight">
-            <span className="text-xs font-bold text-slate-900 truncate">
-              {displayName}
-            </span>
-            <span className="text-[10px] text-slate-400 truncate mt-0.5">
-              {userEmail}
-            </span>
-          </div>
-          <MoreVertical className="w-4 h-4 text-slate-400 shrink-0" />
-        </button>
+            <DropdownMenuItem
+              onSelect={() => void handleLogout()}
+              className="cursor-pointer rounded-xl font-medium text-destructive focus:bg-destructive/10 focus:text-destructive"
+            >
+              <LogOut className="size-4" aria-hidden="true" />
+              <span>Log out</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </aside>
   );

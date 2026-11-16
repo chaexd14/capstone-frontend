@@ -1,24 +1,23 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Building2, ChevronRight, Plus, Shield, UserPlus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchApi } from "@/lib/api";
 
 type Company = { id: number; name: string; description: string; website: string };
-type Invitation = { id: number; email: string; state: "sending" | "pending" | "failed" | "accepted" | "expired" };
-type Staff = { id: number; email: string; company: number | null; active: boolean };
+type Staff = { id: number; first_name: string; last_name: string; email: string; role: "recruiter"; company: number | null; active: boolean };
 type Form = "company-new" | "company-edit" | "staff-new" | Staff;
-const selectClass = "h-10 w-full rounded-xl border border-input bg-background px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 export function PlatformManagement() {
   const [companies, setCompanies] = useState<Company[] | null>(null);
   const [selection, setSelection] = useState<number | "unassigned" | null>(null);
-  const [directory, setDirectory] = useState<{ key: number | "unassigned"; rows: Staff[]; invitations: Invitation[] } | null>(null);
+  const [directory, setDirectory] = useState<{ key: number | "unassigned"; rows: Staff[] } | null>(null);
   const [form, setForm] = useState<Form | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -32,7 +31,6 @@ export function PlatformManagement() {
   const key = selection ?? companies?.[0]?.id ?? "unassigned";
   const company = companies?.find((item) => item.id === key);
   const staff = directory?.key === key ? directory.rows : null;
-  const invitations = directory?.key === key ? directory.invitations : [];
   const companyForm = form === "company-new" || form === "company-edit";
   const editingStaff = form && typeof form === "object" ? form : null;
 
@@ -57,12 +55,8 @@ export function PlatformManagement() {
   useEffect(() => {
     if (!companies) return;
     const controller = new AbortController();
-    Promise.all([
-      fetchApi<Staff[]>(`/platform/staff/?company=${key}`, { signal: controller.signal }),
-      typeof key === "number"
-        ? fetchApi<Invitation[]>(`/platform/staff/invitations/?company=${key}`, { signal: controller.signal })
-        : Promise.resolve([]),
-    ]).then(([rows, invitations]) => { setDirectory({ key, rows, invitations }); setStaffError(null); })
+    fetchApi<Staff[]>(`/platform/staff/?company=${key}`, { signal: controller.signal })
+      .then((rows) => { setDirectory({ key, rows }); setStaffError(null); })
       .catch((err: Error) => {
         if (!controller.signal.aborted) setStaffError({ key, text: err.message });
       });
@@ -111,6 +105,23 @@ export function PlatformManagement() {
         setSelection(saved.id);
         setNotice(existing ? "Company details updated." : "Company created.");
       } else if (editingStaff) {
+        const intent = (event.nativeEvent as SubmitEvent).submitter instanceof HTMLButtonElement
+          ? ((event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement).value
+          : "save";
+        if (intent === "password") {
+          const password = String(values.get("password") ?? "");
+          if (!password) {
+            setError("Enter a new password before changing it.");
+            return;
+          }
+          await fetchApi(`/platform/staff/${editingStaff.id}/password/`, {
+            method: "POST", body: JSON.stringify({ password }),
+          });
+          setNotice(`Password changed for ${editingStaff.email}. Their existing sessions have been revoked.`);
+          closeForm();
+          setRevision((value) => value + 1);
+          return;
+        }
         const targetCompany = Number(values.get("company")) || null;
         const active = values.get("active") === "true";
         const changes = {
@@ -133,17 +144,35 @@ export function PlatformManagement() {
         } : current);
         setNotice("Staff access updated.");
       } else if (company) {
-        const invitation = await fetchApi<Invitation>("/platform/staff/", {
+        const saved = await fetchApi<Staff>("/platform/staff/", {
           method: "POST",
-          body: JSON.stringify({ email: values.get("email"), company: company.id }),
+          body: JSON.stringify({
+            first_name: values.get("first_name"), last_name: values.get("last_name"),
+            email: values.get("email"), password: values.get("password"),
+            role: values.get("role"), company: company.id,
+          }),
         });
-        setNotice(invitation.state === "pending" ? "Invitation ready. Access starts after the recipient activates their account."
-          : invitation.state === "accepted" ? "This invitation was already accepted." : "This invitation is being sent.");
+        setNotice(`${saved.first_name} ${saved.last_name} can now sign in as a recruiter.`);
       }
       closeForm();
       setRevision((value) => value + 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : "The change could not be saved. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendResetLink(staffMember: Staff) {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await fetchApi(`/platform/staff/${staffMember.id}/password-reset-link/`, { method: "POST" });
+      setNotice(`Password reset link sent to ${staffMember.email}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "The reset link could not be sent. Try again.");
     } finally {
       setBusy(false);
     }
@@ -196,7 +225,7 @@ export function PlatformManagement() {
             <form key={editingStaff?.id ?? String(form)} ref={formRef} tabIndex={-1} aria-labelledby="platform-form-title"
               onSubmit={submit} className="space-y-4 rounded-xl border border-border bg-card p-4 outline-none sm:p-5">
               <h2 id="platform-form-title" className="break-words text-lg font-semibold">
-                {form === "company-new" ? "New company" : form === "company-edit" ? "Edit company" : editingStaff ? `Manage ${editingStaff.email}` : "Invite recruiter"}
+                {form === "company-new" ? "New company" : form === "company-edit" ? "Edit company" : editingStaff ? `Manage ${editingStaff.email}` : "Create recruiter"}
               </h2>
               <fieldset disabled={busy} className="min-w-0 space-y-4">
                 {companyForm ? (
@@ -216,38 +245,75 @@ export function PlatformManagement() {
                   </>
                 ) : editingStaff ? (
                   <>
+                    <div>
+                      <p className="font-medium text-foreground">{[editingStaff.first_name, editingStaff.last_name].filter(Boolean).join(" ") || "Recruiter"}</p>
+                      <p className="text-sm text-muted-foreground">{editingStaff.email}</p>
+                    </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="staff-company">Company</Label>
-                      <select id="staff-company" name="company" className={selectClass} defaultValue={editingStaff.company ?? ""}>
-                        <option value="">Unassigned (no company access)</option>
-                        {companies?.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                      </select>
+                      <Select name="company" defaultValue={String(editingStaff.company ?? "unassigned")}>
+                        <SelectTrigger id="staff-company"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="unassigned">Unassigned (no company access)</SelectItem>
+                          {companies?.map((item) => <SelectItem key={item.id} value={String(item.id)}>{item.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
                       <p className="text-sm text-muted-foreground">Changing the company changes which jobs and candidate records this recruiter can access.</p>
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="staff-access">TalentMatch access</Label>
-                      <select id="staff-access" name="active" className={selectClass} defaultValue={String(editingStaff.active)}>
-                        <option value="true">Active</option>
-                        <option value="false">Disabled</option>
-                      </select>
+                      <Select name="active" defaultValue={String(editingStaff.active)}>
+                        <SelectTrigger id="staff-access"><SelectValue /></SelectTrigger>
+                        <SelectContent><SelectItem value="true">Active</SelectItem><SelectItem value="false">Disabled</SelectItem></SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2 border-t border-border pt-4">
+                      <div>
+                        <Label htmlFor="staff-password">Set a new password</Label>
+                        <p className="mt-1 text-sm text-muted-foreground">Use at least 15 characters. Changing it revokes the recruiter’s existing sessions.</p>
+                      </div>
+                      <Input id="staff-password" name="password" type="password" minLength={15} maxLength={72} autoComplete="new-password" />
+                      <div className="flex flex-wrap gap-2">
+                        <Button type="submit" name="intent" value="password" variant="secondary">Change password</Button>
+                        <Button type="button" variant="outline" onClick={() => sendResetLink(editingStaff)}>Send reset link</Button>
+                      </div>
                     </div>
                   </>
                 ) : (
                   <>
                     <p className="text-sm text-muted-foreground">This recruiter will have access to <strong>{company?.name}</strong>.</p>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="staff-first-name">First name</Label>
+                        <Input id="staff-first-name" name="first_name" required maxLength={150} autoComplete="given-name" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="staff-last-name">Last name</Label>
+                        <Input id="staff-last-name" name="last_name" required maxLength={150} autoComplete="family-name" />
+                      </div>
+                    </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="staff-email">Work email</Label>
-                      <Input id="staff-email" name="email" type="email" required maxLength={254} autoComplete="off" />
+                      <Input id="staff-email" name="email" type="email" required maxLength={254} autoComplete="email" />
                     </div>
-                    <p className="text-sm text-muted-foreground">
-                      The recipient verifies their work email and chooses a password before recruiter access is granted.
-                    </p>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="staff-create-password">Temporary password</Label>
+                      <Input id="staff-create-password" name="password" type="password" required minLength={15} maxLength={72} autoComplete="new-password" />
+                      <p className="text-sm text-muted-foreground">Use at least 15 characters and share it through a secure channel.</p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="staff-role">Role</Label>
+                      <Select name="role" defaultValue="recruiter">
+                        <SelectTrigger id="staff-role"><SelectValue /></SelectTrigger>
+                        <SelectContent><SelectItem value="recruiter">Recruiter</SelectItem></SelectContent>
+                      </Select>
+                    </div>
                   </>
                 )}
               </fieldset>
               {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
               <div className="flex flex-wrap gap-2">
-                <Button type="submit" disabled={busy}>{busy ? "Saving…" : form === "staff-new" ? "Send invitation" : "Save changes"}</Button>
+                <Button type="submit" name="intent" value="save" disabled={busy}>{busy ? "Saving…" : form === "staff-new" ? "Create recruiter" : "Save changes"}</Button>
                 <Button type="button" variant="outline" disabled={busy} onClick={closeForm}>Cancel</Button>
               </div>
             </form>
@@ -266,29 +332,11 @@ export function PlatformManagement() {
                   <div className="flex flex-wrap gap-2">
                     <Button size="sm" variant="outline" disabled={busy} onClick={(event) => openForm("company-edit", event.currentTarget)}>Edit company</Button>
                     <Button size="sm" variant="secondary" disabled={busy} onClick={(event) => openForm("staff-new", event.currentTarget)}>
-                      <UserPlus aria-hidden="true" /> Invite recruiter
+                      <UserPlus aria-hidden="true" /> Create recruiter
                     </Button>
                   </div>
                 )}
               </header>
-              {invitations.length > 0 && (
-                <section aria-labelledby="staff-invitations-title" className="rounded-xl border border-border bg-card">
-                  <h3 id="staff-invitations-title" className="border-b border-border px-4 py-3 text-sm font-semibold">
-                    Staff invitations
-                  </h3>
-                  <ul className="divide-y divide-border">
-                    {invitations.map((invitation) => (
-                      <li key={invitation.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-                        <span className="break-all text-sm font-medium">{invitation.email}</span>
-                        <Badge variant="outline">
-                          {invitation.state === "failed" ? "Delivery failed" : invitation.state === "sending" ? "Sending"
-                            : invitation.state === "expired" ? "Expired" : "Awaiting acceptance"}
-                        </Badge>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              )}
               <div className="overflow-hidden rounded-xl border border-border bg-card">
                 <h3 className="border-b border-border bg-muted/50 px-4 py-3 text-sm font-semibold">Recruiter accounts</h3>
                 {staffError?.key === key ? (
@@ -304,8 +352,8 @@ export function PlatformManagement() {
                     {staff.map((item) => (
                       <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                         <div className="min-w-0 flex-1">
-                          <p className="break-all text-sm font-medium text-foreground">{item.email || "Email unavailable"}</p>
-                          <p className="text-xs text-muted-foreground">Recruiter</p>
+                          <p className="break-words text-sm font-medium text-foreground">{[item.first_name, item.last_name].filter(Boolean).join(" ") || "Recruiter"}</p>
+                          <p className="break-all text-sm text-muted-foreground">{item.email || "Email unavailable"}</p>
                         </div>
                         <Badge variant={item.active ? "secondary" : "outline"}>{item.active ? "Active" : "Disabled"}</Badge>
                         <Button size="sm" variant="outline" disabled={busy}
