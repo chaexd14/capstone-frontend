@@ -13,10 +13,10 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
       <textarea
         aria-invalid={isInvalid ? true : undefined}
         className={cn(
-          "flex min-h-[90px] w-full rounded-lg border bg-background px-3.5 py-2.5 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 leading-relaxed transition-all",
+          "flex min-h-[90px] w-full rounded-lg border bg-card px-3.5 py-2.5 text-sm shadow-xs placeholder:text-muted-foreground focus-visible:outline-none disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60 leading-relaxed transition-[border-color,box-shadow,background-color]",
           isInvalid
             ? "border-rose-400 hover:border-rose-500 focus-visible:border-rose-500 focus-visible:ring-4 focus-visible:ring-rose-500/15"
-            : "border-input hover:border-slate-300 focus-visible:border-[#2196F3] focus-visible:ring-4 focus-visible:ring-[#2196F3]/15",
+            : "border-input hover:border-slate-300 focus-visible:border-primary focus-visible:ring-4 focus-visible:ring-primary/15",
           className
         )}
         ref={ref}

@@ -30,7 +30,7 @@ export function FieldError({ message, id, className }: FieldErrorProps) {
       role="alert"
       aria-live="polite"
       className={cn(
-        "mt-1.5 flex items-start gap-1.5 text-xs font-medium text-rose-700",
+        "mt-1.5 flex items-start gap-1.5 text-sm font-medium text-rose-700",
         className
       )}
     >
@@ -81,7 +81,7 @@ export function FormAlertNote({
     },
     info: {
       container: "bg-blue-50/80 border-blue-200/90 text-slate-900",
-      badge: "bg-white border-blue-200/90 text-[#1976D2]",
+      badge: "bg-white border-blue-200/90 text-primary",
       title: "text-slate-900",
       desc: "text-slate-700",
       Icon: Sparkles,
@@ -118,13 +118,13 @@ export function FormAlertNote({
         </div>
         <div className="min-w-0 flex-1">
           {title && (
-            <p className={cn("text-xs font-bold leading-snug", styles.title)}>
+            <p className={cn("text-sm font-bold leading-snug", styles.title)}>
               {title}
             </p>
           )}
           <p
             className={cn(
-              "text-xs leading-relaxed",
+              "text-sm leading-relaxed",
               title ? "mt-0.5" : "mt-1",
               styles.desc
             )}
@@ -174,7 +174,7 @@ export function PasswordStrengthChecklist({
         <span
           key={req.id}
           className={cn(
-            "inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-medium transition-colors",
+            "inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-sm font-medium transition-colors",
             req.met
               ? "bg-emerald-50 border-emerald-200 text-emerald-800"
               : "bg-slate-50 border-slate-200 text-slate-600"
@@ -202,7 +202,7 @@ export function getAuthInputClasses(hasError?: boolean, extraClasses?: string) {
     "w-full h-11 px-3.5 rounded-xl border text-slate-900 placeholder:text-slate-400 text-sm transition-all outline-none bg-white shadow-2xs",
     hasError
       ? "border-rose-400 hover:border-rose-500 focus:border-rose-500 focus:ring-4 focus:ring-rose-500/15"
-      : "border-slate-200 hover:border-slate-300 focus:border-[#2196F3] focus:ring-4 focus:ring-[#2196F3]/15",
+      : "border-slate-200 hover:border-slate-300 focus:border-primary focus:ring-4 focus:ring-primary/15",
     extraClasses
   );
 }

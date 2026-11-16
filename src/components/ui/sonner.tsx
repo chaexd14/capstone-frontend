@@ -40,12 +40,12 @@ export function Toaster({ ...props }: ToasterProps) {
           </div>
         ),
         info: (
-          <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-300/90 flex items-center justify-center shrink-0 text-[#2196F3] shadow-2xs">
+          <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-300/90 flex items-center justify-center shrink-0 text-primary shadow-2xs">
             <Sparkles className="w-4 h-4 stroke-[2.25]" aria-hidden="true" />
           </div>
         ),
         loading: (
-          <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-300/90 flex items-center justify-center shrink-0 text-[#2196F3] shadow-2xs">
+          <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-300/90 flex items-center justify-center shrink-0 text-primary shadow-2xs">
             <Loader2 className="w-4 h-4 animate-spin stroke-[2.25]" aria-hidden="true" />
           </div>
         ),
