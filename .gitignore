@@ -17,9 +17,7 @@
 /blob-report/
 
 # next.js
-/.next/
-/.next-verify/
-/.next-workflow-verify/
+/.next*/
 /out/
 
 # production

@@ -8,7 +8,7 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI ? "github" : "list",
   use: {
-    baseURL: "http://127.0.0.1:3100",
+    baseURL: "http://localhost:3100",
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
@@ -17,11 +17,12 @@ export default defineConfig({
     { name: "mobile-chromium", use: { ...devices["Pixel 7"] } },
   ],
   webServer: {
-    command: "npm run start -- -p 3100",
-    url: "http://127.0.0.1:3100",
+    command: "npm run dev -- -p 3100",
+    url: "http://localhost:3100",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
     env: {
+      NEXT_DIST_DIR: ".next-e2e",
       NEXT_PUBLIC_API_URL: "http://127.0.0.1:8000/api",
       NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321",
       NEXT_PUBLIC_SUPABASE_ANON_KEY: "e2e-placeholder-key",
