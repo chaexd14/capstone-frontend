@@ -1,11 +1,13 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { createBrowserClient } from "@supabase/ssr";
 import Link from "next/link";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { KeyRound } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 
 function recoveryClient() {
   return createBrowserClient(
@@ -92,17 +94,17 @@ export default function PasswordRecovery() {
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-md flex-col justify-center gap-6 px-6 py-12">
-      <Link href="/" className="flex w-fit items-center gap-2 text-sm font-semibold">
-        <span className="grid size-8 place-items-center rounded-lg bg-primary text-xs text-primary-foreground">TM</span>
-        TalentMatch
-      </Link>
-      <div className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">{complete ? "Password updated" : "Reset your password"}</h1>
+    <main className="flex min-h-dvh items-center justify-center bg-background px-4 py-12">
+      <Card className="w-full max-w-md">
+      <CardHeader>
+        <div className="mb-2 flex items-center justify-between"><Link href="/" className="flex items-center gap-2 text-sm font-bold"><span className="grid size-8 place-items-center rounded-lg bg-primary text-sm text-primary-foreground">TM</span>TalentMatch</Link><span className="grid size-10 place-items-center rounded-xl bg-secondary text-primary"><KeyRound className="size-5" /></span></div>
+        <CardTitle>{complete ? "Password updated" : "Reset your password"}</CardTitle>
+        <CardDescription>Use the secure recovery link from your email to set a new password.</CardDescription>
         {complete && <p className="text-sm text-muted-foreground">Sign in with your new password.</p>}
         {!complete && recovery === undefined && <p role="status" className="text-sm text-muted-foreground">Checking your recovery link…</p>}
         {!complete && recovery === null && <p role="alert" className="text-sm text-muted-foreground">This link is invalid or expired. Request a new one from the sign-in page.</p>}
-      </div>
+      </CardHeader>
+      <CardContent className="space-y-5">
       {!complete && recovery && (
         <form onSubmit={resetPassword} className="space-y-4">
           <div className="space-y-1.5">
@@ -117,10 +119,12 @@ export default function PasswordRecovery() {
               minLength={15} maxLength={72} required disabled={busy} />
           </div>
           {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-          <Button disabled={busy}>{busy ? "Saving…" : "Update password"}</Button>
+          <Button className="w-full" disabled={busy}>{busy ? "Saving…" : "Update password"}</Button>
         </form>
       )}
       <Link href="/login" className="w-fit text-sm font-medium text-primary hover:underline">Back to sign in</Link>
+      </CardContent>
+      </Card>
     </main>
   );
 }

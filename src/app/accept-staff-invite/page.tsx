@@ -1,10 +1,12 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useState, type FormEvent } from "react";
+import { useRouter } from "next/navigation";
 import { Label } from "@/components/ui/label";
+import { ShieldCheck } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { fetchApi } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
 
@@ -53,14 +55,18 @@ export default function AcceptStaffInvitePage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center gap-5 p-6">
-      <div className="space-y-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Activate recruiter access</h1>
-        <p className="text-sm text-muted-foreground">
-          Set a password for the work email that received your TalentMatch invitation.
-        </p>
-      </div>
-      <form onSubmit={activate} className="space-y-4">
+    <main className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
+      <Card className="w-full max-w-md">
+        <CardHeader className="pb-5">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="flex items-center gap-2.5 font-bold text-foreground"><span className="grid size-8 place-items-center rounded-lg bg-primary text-sm text-white">TM</span>TalentMatch</div>
+            <span className="grid size-10 place-items-center rounded-xl bg-secondary text-primary"><ShieldCheck className="size-5" /></span>
+          </div>
+          <CardTitle>Activate recruiter access</CardTitle>
+          <CardDescription>Set a secure password for the work email that received your invitation.</CardDescription>
+        </CardHeader>
+        <CardContent>
+      <form onSubmit={activate} className="space-y-5">
         <div className="space-y-1.5">
           <Label htmlFor="invite-password">Password</Label>
           <Input id="invite-password" name="password" type="password" minLength={15} maxLength={72}
@@ -72,9 +78,11 @@ export default function AcceptStaffInvitePage() {
           <Input id="invite-confirm" name="confirm" type="password" minLength={15} maxLength={72}
             autoComplete="new-password" required disabled={busy} />
         </div>
-        {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
-        <Button disabled={busy}>{busy ? "Activating…" : "Activate account"}</Button>
+        {error && <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-destructive">{error}</p>}
+        <Button className="w-full" disabled={busy}>{busy ? "Activating…" : "Activate recruiter account"}</Button>
       </form>
+        </CardContent>
+      </Card>
     </main>
   );
 }

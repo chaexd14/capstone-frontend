@@ -1,5 +1,7 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import React, { useState, useRef, useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import { legalConfig } from "@/lib/legal-config";
@@ -11,7 +13,6 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 
 interface TermsAgreementModalProps {
   open: boolean;
@@ -101,7 +102,7 @@ export function TermsAgreementModal({
         >
           {/* Section 1: Terms of Service */}
           <section ref={termsSectionRef} className="space-y-4">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-foreground">
               1. TalentMatch Terms of Service
             </h3>
 
@@ -200,7 +201,7 @@ export function TermsAgreementModal({
 
           {/* Section 2: Privacy Policy */}
           <section ref={privacySectionRef} className="space-y-4 pt-6 border-t border-border">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-foreground">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-foreground">
               2. Privacy &amp; Data Governance Policy
             </h3>
 
@@ -291,7 +292,7 @@ export function TermsAgreementModal({
           </section>
 
           {/* End of Document Subtitle */}
-          <div className="pt-2 text-center text-xs text-muted-foreground font-mono">
+          <div className="pt-2 text-center text-sm text-muted-foreground ">
             {legalConfig.organizationName} privacy policy · Version {legalConfig.policyVersion}
           </div>
         </div>
@@ -304,7 +305,7 @@ export function TermsAgreementModal({
                 htmlFor="terms-agreement-checkbox"
                 className="flex items-center gap-2.5 cursor-pointer select-none min-h-[44px] py-2"
               >
-                <input
+                <Input
                   id="terms-agreement-checkbox"
                   type="checkbox"
                   checked={agreed}

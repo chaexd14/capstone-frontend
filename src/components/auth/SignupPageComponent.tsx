@@ -1,5 +1,7 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { getSafeRedirectUrl } from "@/lib/auth-redirect";
 import React, { useState, useId, useMemo } from "react";
 import Link from "next/link";
@@ -251,7 +253,7 @@ export function SignupPageComponent({}: SignupPageComponentProps = {}) {
   };
 
   return (
-    <div className="min-h-screen w-full grid grid-cols-1 lg:grid-cols-2 bg-white text-slate-900 font-sans selection:bg-[#2196F3] selection:text-white antialiased">
+    <div className="min-h-screen w-full grid grid-cols-1 lg:grid-cols-2 bg-white text-slate-900 font-sans selection:bg-primary selection:text-white antialiased">
       {/* ============================================================== */}
       {/* LEFT COLUMN: Crisp White Signup Form (Exact Match to Sign up.png) */}
       {/* ============================================================== */}
@@ -259,16 +261,16 @@ export function SignupPageComponent({}: SignupPageComponentProps = {}) {
         {/* Top Header: Canonical TM Logo + Brand Name + Back to Home */}
         <div className="w-full flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2.5 group">
-            <div className="w-8 h-8 rounded-lg bg-[#2196F3] text-white font-bold text-sm flex items-center justify-center tracking-tight shadow-2xs transition-transform group-hover:scale-105">
+            <div className="w-8 h-8 rounded-lg bg-primary text-white font-bold text-sm flex items-center justify-center tracking-tight shadow-2xs transition-transform group-hover:scale-105">
               TM
             </div>
-            <span className="font-bold text-lg sm:text-xl tracking-tight text-slate-900 group-hover:text-[#2196F3] transition-colors">
+            <span className="font-bold text-lg sm:text-xl tracking-tight text-slate-900 group-hover:text-primary transition-colors">
               Talent Match
             </span>
           </Link>
           <Link
             href="/"
-            className="text-xs sm:text-sm font-semibold text-slate-500 hover:text-[#2196F3] flex items-center gap-1.5 transition-colors py-1.5 px-3 rounded-lg hover:bg-slate-50"
+            className="text-sm sm:text-sm font-semibold text-slate-500 hover:text-primary flex items-center gap-1.5 transition-colors py-1.5 px-3 rounded-lg hover:bg-slate-50"
           >
             <span>&larr; Back to Home</span>
           </Link>
@@ -308,7 +310,7 @@ export function SignupPageComponent({}: SignupPageComponentProps = {}) {
                 >
                   First name <span className="text-rose-500">*</span>
                 </label>
-                <input
+                <Input
                   id={firstNameInputId}
                   type="text"
                   value={firstName}
@@ -333,7 +335,7 @@ export function SignupPageComponent({}: SignupPageComponentProps = {}) {
                 >
                   Last name <span className="text-rose-500">*</span>
                 </label>
-                <input
+                <Input
                   id={lastNameInputId}
                   type="text"
                   value={lastName}
@@ -360,7 +362,7 @@ export function SignupPageComponent({}: SignupPageComponentProps = {}) {
               >
                 Email Address <span className="text-rose-500">*</span>
               </label>
-              <input
+              <Input
                 id={emailInputId}
                 type="email"
                 value={email}
@@ -389,10 +391,10 @@ export function SignupPageComponent({}: SignupPageComponentProps = {}) {
                 >
                   Password <span className="text-rose-500">*</span>
                 </label>
-                <span className="text-[11px] text-slate-500 font-medium">8+ chars, upper, lower &amp; number</span>
+                <span className="text-sm text-slate-500 font-medium">8+ chars, upper, lower &amp; number</span>
               </div>
               <div className="relative">
-                <input
+                <Input
                   id={passwordInputId}
                   type={showPassword ? "text" : "password"}
                   value={password}
@@ -407,16 +409,18 @@ export function SignupPageComponent({}: SignupPageComponentProps = {}) {
                   aria-describedby={fieldErrors.password ? `${passwordInputId}-error` : undefined}
                   className={getAuthInputClasses(!!fieldErrors.password, "pr-11")}
                 />
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="icon-sm"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-1 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors w-10 h-10 flex items-center justify-center rounded-lg cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2196F3]"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors w-10 h-10 flex items-center justify-center rounded-lg cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   aria-label={showPassword ? "Hide password" : "Show password"}
                   aria-pressed={showPassword}
                   aria-controls={passwordInputId}
                 >
                   {showPassword ? <EyeOff className="w-4 h-4" aria-hidden="true" /> : <Eye className="w-4 h-4" aria-hidden="true" />}
-                </button>
+                </Button>
               </div>
               <PasswordStrengthChecklist
                 requirements={passwordValidation.requirements}
@@ -435,14 +439,14 @@ export function SignupPageComponent({}: SignupPageComponentProps = {}) {
                   Repeat Password <span className="text-rose-500">*</span>
                 </label>
                 {passwordsMatch && (
-                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700">
+                  <span className="inline-flex items-center gap-1 text-sm font-semibold text-emerald-700">
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" aria-hidden="true" />
                     <span>Passwords match</span>
                   </span>
                 )}
               </div>
               <div className="relative">
-                <input
+                <Input
                   id={repeatPasswordInputId}
                   type={showRepeatPassword ? "text" : "password"}
                   value={repeatPassword}
@@ -457,25 +461,27 @@ export function SignupPageComponent({}: SignupPageComponentProps = {}) {
                   aria-describedby={fieldErrors.repeatPassword ? `${repeatPasswordInputId}-error` : undefined}
                   className={getAuthInputClasses(!!fieldErrors.repeatPassword, "pr-11")}
                 />
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="icon-sm"
                   onClick={() => setShowRepeatPassword(!showRepeatPassword)}
-                  className="absolute right-1 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors w-10 h-10 flex items-center justify-center rounded-lg cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2196F3]"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors w-10 h-10 flex items-center justify-center rounded-lg cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   aria-label={showRepeatPassword ? "Hide password" : "Show password"}
                   aria-pressed={showRepeatPassword}
                   aria-controls={repeatPasswordInputId}
                 >
                   {showRepeatPassword ? <EyeOff className="w-4 h-4" aria-hidden="true" /> : <Eye className="w-4 h-4" aria-hidden="true" />}
-                </button>
+                </Button>
               </div>
               <FieldError id={`${repeatPasswordInputId}-error`} message={fieldErrors.repeatPassword} />
             </div>
 
             {/* Primary CTA: "Create Account" (Solid Blue Button, matching Sign up.png) */}
-            <button
+            <Button
               type="submit"
               disabled={loading}
-              className="w-full h-11 sm:h-12 mt-2 bg-[#2196F3] hover:bg-[#1976D2] text-white font-semibold rounded-xl shadow-xs hover:shadow transition-all text-sm sm:text-base flex items-center justify-center gap-2 active:scale-[0.99] disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer"
+              className="w-full h-11 sm:h-12 mt-2 bg-primary hover:bg-primary/90 text-white font-semibold rounded-xl shadow-xs hover:shadow transition-all text-sm sm:text-base flex items-center justify-center gap-2 active:scale-[0.99] disabled:opacity-70 disabled:cursor-not-allowed cursor-pointer"
             >
               {loading ? (
                 <>
@@ -485,34 +491,36 @@ export function SignupPageComponent({}: SignupPageComponentProps = {}) {
               ) : (
                 <span>Create Account</span>
               )}
-            </button>
+            </Button>
 
             {/* Disclaimer: Terms of Service & Privacy Policy (matching Sign up.png) */}
-            <p className="text-xs text-slate-500 text-center pt-2 leading-relaxed">
+            <p className="text-sm text-slate-500 text-center pt-2 leading-relaxed">
               By creating an account, you agree to our{" "}
-              <button
+              <Button
                 type="button"
+                variant="link"
                 onClick={() => {
                   setLegalModalMode("preview");
                   setLegalModalSection("terms");
                   setShowLegalModal(true);
                 }}
-                className="font-bold text-slate-800 hover:underline inline cursor-pointer"
+                className="h-auto p-0 align-baseline font-bold text-slate-800 hover:underline cursor-pointer"
               >
                 Terms of Service
-              </button>{" "}
+              </Button>{" "}
               and{" "}
-              <button
+              <Button
                 type="button"
+                variant="link"
                 onClick={() => {
                   setLegalModalMode("preview");
                   setLegalModalSection("privacy");
                   setShowLegalModal(true);
                 }}
-                className="font-bold text-slate-800 hover:underline inline cursor-pointer"
+                className="h-auto p-0 align-baseline font-bold text-slate-800 hover:underline cursor-pointer"
               >
                 Privacy Policy
-              </button>
+              </Button>
               .
             </p>
           </form>
@@ -523,7 +531,7 @@ export function SignupPageComponent({}: SignupPageComponentProps = {}) {
               Already have an Account?{" "}
               <Link
                 href={loginUrl}
-                className="font-semibold text-[#2196F3] hover:underline ml-1 cursor-pointer"
+                className="font-semibold text-primary hover:underline ml-1 cursor-pointer"
               >
                 Login instead
               </Link>

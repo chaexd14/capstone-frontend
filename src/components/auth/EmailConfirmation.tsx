@@ -1,11 +1,11 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Loader2, MailWarning } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { getSafeRedirectUrl } from "@/lib/auth-redirect";
 import { createClient } from "@/lib/supabase/client";
 

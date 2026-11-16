@@ -7,8 +7,8 @@ export default function ApplicantLoginPage() {
     <Suspense
       fallback={
         <div className="min-h-screen bg-white flex flex-col items-center justify-center gap-3">
-          <Loader2 className="h-6 w-6 animate-spin text-[#2196F3]" />
-          <span className="text-xs text-slate-500 font-medium">Loading Candidate Portal...</span>
+          <Loader2 className="h-6 w-6 animate-spin text-primary" />
+          <span className="text-sm text-slate-500 font-medium">Loading Candidate Portal...</span>
         </div>
       }
     >
