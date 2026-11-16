@@ -1,5 +1,7 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -29,7 +31,6 @@ import {
 } from "lucide-react";
 import { ApplyModal } from "./ApplyModal";
 import { JobDetailSheet } from "./JobDetailSheet";
-import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { toast } from "@/components/ui/sonner";
 import {
@@ -39,6 +40,8 @@ import {
   SelectTrigger,
 } from "@/components/ui/select";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
+import { formatSalary, matchesSalaryRange, SALARY_RANGES } from "@/lib/salary";
+import { getJobOverview, truncateJobOverview } from "@/lib/job-overview";
 
 interface ApplicantPortalProps {
   jobs: Job[];
@@ -67,41 +70,6 @@ const JOB_TYPES = [
   "Hybrid",
   "Contract",
 ];
-
-const SALARY_RANGES = [
-  "All",
-  "₱25,000 - ₱45,000",
-  "₱45,000 - ₱70,000",
-  "₱70,000 - ₱100,000",
-  "₱100,000+",
-];
-
-function getSalaryRange(job: Job): string {
-  const title = (job.title || "").toLowerCase();
-  const dept = (job.department || "").toLowerCase();
-  if (title.includes("lead") || title.includes("director") || title.includes("principal")) {
-    return "₱120,000 - ₱180,000 / mo";
-  }
-  if (title.includes("senior") || title.includes("sr.")) {
-    return "₱75,000 - ₱110,000 / mo";
-  }
-  if (title.includes("entry") || title.includes("junior") || title.includes("associate") || title.includes("fresh")) {
-    return "₱25,000 - ₱38,000 / mo";
-  }
-  if (dept.includes("tech") || dept.includes("engineer")) {
-    return "₱60,000 - ₱95,000 / mo";
-  }
-  if (dept.includes("finance") || dept.includes("account")) {
-    return "₱45,000 - ₱70,000 / mo";
-  }
-  if (dept.includes("health") || dept.includes("medical")) {
-    return "₱35,000 - ₱60,000 / mo";
-  }
-  if (dept.includes("bpo") || dept.includes("support")) {
-    return "₱28,000 - ₱45,000 / mo";
-  }
-  return "₱50,000 - ₱75,000 / mo";
-}
 
 function getExperiencePill(job: Job): string {
   if (job.minimum_experience) {
@@ -150,33 +118,7 @@ function getDepartmentMonogram(job: Job): { monogram: string; label: string } {
 }
 
 function getCardHighlights(job: Job): string[] {
-  const points: string[] = [];
-
-  if (job.description) {
-    const rawLines = job.description
-      .split(/\r?\n|•|\?|\* /)
-      .map((l) => l.trim().replace(/^[-*•\?\s]+/, ""))
-      .filter(
-        (l) =>
-          l.length > 20 &&
-          !l.toLowerCase().includes("apply") &&
-          !l.toLowerCase().includes("qualification") &&
-          !l.toLowerCase().includes("requirement")
-      );
-
-    for (const line of rawLines) {
-      if (points.length < 2 && !points.includes(line)) {
-        points.push(line);
-      }
-    }
-  }
-
-  if (points.length < 1 && job.description) {
-    const firstSentence = job.description.replace(/^[-*•\s]+/gm, "").split(/\.\s+/)[0]?.trim();
-    if (firstSentence && firstSentence.length > 15) {
-      points.push(firstSentence.endsWith(".") ? firstSentence : `${firstSentence}.`);
-    }
-  }
+  const points: string[] = [truncateJobOverview(getJobOverview(job), 150)];
 
   if (job.education_requirement) {
     points.push(`Degree: ${job.education_requirement}`);
@@ -231,9 +173,9 @@ function getApplicationStatusConfig(status?: string): ApplicationStatusConfig {
     return {
       label: "Interview Scheduled",
       sublabel: "The hiring team will reach out to coordinate your interview schedule.",
-      badgeClass: "bg-blue-50 text-[#1976D2] border-blue-200/90",
+      badgeClass: "bg-blue-50 text-primary border-blue-200/90",
       stepIndex: 2,
-      stepColor: "bg-[#2196F3]",
+      stepColor: "bg-primary",
       icon: Calendar,
     };
   }
@@ -261,9 +203,9 @@ function getApplicationStatusConfig(status?: string): ApplicationStatusConfig {
     return {
       label: "Under Review",
       sublabel: "The hiring team is actively evaluating your qualifications and experience.",
-      badgeClass: "bg-blue-50 text-[#1976D2] border-blue-200/90",
+      badgeClass: "bg-blue-50 text-primary border-blue-200/90",
       stepIndex: 1,
-      stepColor: "bg-[#2196F3]",
+      stepColor: "bg-primary",
       icon: Clock,
     };
   }
@@ -272,7 +214,7 @@ function getApplicationStatusConfig(status?: string): ApplicationStatusConfig {
     sublabel: "Your application has been received and queued for merit-based review.",
     badgeClass: "bg-slate-50 text-slate-700 border-slate-200/90",
     stepIndex: 0,
-    stepColor: "bg-[#2196F3]",
+    stepColor: "bg-primary",
     icon: FileText,
   };
 }
@@ -457,17 +399,7 @@ export function ApplicantPortal({
         (selectedJobType === "Contract" && job.employment_type.toLowerCase().includes("contract")) ||
         (selectedJobType === "Hybrid" && job.location.toLowerCase().includes("hybrid"));
 
-      const salary = getSalaryRange(job);
-      const matchesSalary =
-        selectedSalary === "All" ||
-        (selectedSalary === "₱25,000 - ₱45,000" &&
-          (salary.includes("25,000") || salary.includes("28,000") || salary.includes("35,000"))) ||
-        (selectedSalary === "₱45,000 - ₱70,000" &&
-          (salary.includes("45,000") || salary.includes("50,000") || salary.includes("60,000"))) ||
-        (selectedSalary === "₱70,000 - ₱100,000" &&
-          (salary.includes("60,000") || salary.includes("75,000") || salary.includes("95,000"))) ||
-        (selectedSalary === "₱100,000+" &&
-          (salary.includes("110,000") || salary.includes("120,000") || salary.includes("180,000")));
+      const matchesSalary = matchesSalaryRange(job, selectedSalary);
 
       return matchesSearch && matchesCategory && matchesJobType && matchesSalary;
     });
@@ -567,16 +499,7 @@ export function ApplicantPortal({
   );
 
   return (
-    <div className="min-h-screen bg-[#e3f1fe] text-slate-900 flex flex-col font-sans selection:bg-[#2196F3] selection:text-white relative">
-      {/* Blueprint Background Texture: Fine Dot Mesh + Architectural 48px Grid */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(rgba(33,150,243,0.15)_1px,transparent_1px)] [background-size:24px_24px]"
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none fixed inset-0 z-0 bg-[linear-gradient(to_right,rgba(33,150,243,0.035)_1px,transparent_1px),linear-gradient(to_bottom,rgba(33,150,243,0.035)_1px,transparent_1px)] [background-size:48px_48px]"
-      />
+    <div className="min-h-screen bg-background text-slate-900 flex flex-col font-sans selection:bg-primary selection:text-white relative">
 
       {/* ============================================================== */}
       {/* 1. TOP NAVBAR: Canonical TM Brand & Navigation                 */}
@@ -586,10 +509,10 @@ export function ApplicantPortal({
           {/* Left: Canonical TM Brand Badge */}
           <div className="flex items-center gap-3">
             <Link href="/" className="flex items-center gap-2.5 group shrink-0">
-              <div className="w-8 h-8 rounded-lg bg-[#2196F3] text-white font-bold text-sm flex items-center justify-center tracking-tight shadow-2xs transition-transform group-hover:scale-105">
+              <div className="w-8 h-8 rounded-lg bg-primary text-white font-bold text-sm flex items-center justify-center tracking-tight shadow-2xs transition-transform group-hover:scale-105">
                 TM
               </div>
-              <span className="font-bold text-lg sm:text-xl tracking-tight text-slate-900 group-hover:text-[#2196F3] transition-colors leading-none">
+              <span className="font-bold text-lg sm:text-xl tracking-tight text-slate-900 group-hover:text-primary transition-colors leading-none">
                 TalentMatch
               </span>
             </Link>
@@ -599,53 +522,56 @@ export function ApplicantPortal({
           <nav className="hidden md:flex items-center gap-8 lg:gap-10 h-full" aria-label="Portal Navigation">
             <Link
               href="/"
-              className="text-slate-600 hover:text-slate-900 font-semibold text-sm transition-colors py-6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2196F3] rounded-md"
+              className="text-slate-600 hover:text-slate-900 font-semibold text-sm transition-colors py-6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-md"
             >
               Home
             </Link>
 
-            <button
+            <Button
+              variant="ghost"
               onClick={() => setNavTab("Explore")}
-              className={`font-semibold text-sm transition-colors relative py-6 flex flex-col items-center cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2196F3] rounded-md min-h-[44px] justify-center ${navTab === "Explore" ? "text-[#2196F3] font-bold" : "text-slate-600 hover:text-slate-900"
+              className={`font-semibold text-sm transition-colors relative py-6 flex flex-col items-center cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-md min-h-[44px] justify-center ${navTab === "Explore" ? "text-primary font-bold" : "text-slate-600 hover:text-slate-900"
                 }`}
             >
               <span>Explore</span>
               {navTab === "Explore" && (
-                <span className="absolute bottom-0 w-12 h-0.5 bg-[#2196F3] rounded-full transition-all" />
+                <span className="absolute bottom-0 w-12 h-0.5 bg-primary rounded-full transition-all" />
               )}
-            </button>
+            </Button>
 
-            <button
+            <Button
+              variant="ghost"
               onClick={() => setNavTab("Bookmark")}
-              className={`font-semibold text-sm transition-colors relative py-6 flex items-center gap-1.5 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2196F3] rounded-md min-h-[44px] ${navTab === "Bookmark" ? "text-[#2196F3] font-bold" : "text-slate-600 hover:text-slate-900"
+              className={`font-semibold text-sm transition-colors relative py-6 flex items-center gap-1.5 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-md min-h-[44px] ${navTab === "Bookmark" ? "text-primary font-bold" : "text-slate-600 hover:text-slate-900"
                 }`}
             >
               <span>Bookmark</span>
               {bookmarkedIds.size > 0 && (
-                <span className="h-4.5 px-1.5 rounded-full bg-blue-50 text-[#2196F3] text-[10px] font-bold border border-blue-200 flex items-center justify-center font-mono">
+                <span className="h-4.5 px-1.5 rounded-full bg-blue-50 text-primary text-sm font-bold border border-blue-200 flex items-center justify-center ">
                   {bookmarkedIds.size}
                 </span>
               )}
               {navTab === "Bookmark" && (
-                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#2196F3] rounded-full transition-all" />
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full transition-all" />
               )}
-            </button>
+            </Button>
 
-            <button
+            <Button
+              variant="ghost"
               onClick={() => setNavTab("My Applications")}
-              className={`font-semibold text-sm transition-colors relative py-6 flex items-center gap-1.5 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2196F3] rounded-md min-h-[44px] ${navTab === "My Applications" ? "text-[#2196F3] font-bold" : "text-slate-600 hover:text-slate-900"
+              className={`font-semibold text-sm transition-colors relative py-6 flex items-center gap-1.5 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-md min-h-[44px] ${navTab === "My Applications" ? "text-primary font-bold" : "text-slate-600 hover:text-slate-900"
                 }`}
             >
               <span>My Applications</span>
               {applications.length > 0 && (
-                <span className="h-4.5 px-1.5 rounded-full bg-blue-50 text-[#1976D2] text-[10px] font-bold border border-blue-200 flex items-center justify-center font-mono">
+                <span className="h-4.5 px-1.5 rounded-full bg-blue-50 text-primary text-sm font-bold border border-blue-200 flex items-center justify-center ">
                   {applications.length}
                 </span>
               )}
               {navTab === "My Applications" && (
-                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#2196F3] rounded-full transition-all" />
+                <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full transition-all" />
               )}
-            </button>
+            </Button>
           </nav>
 
           {/* Right: Reusable Notification Bell & User Account Menu */}
@@ -657,23 +583,24 @@ export function ApplicantPortal({
 
             {/* User Account Avatar Menu */}
             <div className="relative" ref={userMenuRef}>
-              <button
+              <Button
+                variant="ghost"
                 type="button"
                 onClick={() => setOpenUserMenu(!openUserMenu)}
                 aria-expanded={openUserMenu}
                 aria-haspopup="menu"
-                className="flex items-center gap-1.5 p-1 rounded-full hover:bg-slate-100 transition-colors cursor-pointer select-none min-h-[40px] min-w-[40px] justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2196F3]"
+                className="flex items-center gap-1.5 p-1 rounded-full hover:bg-slate-100 transition-colors cursor-pointer select-none min-h-[40px] min-w-[40px] justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 aria-label="User account menu"
               >
                 <Avatar className="w-8 h-8 border border-slate-200/90 shadow-2xs">
-                  <AvatarFallback className="bg-[#2196F3] text-white font-bold text-xs">
+                  <AvatarFallback className="bg-primary text-white font-bold text-sm">
                     {userInitial}
                   </AvatarFallback>
                 </Avatar>
                 <ChevronDown
                   className={`w-3.5 h-3.5 text-slate-400 transition-transform ${openUserMenu ? "rotate-180" : ""}`}
                 />
-              </button>
+              </Button>
 
               {openUserMenu && (
                 <div
@@ -682,19 +609,20 @@ export function ApplicantPortal({
                 >
                   <div className="p-3 bg-slate-50/80 rounded-xl space-y-1 border border-slate-100">
                     <div className="font-bold text-sm text-slate-900 truncate">{displayName}</div>
-                    <div className="text-xs text-slate-500 font-mono truncate">
+                    <div className="text-sm text-slate-500 truncate">
                       {currentUser?.email || "Guest Session"}
                     </div>
                     <div className="pt-1">
-                      <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#1976D2] bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
+                      <span className="inline-flex items-center gap-1 text-sm font-semibold text-primary bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
                         <UserCheck className="w-3 h-3" />
                         Candidate Profile
                       </span>
                     </div>
                   </div>
 
-                  <div className="pt-1 space-y-0.5 text-xs">
-                    <button
+                  <div className="pt-1 space-y-0.5 text-sm">
+                    <Button
+                      variant="ghost"
                       role="menuitem"
                       onClick={() => {
                         setNavTab("My Applications");
@@ -703,9 +631,10 @@ export function ApplicantPortal({
                       className="w-full text-left px-3 py-2 rounded-lg font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900 flex items-center justify-between cursor-pointer"
                     >
                       <span>Submitted Applications</span>
-                      <span className="font-mono text-slate-400 font-bold">{applications.length}</span>
-                    </button>
-                    <button
+                      <span className="text-slate-400 font-bold">{applications.length}</span>
+                    </Button>
+                    <Button
+                      variant="ghost"
                       role="menuitem"
                       onClick={() => {
                         setNavTab("Bookmark");
@@ -714,8 +643,8 @@ export function ApplicantPortal({
                       className="w-full text-left px-3 py-2 rounded-lg font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900 flex items-center justify-between cursor-pointer"
                     >
                       <span>Saved Positions</span>
-                      <span className="font-mono text-slate-400 font-bold">{bookmarkedIds.size}</span>
-                    </button>
+                      <span className="text-slate-400 font-bold">{bookmarkedIds.size}</span>
+                    </Button>
                     <Link
                       role="menuitem"
                       href="/admin"
@@ -728,22 +657,23 @@ export function ApplicantPortal({
 
                   <div className="pt-2 border-t border-slate-100">
                     {currentUser ? (
-                      <button
+                      <Button
+                        variant="ghost"
                         role="menuitem"
                         onClick={() => {
                           setOpenUserMenu(false);
                           if (onLogout) onLogout();
                         }}
-                        className="w-full px-3 py-2 rounded-lg font-semibold text-xs text-rose-600 hover:bg-rose-50 flex items-center gap-2 transition-colors cursor-pointer"
+                        className="w-full px-3 py-2 rounded-lg font-semibold text-sm text-rose-600 hover:bg-rose-50 flex items-center gap-2 transition-colors cursor-pointer"
                       >
                         <LogOut className="w-4 h-4" />
                         <span>Sign Out</span>
-                      </button>
+                      </Button>
                     ) : (
                       <Link
                         role="menuitem"
                         href="/applicant/login"
-                        className="w-full px-3 py-2 rounded-lg font-semibold text-xs text-[#2196F3] hover:bg-blue-50 flex items-center justify-center gap-2 transition-colors text-center"
+                        className="w-full px-3 py-2 rounded-lg font-semibold text-sm text-primary hover:bg-blue-50 flex items-center justify-center gap-2 transition-colors text-center"
                       >
                         <LogIn className="w-4 h-4" />
                         <span>Sign In to Account</span>
@@ -757,44 +687,47 @@ export function ApplicantPortal({
         </div>
 
         {/* Mobile Navigation Tabs (< md viewports, guaranteed 44px touch height) */}
-        <div className="flex md:hidden items-center justify-around border-t border-slate-100 bg-white px-2 py-1 text-xs font-semibold">
-          <button
+        <div className="flex md:hidden items-center justify-around border-t border-slate-100 bg-white px-2 py-1 text-sm font-semibold">
+          <Button
+            variant="ghost"
             onClick={() => setNavTab("Explore")}
-            className={`flex-1 min-h-[44px] flex items-center justify-center px-3 py-2 rounded-xl transition-colors cursor-pointer ${navTab === "Explore" ? "bg-blue-50 text-[#2196F3] font-bold" : "text-slate-600"
+            className={`flex-1 min-h-[44px] flex items-center justify-center px-3 py-2 rounded-xl transition-colors cursor-pointer ${navTab === "Explore" ? "bg-blue-50 text-primary font-bold" : "text-slate-600"
               }`}
           >
             Explore
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
             onClick={() => setNavTab("Bookmark")}
-            className={`flex-1 min-h-[44px] flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl transition-colors cursor-pointer ${navTab === "Bookmark" ? "bg-blue-50 text-[#2196F3] font-bold" : "text-slate-600"
+            className={`flex-1 min-h-[44px] flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl transition-colors cursor-pointer ${navTab === "Bookmark" ? "bg-blue-50 text-primary font-bold" : "text-slate-600"
               }`}
           >
             <span>Bookmark</span>
             {bookmarkedIds.size > 0 && (
-              <span className="h-4.5 px-1.5 rounded-full bg-blue-100 text-[#2196F3] text-[10px] font-bold font-mono">
+              <span className="h-4.5 px-1.5 rounded-full bg-blue-100 text-primary text-sm font-bold ">
                 {bookmarkedIds.size}
               </span>
             )}
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="ghost"
             onClick={() => setNavTab("My Applications")}
-            className={`flex-1 min-h-[44px] flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl transition-colors cursor-pointer ${navTab === "My Applications" ? "bg-blue-50 text-[#2196F3] font-bold" : "text-slate-600"
+            className={`flex-1 min-h-[44px] flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl transition-colors cursor-pointer ${navTab === "My Applications" ? "bg-blue-50 text-primary font-bold" : "text-slate-600"
               }`}
           >
             <span>Applications</span>
             {applications.length > 0 && (
-              <span className="h-4.5 px-1.5 rounded-full bg-blue-100 text-[#1976D2] text-[10px] font-bold font-mono">
+              <span className="h-4.5 px-1.5 rounded-full bg-blue-100 text-primary text-sm font-bold ">
                 {applications.length}
               </span>
             )}
-          </button>
+          </Button>
         </div>
       </header>
 
       {/* Offline Alert Banner (when backend is disconnected) */}
       {!backendOnline && (
-        <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 py-2.5 text-xs text-amber-800 text-center flex items-center justify-center gap-2 font-medium">
+        <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 py-2.5 text-sm text-amber-800 text-center flex items-center justify-center gap-2 font-medium">
           <WifiOff className="w-3.5 h-3.5 text-amber-600 shrink-0" />
           <span>TalentMatch API is operating in offline mode. Live evaluations may be delayed until reconnect.</span>
         </div>
@@ -809,19 +742,21 @@ export function ApplicantPortal({
         {/* ============================================================== */}
         {navTab !== "My Applications" && (
           <div className="max-w-5xl mx-auto mb-6 relative z-20">
-            <div className="bg-white rounded-3xl lg:rounded-full border border-blue-200/80 p-2 sm:px-4 sm:py-2.5 shadow-[0_16px_40px_rgba(25,136,245,0.14)] focus-within:border-[#2196F3] focus-within:ring-4 focus-within:ring-[#2196F3]/15 transition-all flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
-              {/* Left: Pill Search Input with Circular #2196F3 Search Button */}
+            <div className="bg-white rounded-3xl lg:rounded-full border border-blue-200/80 p-2 sm:px-4 sm:py-2.5 shadow-[0_16px_40px_rgba(25,136,245,0.14)] focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/15 transition-all flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+              {/* Left: Pill Search Input with Branded Search Button */}
               <div className="relative flex-1 flex items-center min-w-0">
-                <input
+                <Input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search by job title, skill, or city..."
                   aria-label="Search by job title, skill, or city"
-                  className="w-full pl-5 pr-20 py-2.5 rounded-full border border-slate-300/80 bg-slate-50/50 focus:bg-white text-sm sm:text-base text-[#1e293b] placeholder:text-slate-400 focus:outline-none focus:border-[#2196F3] transition-colors"
+                  className="w-full pl-5 pr-20 py-2.5 rounded-full border border-slate-300/80 bg-slate-50/50 focus:bg-white text-sm sm:text-base text-[#1e293b] placeholder:text-slate-400 focus:outline-none focus:border-primary transition-colors"
                 />
                 {searchQuery ? (
-                  <button
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
                     type="button"
                     onClick={() => setSearchQuery("")}
                     className="absolute right-12 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
@@ -829,10 +764,10 @@ export function ApplicantPortal({
                     aria-label="Clear search input"
                   >
                     <X className="w-4 h-4" />
-                  </button>
+                  </Button>
                 ) : null}
                 <div
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-[#2196F3] text-white flex items-center justify-center shadow-xs select-none pointer-events-none"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-primary text-white flex items-center justify-center shadow-xs select-none pointer-events-none"
                   aria-hidden="true"
                 >
                   <Search className="w-4 h-4 stroke-[2.5]" />
@@ -844,16 +779,16 @@ export function ApplicantPortal({
                 {/* 1. Job Type */}
                 <Select value={selectedJobType} onValueChange={setSelectedJobType}>
                   <SelectTrigger
-                    className="!w-auto shrink-0 inline-flex border-0 shadow-none bg-transparent hover:bg-slate-100 text-slate-700 font-medium text-xs sm:text-sm px-2.5 h-9 rounded-lg gap-1 cursor-pointer focus:ring-0 focus:ring-offset-0 whitespace-nowrap"
+                    className="!w-auto shrink-0 inline-flex border-0 shadow-none bg-transparent hover:bg-slate-100 text-slate-700 font-medium text-sm sm:text-sm px-2.5 h-9 rounded-lg gap-1 cursor-pointer focus:ring-0 focus:ring-offset-0 whitespace-nowrap"
                     aria-label="Filter by job type"
                   >
-                    <span className={selectedJobType !== "All" ? "text-[#2196F3] font-semibold" : "text-slate-700"}>
+                    <span className={selectedJobType !== "All" ? "text-primary font-semibold" : "text-slate-700"}>
                       {selectedJobType === "All" ? "Job Type" : selectedJobType}
                     </span>
                   </SelectTrigger>
                   <SelectContent className="bg-white rounded-2xl shadow-xl border border-slate-200 p-1 z-50">
                     {JOB_TYPES.map((type) => (
-                      <SelectItem key={type} value={type} className="text-xs font-semibold rounded-xl cursor-pointer">
+                      <SelectItem key={type} value={type} className="text-sm font-semibold rounded-xl cursor-pointer">
                         {type === "All" ? "All Job Types" : type}
                       </SelectItem>
                     ))}
@@ -865,16 +800,16 @@ export function ApplicantPortal({
                 {/* 2. Category */}
                 <Select value={selectedCategory} onValueChange={setSelectedCategory}>
                   <SelectTrigger
-                    className="!w-auto shrink-0 inline-flex border-0 shadow-none bg-transparent hover:bg-slate-100 text-slate-700 font-medium text-xs sm:text-sm px-2.5 h-9 rounded-lg gap-1 cursor-pointer focus:ring-0 focus:ring-offset-0 whitespace-nowrap"
+                    className="!w-auto shrink-0 inline-flex border-0 shadow-none bg-transparent hover:bg-slate-100 text-slate-700 font-medium text-sm sm:text-sm px-2.5 h-9 rounded-lg gap-1 cursor-pointer focus:ring-0 focus:ring-offset-0 whitespace-nowrap"
                     aria-label="Filter by category"
                   >
-                    <span className={`truncate max-w-[140px] sm:max-w-[180px] ${selectedCategory !== "All" ? "text-[#2196F3] font-semibold" : "text-slate-700"}`}>
+                    <span className={`truncate max-w-[140px] sm:max-w-[180px] ${selectedCategory !== "All" ? "text-primary font-semibold" : "text-slate-700"}`}>
                       {selectedCategory === "All" ? "Category" : selectedCategory}
                     </span>
                   </SelectTrigger>
                   <SelectContent className="bg-white rounded-2xl shadow-xl border border-slate-200 p-1 z-50">
                     {CATEGORIES.map((cat) => (
-                      <SelectItem key={cat} value={cat} className="text-xs font-semibold rounded-xl cursor-pointer">
+                      <SelectItem key={cat} value={cat} className="text-sm font-semibold rounded-xl cursor-pointer">
                         {cat === "All" ? "All Categories" : cat}
                       </SelectItem>
                     ))}
@@ -886,16 +821,16 @@ export function ApplicantPortal({
                 {/* 3. Salary Range */}
                 <Select value={selectedSalary} onValueChange={setSelectedSalary}>
                   <SelectTrigger
-                    className="!w-auto shrink-0 inline-flex border-0 shadow-none bg-transparent hover:bg-slate-100 text-slate-700 font-medium text-xs sm:text-sm px-2.5 h-9 rounded-lg gap-1 cursor-pointer focus:ring-0 focus:ring-offset-0 whitespace-nowrap"
+                    className="!w-auto shrink-0 inline-flex border-0 shadow-none bg-transparent hover:bg-slate-100 text-slate-700 font-medium text-sm sm:text-sm px-2.5 h-9 rounded-lg gap-1 cursor-pointer focus:ring-0 focus:ring-offset-0 whitespace-nowrap"
                     aria-label="Filter by salary range"
                   >
-                    <span className={selectedSalary !== "All" ? "text-[#2196F3] font-semibold" : "text-slate-700"}>
+                    <span className={selectedSalary !== "All" ? "text-primary font-semibold" : "text-slate-700"}>
                       {selectedSalary === "All" ? "Salary range" : selectedSalary}
                     </span>
                   </SelectTrigger>
                   <SelectContent className="bg-white rounded-2xl shadow-xl border border-slate-200 p-1 z-50">
                     {SALARY_RANGES.map((sal) => (
-                      <SelectItem key={sal} value={sal} className="text-xs font-semibold rounded-xl cursor-pointer">
+                      <SelectItem key={sal} value={sal} className="text-sm font-semibold rounded-xl cursor-pointer">
                         {sal === "All" ? "All Salary Ranges" : sal}
                       </SelectItem>
                     ))}
@@ -904,15 +839,15 @@ export function ApplicantPortal({
 
                 {/* Reset Filters */}
                 {hasActiveFilters && (
-                  <button
+                  <Button
                     onClick={resetFilters}
-                    className="text-xs font-semibold text-rose-600 hover:text-rose-700 px-2.5 h-8 rounded-lg hover:bg-rose-50 border border-rose-200 flex items-center gap-1 transition-colors cursor-pointer shrink-0 ml-1 whitespace-nowrap"
+                    className="text-sm font-semibold text-rose-600 hover:text-rose-700 px-2.5 h-8 rounded-lg hover:bg-rose-50 border border-rose-200 flex items-center gap-1 transition-colors cursor-pointer shrink-0 ml-1 whitespace-nowrap"
                     title="Reset all filters"
                     aria-label="Reset all search filters"
                   >
                     <RotateCcw className="w-3 h-3" />
                     <span>Reset</span>
-                  </button>
+                  </Button>
                 )}
               </div>
             </div>
@@ -924,23 +859,23 @@ export function ApplicantPortal({
               <div className="bg-white/85 backdrop-blur-xs rounded-2xl border border-blue-200/70 p-5 sm:p-6 shadow-[0_4px_20px_rgba(25,136,245,0.06)] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-xl bg-blue-50 text-[#2196F3] flex items-center justify-center border border-blue-100 shadow-2xs">
-                      <Bookmark className="w-5 h-5 fill-[#2196F3] text-[#2196F3]" />
+                    <div className="w-9 h-9 rounded-xl bg-blue-50 text-primary flex items-center justify-center border border-blue-100 shadow-2xs">
+                      <Bookmark className="w-5 h-5 fill-primary text-primary" />
                     </div>
                     <h2 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
                       Saved Positions
                     </h2>
-                    <span className="px-2.5 py-0.5 rounded-full bg-blue-100/90 text-[#1976D2] font-mono text-xs font-bold border border-blue-200/80">
+                    <span className="px-2.5 py-0.5 rounded-full bg-blue-100/90 text-primary text-sm font-bold border border-blue-200/80">
                       {bookmarkedIds.size} saved
                     </span>
                   </div>
-                  <p className="text-xs sm:text-sm text-slate-600">
+                  <p className="text-sm sm:text-sm text-slate-600">
                     Roles you have bookmarked for comparison, rubric evaluation review, and application.
                   </p>
                 </div>
                 <Button
                   onClick={() => setNavTab("Explore")}
-                  className="bg-[#2196F3] hover:bg-[#1976D2] text-white font-semibold text-xs px-4 h-9 rounded-xl transition-all shadow-2xs cursor-pointer gap-1.5 self-start sm:self-auto shrink-0"
+                  className="bg-primary hover:bg-primary/90 text-white font-semibold text-sm px-4 h-9 rounded-xl transition-all shadow-2xs cursor-pointer gap-1.5 self-start sm:self-auto shrink-0"
                 >
                   <Search className="w-3.5 h-3.5" />
                   <span>Browse All Positions</span>
@@ -950,14 +885,14 @@ export function ApplicantPortal({
 
             {filteredJobs.length === 0 ? (
               <div className="bg-white rounded-2xl border border-blue-200/80 p-12 text-center space-y-4 max-w-lg mx-auto my-12 shadow-[0_4px_20px_rgba(25,136,245,0.06)]">
-                <div className="w-14 h-14 rounded-2xl bg-blue-50 text-[#2196F3] flex items-center justify-center mx-auto shadow-2xs border border-blue-100">
+                <div className="w-14 h-14 rounded-2xl bg-blue-50 text-primary flex items-center justify-center mx-auto shadow-2xs border border-blue-100">
                   {navTab === "Bookmark" ? <Bookmark className="w-7 h-7" /> : <Briefcase className="w-7 h-7" />}
                 </div>
                 <div className="space-y-1">
                   <h3 className="text-lg font-bold text-slate-900">
                     {navTab === "Bookmark" ? "No bookmarked positions yet" : "No positions found"}
                   </h3>
-                  <p className="text-xs sm:text-sm text-slate-500 leading-relaxed">
+                  <p className="text-sm sm:text-sm text-slate-500 leading-relaxed">
                     {navTab === "Bookmark"
                       ? "Click the bookmark ribbon on any role card to save it for quick reference and tracking."
                       : "We couldn't find any job postings matching your current search or filters. Try adjusting your keywords."}
@@ -966,7 +901,7 @@ export function ApplicantPortal({
                 {navTab === "Bookmark" ? (
                   <Button
                     onClick={() => setNavTab("Explore")}
-                    className="bg-[#2196F3] hover:bg-[#1976D2] text-white rounded-xl text-xs font-semibold px-5 h-10 shadow-2xs"
+                    className="bg-primary hover:bg-primary/90 text-white rounded-xl text-sm font-semibold px-5 h-10 shadow-2xs"
                   >
                     Browse Open Positions
                   </Button>
@@ -974,7 +909,7 @@ export function ApplicantPortal({
                   <Button
                     onClick={resetFilters}
                     variant="outline"
-                    className="rounded-xl text-xs font-semibold h-10"
+                    className="rounded-xl text-sm font-semibold h-10"
                   >
                     Reset Search Filters
                   </Button>
@@ -983,12 +918,12 @@ export function ApplicantPortal({
             ) : (
               <div className="space-y-4">
                 {/* Active Results Count & Removable Filter Pills Strip */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1 text-xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1 text-sm">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm sm:text-base font-bold text-slate-900 tracking-tight">
                       {navTab === "Bookmark" ? "Saved Roles" : "Available Positions"}
                     </span>
-                    <span className="px-2.5 py-0.5 rounded-full bg-blue-100/90 text-[#1976D2] font-mono text-xs font-bold border border-blue-200/80">
+                    <span className="px-2.5 py-0.5 rounded-full bg-blue-100/90 text-primary text-sm font-bold border border-blue-200/80">
                       {filteredJobs.length} {filteredJobs.length === 1 ? "role" : "roles"}
                     </span>
                     <span className="hidden sm:inline text-slate-300">·</span>
@@ -1001,73 +936,73 @@ export function ApplicantPortal({
                   {hasActiveFilters && (
                     <div className="flex items-center gap-1.5 flex-wrap">
                       {searchQuery && (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-blue-200/90 text-slate-700 text-xs shadow-2xs font-medium">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-blue-200/90 text-slate-700 text-sm shadow-2xs font-medium">
                           <span className="text-slate-400 font-normal">Search:</span>
                           <span className="font-semibold">&ldquo;{searchQuery}&rdquo;</span>
-                          <button
+                          <Button
                             type="button"
                             onClick={() => setSearchQuery("")}
                             className="hover:text-rose-600 transition-colors cursor-pointer p-0.5"
                             aria-label="Remove search filter"
                           >
                             <X className="w-3 h-3" />
-                          </button>
+                          </Button>
                         </span>
                       )}
                       {selectedJobType !== "All" && (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-blue-200/90 text-slate-700 text-xs shadow-2xs font-medium">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-blue-200/90 text-slate-700 text-sm shadow-2xs font-medium">
                           <span className="font-semibold">{selectedJobType}</span>
-                          <button
+                          <Button
                             type="button"
                             onClick={() => setSelectedJobType("All")}
                             className="hover:text-rose-600 transition-colors cursor-pointer p-0.5"
                             aria-label="Remove job type filter"
                           >
                             <X className="w-3 h-3" />
-                          </button>
+                          </Button>
                         </span>
                       )}
                       {selectedCategory !== "All" && (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-blue-200/90 text-slate-700 text-xs shadow-2xs font-medium">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-blue-200/90 text-slate-700 text-sm shadow-2xs font-medium">
                           <span className="truncate max-w-[120px] font-semibold">{selectedCategory}</span>
-                          <button
+                          <Button
                             type="button"
                             onClick={() => setSelectedCategory("All")}
                             className="hover:text-rose-600 transition-colors cursor-pointer p-0.5"
                             aria-label="Remove category filter"
                           >
                             <X className="w-3 h-3" />
-                          </button>
+                          </Button>
                         </span>
                       )}
                       {selectedSalary !== "All" && (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-blue-200/90 text-slate-700 text-xs shadow-2xs font-medium">
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white border border-blue-200/90 text-slate-700 text-sm shadow-2xs font-medium">
                           <span className="font-semibold">{selectedSalary}</span>
-                          <button
+                          <Button
                             type="button"
                             onClick={() => setSelectedSalary("All")}
                             className="hover:text-rose-600 transition-colors cursor-pointer p-0.5"
                             aria-label="Remove salary filter"
                           >
                             <X className="w-3 h-3" />
-                          </button>
+                          </Button>
                         </span>
                       )}
-                      <button
+                      <Button
                         type="button"
                         onClick={resetFilters}
-                        className="text-xs font-semibold text-rose-600 hover:text-rose-700 hover:underline px-1 cursor-pointer"
+                        className="text-sm font-semibold text-rose-600 hover:text-rose-700 hover:underline px-1 cursor-pointer"
                       >
                         Clear all
-                      </button>
+                      </Button>
                     </div>
                   )}
                 </div>
 
                 {/* 2-COLUMN CARDS GRID: Full-Bleed on Sky-Blue Canvas */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+                <div className={filteredJobs.length === 1 ? "mx-auto max-w-3xl" : "grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch"}>
                   {filteredJobs.map((job) => {
-                    const salary = getSalaryRange(job);
+                    const salary = formatSalary(job);
                     const timeAgo = getRelativeTime(job.created_at);
                     const isBookmarked = bookmarkedIds.has(job.id);
                     const isApplied = appliedJobIds.has(job.id);
@@ -1088,61 +1023,63 @@ export function ApplicantPortal({
                           }
                         }}
                         aria-label={`View role specifications for ${job.title} in ${monogram.label}`}
-                        className="bg-white rounded-2xl p-6 sm:p-7 border border-blue-200/70 shadow-[0_4px_20px_rgba(25,136,245,0.06)] hover:shadow-[0_16px_36px_rgba(25,136,245,0.12)] hover:border-[#2196F3]/60 hover:-translate-y-1 transition-all duration-200 flex flex-col justify-between group relative cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2196F3] focus-visible:ring-offset-2"
+                        className="bg-white rounded-2xl p-6 sm:p-7 border border-blue-200/70 shadow-[0_4px_20px_rgba(25,136,245,0.06)] hover:shadow-[0_16px_36px_rgba(25,136,245,0.12)] hover:border-primary/60 hover:-translate-y-1 transition-all duration-200 flex flex-col justify-between group relative cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
                       >
                         <div className="space-y-4">
                           {/* Top: Monogram + Title & Location + Bookmark */}
                           <div className="flex items-start justify-between gap-3.5">
                             <div className="flex items-start gap-3.5 flex-1 min-w-0">
                               {/* Canonical Brand Monogram Badge */}
-                              <div className="w-11 h-11 rounded-xl bg-blue-50/90 text-[#2196F3] font-bold text-sm sm:text-base flex items-center justify-center shrink-0 border border-blue-200/80 shadow-2xs group-hover:scale-105 transition-transform">
+                              <div className="w-11 h-11 rounded-xl bg-blue-50/90 text-primary font-bold text-sm sm:text-base flex items-center justify-center shrink-0 border border-blue-200/80 shadow-2xs group-hover:scale-105 transition-transform">
                                 {monogram.monogram}
                               </div>
                               <div className="min-w-0 flex-1">
                                 <h3
-                                  className="text-base sm:text-lg font-bold text-slate-900 group-hover:text-[#2196F3] tracking-tight leading-snug truncate transition-colors"
+                                  className="text-base sm:text-lg font-bold text-slate-900 group-hover:text-primary tracking-tight leading-snug truncate transition-colors"
                                   title={job.title}
                                 >
                                   {job.title}
                                 </h3>
-                                <p className="text-xs text-slate-500 font-medium mt-0.5 truncate">
+                                <p className="text-sm text-slate-500 font-medium mt-0.5 truncate">
                                   {monogram.label} &bull; {job.location || "Makati City, Metro Manila"}
                                 </p>
                               </div>
                             </div>
 
                             {/* Bookmark Ribbon */}
-                            <button
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 toggleBookmark(job.id, job.title);
                               }}
                               aria-label={isBookmarked ? `Remove bookmark for ${job.title}` : `Bookmark ${job.title}`}
-                              className="p-1.5 text-slate-400 hover:text-[#2196F3] transition-colors shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2196F3] rounded-lg cursor-pointer relative z-10"
+                              className="p-1.5 text-slate-400 hover:text-primary transition-colors shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-lg cursor-pointer relative z-10"
                             >
                               <Bookmark
-                                className={`w-5 h-5 transition-colors ${isBookmarked ? "fill-[#2196F3] text-[#2196F3]" : ""
+                                className={`w-5 h-5 transition-colors ${isBookmarked ? "fill-primary text-primary" : ""
                                   }`}
                               />
-                            </button>
+                            </Button>
                           </div>
 
                           {/* Attribute Badges Row + Monospace Green Salary */}
                           <div className="flex items-center justify-between gap-2 pt-0.5 flex-wrap">
                             <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="px-2.5 py-1 rounded-lg bg-blue-50/80 text-[#1976D2] text-xs font-semibold border border-blue-100">
+                              <span className="px-2.5 py-1 rounded-lg bg-blue-50/80 text-primary text-sm font-semibold border border-blue-100">
                                 {job.employment_type || "Full time"}
                               </span>
-                              <span className="px-2.5 py-1 rounded-lg bg-slate-50 text-slate-700 text-xs font-medium border border-slate-200">
+                              <span className="px-2.5 py-1 rounded-lg bg-slate-50 text-slate-700 text-sm font-medium border border-slate-200">
                                 {job.location.toLowerCase().includes("remote") ? "Remote" : "On-site / Hybrid"}
                               </span>
-                              <span className="px-2.5 py-1 rounded-lg bg-slate-50 text-slate-700 text-xs font-medium border border-slate-200">
+                              <span className="px-2.5 py-1 rounded-lg bg-slate-50 text-slate-700 text-sm font-medium border border-slate-200">
                                 {expPill}
                               </span>
                             </div>
 
-                            <div className="font-mono font-bold text-emerald-600 text-xs sm:text-sm tracking-tight shrink-0 tabular-nums">
+                            <div className="font-bold text-emerald-600 text-sm sm:text-sm tracking-tight shrink-0 tabular-nums">
                               {salary}
                             </div>
                           </div>
@@ -1150,10 +1087,10 @@ export function ApplicantPortal({
                           {/* Genuine Bullets & Skill Tags (No AI Hallucinated Fluff) */}
                           <div className="space-y-2 pt-1">
                             {highlights.length > 0 && (
-                              <ul className="space-y-1.5 text-xs text-slate-600">
+                              <ul className="space-y-1.5 text-sm text-slate-600">
                                 {highlights.map((point, idx) => (
                                   <li key={idx} className="flex items-start gap-2 leading-relaxed">
-                                    <span className="text-[#2196F3] font-bold shrink-0">&bull;</span>
+                                    <span className="text-primary font-bold shrink-0">&bull;</span>
                                     <span className="line-clamp-1">{point}</span>
                                   </li>
                                 ))}
@@ -1167,13 +1104,13 @@ export function ApplicantPortal({
                                   <span
                                     key={idx}
                                     title={skill}
-                                    className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200/70 max-w-[260px] truncate"
+                                    className="text-sm font-medium px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200/70 max-w-[260px] truncate"
                                   >
                                     {skill}
                                   </span>
                                 ))}
                                 {job.required_skills.length > 3 && (
-                                  <span className="text-[10px] font-mono text-slate-400 py-0.5 self-center">
+                                  <span className="text-sm text-slate-400 py-0.5 self-center">
                                     +{job.required_skills.length - 3} more
                                   </span>
                                 )}
@@ -1186,19 +1123,19 @@ export function ApplicantPortal({
                         <div className="pt-4 border-t border-slate-100 flex items-center justify-between gap-4 mt-4">
                           <div className="flex items-center gap-2 relative z-10">
                             {isApplied ? (
-                              <button
+                              <Button
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setNavTab("My Applications");
                                 }}
-                                className="bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold text-xs px-3.5 py-1.5 rounded-xl flex items-center gap-1.5 shadow-2xs hover:bg-emerald-100 transition-colors cursor-pointer"
+                                className="bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold text-sm px-3.5 py-1.5 rounded-xl flex items-center gap-1.5 shadow-2xs hover:bg-emerald-100 transition-colors cursor-pointer"
                               >
                                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                                 <span>Applied</span>
-                              </button>
+                              </Button>
                             ) : isClosed ? (
-                              <span className="bg-slate-100 text-slate-500 font-medium text-xs px-3.5 py-1.5 rounded-xl flex items-center gap-1.5">
+                              <span className="bg-slate-100 text-slate-500 font-medium text-sm px-3.5 py-1.5 rounded-xl flex items-center gap-1.5">
                                 <Lock className="w-3 h-3 text-amber-500" />
                                 <span>Closed</span>
                               </span>
@@ -1209,7 +1146,7 @@ export function ApplicantPortal({
                                   e.stopPropagation();
                                   openApply(job);
                                 }}
-                                className="h-9 px-4 bg-[#2196F3] hover:bg-[#1976D2] text-white font-semibold rounded-xl shadow-2xs hover:shadow-xs transition-all text-xs cursor-pointer active:scale-[0.99]"
+                                className="h-9 px-4 bg-primary hover:bg-primary/90 text-white font-semibold rounded-xl shadow-2xs hover:shadow-xs transition-all text-sm cursor-pointer active:scale-[0.99]"
                               >
                                 Apply this job
                               </Button>
@@ -1222,7 +1159,7 @@ export function ApplicantPortal({
                                 e.stopPropagation();
                                 handleOpenJobDetails(job);
                               }}
-                              className="h-9 px-3 text-xs font-semibold text-slate-600 hover:text-slate-900 rounded-xl"
+                              className="h-9 px-3 text-sm font-semibold text-slate-600 hover:text-slate-900 rounded-xl"
                             >
                               Details
                             </Button>
@@ -1230,7 +1167,7 @@ export function ApplicantPortal({
 
                           {/* Neutral Relative Time (Not emerald) */}
                           <div
-                            className="text-xs font-medium text-slate-400 select-none font-mono"
+                            className="text-sm font-medium text-slate-400 select-none "
                             title={job.created_at ? new Date(job.created_at).toLocaleDateString() : "Posted recently"}
                           >
                             {timeAgo}
@@ -1254,20 +1191,20 @@ export function ApplicantPortal({
             <div className="bg-white/85 backdrop-blur-xs rounded-2xl border border-blue-200/70 p-6 sm:p-7 shadow-[0_4px_20px_rgba(25,136,245,0.06)] flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="space-y-1">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-blue-50 text-[#2196F3] flex items-center justify-center border border-blue-100 shadow-2xs">
-                    <UserCheck className="w-5 h-5 text-[#2196F3]" />
+                  <div className="w-9 h-9 rounded-xl bg-blue-50 text-primary flex items-center justify-center border border-blue-100 shadow-2xs">
+                    <UserCheck className="w-5 h-5 text-primary" />
                   </div>
                   <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
                     My Applications
                   </h2>
                 </div>
-                <p className="text-xs sm:text-sm text-slate-600">
+                <p className="text-sm sm:text-sm text-slate-600">
                   Track the progress, review stage, and explainable decision updates for your submitted applications.
                 </p>
               </div>
               <Button
                 onClick={() => setNavTab("Explore")}
-                className="bg-[#2196F3] hover:bg-[#1976D2] text-white font-semibold text-xs px-5 h-10 rounded-xl transition-all shadow-2xs cursor-pointer gap-1.5 shrink-0 self-start sm:self-auto"
+                className="bg-primary hover:bg-primary/90 text-white font-semibold text-sm px-5 h-10 rounded-xl transition-all shadow-2xs cursor-pointer gap-1.5 shrink-0 self-start sm:self-auto"
               >
                 <Search className="w-3.5 h-3.5" />
                 <span>Explore Open Roles</span>
@@ -1277,53 +1214,53 @@ export function ApplicantPortal({
             {/* Status Metrics Strip: Individual White Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="p-5 rounded-2xl bg-white border border-blue-200/70 shadow-[0_4px_20px_rgba(25,136,245,0.06)] hover:shadow-[0_8px_24px_rgba(25,136,245,0.10)] transition-all space-y-1">
-                <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                <div className="text-sm font-semibold text-slate-500 uppercase tracking-wider">
                   Total Applications
                 </div>
-                <div className="font-mono font-extrabold text-2xl sm:text-3xl text-slate-900 tabular-nums">
+                <div className="font-extrabold text-2xl sm:text-3xl text-slate-900 tabular-nums">
                   {applications.length}
                 </div>
-                <p className="text-xs text-slate-500">Submitted positions</p>
+                <p className="text-sm text-slate-500">Submitted positions</p>
               </div>
 
               <div className="p-5 rounded-2xl bg-white border border-blue-200/70 shadow-[0_4px_20px_rgba(25,136,245,0.06)] hover:shadow-[0_8px_24px_rgba(25,136,245,0.10)] transition-all space-y-1">
-                <div className="text-[11px] font-semibold text-[#1976D2] uppercase tracking-wider">
+                <div className="text-sm font-semibold text-primary uppercase tracking-wider">
                   In Review
                 </div>
-                <div className="font-mono font-extrabold text-2xl sm:text-3xl text-[#2196F3] tabular-nums">
+                <div className="font-extrabold text-2xl sm:text-3xl text-primary tabular-nums">
                   {pendingCount}
                 </div>
-                <p className="text-xs text-slate-500">Active merit evaluation in progress</p>
+                <p className="text-sm text-slate-500">Active merit evaluation in progress</p>
               </div>
 
               <div className="p-5 rounded-2xl bg-white border border-blue-200/70 shadow-[0_4px_20px_rgba(25,136,245,0.06)] hover:shadow-[0_8px_24px_rgba(25,136,245,0.10)] transition-all space-y-1">
-                <div className="text-[11px] font-semibold text-emerald-700 uppercase tracking-wider">
+                <div className="text-sm font-semibold text-emerald-700 uppercase tracking-wider">
                   Shortlisted / Next Steps
                 </div>
-                <div className="font-mono font-extrabold text-2xl sm:text-3xl text-emerald-600 tabular-nums">
+                <div className="font-extrabold text-2xl sm:text-3xl text-emerald-600 tabular-nums">
                   {shortlistedCount}
                 </div>
-                <p className="text-xs text-slate-500">Advancing in candidate pipeline</p>
+                <p className="text-sm text-slate-500">Advancing in candidate pipeline</p>
               </div>
             </div>
 
             {/* Application List or Empty State */}
             {applications.length === 0 ? (
               <div className="bg-white rounded-2xl border border-blue-200/80 p-12 text-center space-y-4 max-w-lg mx-auto shadow-[0_4px_20px_rgba(25,136,245,0.06)]">
-                <div className="w-14 h-14 rounded-2xl bg-blue-50 text-[#2196F3] flex items-center justify-center mx-auto border border-blue-100">
-                  <FileText className="w-7 h-7 text-[#2196F3]" />
+                <div className="w-14 h-14 rounded-2xl bg-blue-50 text-primary flex items-center justify-center mx-auto border border-blue-100">
+                  <FileText className="w-7 h-7 text-primary" />
                 </div>
                 <div className="space-y-1">
                   <h3 className="text-lg font-bold text-slate-900">
                     No applications submitted yet
                   </h3>
-                  <p className="text-xs sm:text-sm text-slate-500 max-w-sm mx-auto">
+                  <p className="text-sm sm:text-sm text-slate-500 max-w-sm mx-auto">
                     You haven&apos;t submitted any applications yet. Browse open positions to find roles matching your experience and skills.
                   </p>
                 </div>
                 <Button
                   onClick={() => setNavTab("Explore")}
-                  className="bg-[#2196F3] hover:bg-[#1976D2] text-white rounded-xl text-xs font-semibold px-6 h-10 gap-2 cursor-pointer shadow-2xs"
+                  className="bg-primary hover:bg-primary/90 text-white rounded-xl text-sm font-semibold px-6 h-10 gap-2 cursor-pointer shadow-2xs"
                 >
                   <Search className="w-4 h-4" />
                   <span>Explore Open Roles</span>
@@ -1353,7 +1290,7 @@ export function ApplicantPortal({
                   return (
                     <div
                       key={app.id}
-                      className="p-5 sm:p-6 rounded-2xl border border-blue-200/70 hover:border-[#2196F3]/50 transition-all bg-white shadow-[0_4px_20px_rgba(25,136,245,0.06)] hover:shadow-[0_12px_28px_rgba(25,136,245,0.10)] space-y-4"
+                      className="p-5 sm:p-6 rounded-2xl border border-blue-200/70 hover:border-primary/50 transition-all bg-white shadow-[0_4px_20px_rgba(25,136,245,0.06)] hover:shadow-[0_12px_28px_rgba(25,136,245,0.10)] space-y-4"
                     >
                       {/* Top Row: Job Title, Badges, and Status Indicator */}
                       <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
@@ -1363,13 +1300,13 @@ export function ApplicantPortal({
                               {app.job_title}
                             </h3>
                             {app.job_department && (
-                              <span className="text-xs font-semibold text-slate-700 bg-slate-100 border border-slate-200/70 px-2.5 py-0.5 rounded-lg">
+                              <span className="text-sm font-semibold text-slate-700 bg-slate-100 border border-slate-200/70 px-2.5 py-0.5 rounded-lg">
                                 {app.job_department}
                               </span>
                             )}
                           </div>
 
-                          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 font-mono">
+                          <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500 ">
                             <span className="inline-flex items-center gap-1.5">
                               <Clock className="w-3.5 h-3.5 text-slate-400" />
                               <span>Applied {formattedDate}</span>
@@ -1400,7 +1337,7 @@ export function ApplicantPortal({
                         {/* Prominent Status Badge */}
                         <div className="shrink-0 flex items-center gap-2">
                           <span
-                            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl font-bold text-xs border ${statusCfg.badgeClass} shadow-2xs`}
+                            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl font-bold text-sm border ${statusCfg.badgeClass} shadow-2xs`}
                           >
                             <StatusIcon className="w-3.5 h-3.5" />
                             <span>{statusCfg.label}</span>
@@ -1411,7 +1348,7 @@ export function ApplicantPortal({
                       {/* Middle Row: Lightweight 3-Stage Progress Rail */}
                       <div className="pt-2 border-t border-slate-100">
                         <div className="space-y-2">
-                          <div className="grid grid-cols-3 gap-2 text-center text-[11px] font-semibold">
+                          <div className="grid grid-cols-3 gap-2 text-center text-sm font-semibold">
                             <span className={statusCfg.stepIndex >= 0 ? "text-slate-900" : "text-slate-400"}>
                               1. Submitted
                             </span>
@@ -1432,7 +1369,7 @@ export function ApplicantPortal({
                           </div>
                           {/* Visual Progress Bar */}
                           <div className="grid grid-cols-3 gap-1.5 h-1.5 rounded-full overflow-hidden bg-slate-100">
-                            <div className={`h-full rounded-full ${statusCfg.stepIndex >= 0 ? "bg-[#2196F3]" : "bg-slate-200"}`} />
+                            <div className={`h-full rounded-full ${statusCfg.stepIndex >= 0 ? "bg-primary" : "bg-slate-200"}`} />
                             <div
                               className={`h-full rounded-full ${statusCfg.stepIndex >= 1 ? statusCfg.stepColor : "bg-slate-200"
                                 }`}
@@ -1447,7 +1384,7 @@ export function ApplicantPortal({
 
                       {/* Bottom Row: Contextual Status Message & Transparent Recovery */}
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
-                        <p className="text-xs text-slate-500">
+                        <p className="text-sm text-slate-500">
                           {statusCfg.sublabel}
                         </p>
 
@@ -1457,7 +1394,7 @@ export function ApplicantPortal({
                               variant="outline"
                               size="sm"
                               onClick={() => setNavTab("Explore")}
-                              className="rounded-xl text-xs font-semibold h-9 px-3.5 border-slate-200 text-[#2196F3] hover:bg-blue-50/50 cursor-pointer"
+                              className="rounded-xl text-sm font-semibold h-9 px-3.5 border-slate-200 text-primary hover:bg-blue-50/50 cursor-pointer"
                             >
                               Browse Similar Roles
                             </Button>
@@ -1468,7 +1405,7 @@ export function ApplicantPortal({
                               variant="outline"
                               size="sm"
                               onClick={() => handleOpenJobDetails(targetJob)}
-                              className="rounded-xl text-xs font-semibold h-9 px-4 gap-1.5 border-slate-200 text-slate-700 hover:text-slate-900 hover:border-slate-300 hover:bg-slate-50 transition-all cursor-pointer"
+                              className="rounded-xl text-sm font-semibold h-9 px-4 gap-1.5 border-slate-200 text-slate-700 hover:text-slate-900 hover:border-slate-300 hover:bg-slate-50 transition-all cursor-pointer"
                             >
                               <span>View Role Specs</span>
                               <ArrowRight className="w-3.5 h-3.5 text-slate-400" />
@@ -1500,7 +1437,7 @@ export function ApplicantPortal({
         isBookmarked={selectedJobForSheet ? bookmarkedIds.has(selectedJobForSheet.id) : false}
         onToggleBookmark={toggleBookmark}
         onViewApplication={() => setNavTab("My Applications")}
-        salaryRange={selectedJobForSheet ? getSalaryRange(selectedJobForSheet) : undefined}
+        salaryRange={selectedJobForSheet ? formatSalary(selectedJobForSheet) : undefined}
         onNavigateJob={handleNavigateJob}
         hasPrevJob={hasPrevJob}
         hasNextJob={hasNextJob}
@@ -1526,7 +1463,7 @@ export function ApplicantPortal({
       {/* ============================================================== */}
       {/* 6. MINIMALIST FOOTER                                           */}
       {/* ============================================================== */}
-      <footer className="bg-white border-t border-slate-200/80 py-6 text-xs text-slate-500 mt-12">
+      <footer className="bg-white border-t border-slate-200/80 py-6 text-sm text-slate-500 mt-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <span className="font-bold text-slate-900">TalentMatch</span>

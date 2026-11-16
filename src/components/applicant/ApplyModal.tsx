@@ -1,5 +1,7 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
 import {
@@ -22,8 +24,6 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { FieldError, FormAlertNote } from "@/components/ui/form-error";
@@ -495,12 +495,12 @@ export function ApplyModal({
 
                 {/* Live Progress Bar */}
                 <div className="space-y-1.5 px-1 max-w-md mx-auto">
-                  <div className="flex justify-between items-center text-xs text-muted-foreground">
+                  <div className="flex justify-between items-center text-sm text-muted-foreground">
                     <span className="font-medium text-foreground flex items-center gap-1.5">
                       <Loader2 className="h-3 w-3 animate-spin text-primary" />
                       Review in Progress
                     </span>
-                    <span className="font-mono text-primary font-semibold">{evalProgress}%</span>
+                    <span className="text-primary font-semibold">{evalProgress}%</span>
                   </div>
                   <Progress value={evalProgress} className="h-2 bg-muted" />
                 </div>
@@ -513,8 +513,8 @@ export function ApplyModal({
                       <Check className="h-3.5 w-3.5" />
                     </div>
                     <div className="space-y-0.5">
-                      <p className="text-xs font-semibold text-foreground">File Uploaded &amp; Secured</p>
-                      <p className="text-[11px] text-muted-foreground">
+                      <p className="text-sm font-semibold text-foreground">File Uploaded &amp; Secured</p>
+                      <p className="text-sm text-muted-foreground">
                         Your resume has been securely stored and anonymized for privacy.
                       </p>
                     </div>
@@ -526,8 +526,8 @@ export function ApplyModal({
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     </div>
                     <div className="space-y-0.5">
-                      <p className="text-xs font-semibold text-foreground">Qualification &amp; Profile Check</p>
-                      <p className="text-[11px] text-muted-foreground">
+                      <p className="text-sm font-semibold text-foreground">Qualification &amp; Profile Check</p>
+                      <p className="text-sm text-muted-foreground">
                         Comparing skills, credentials, and experience tenure with role specifications...
                       </p>
                     </div>
@@ -539,15 +539,15 @@ export function ApplyModal({
                       <Clock className="h-3.5 w-3.5" />
                     </div>
                     <div className="space-y-0.5">
-                      <p className="text-xs font-semibold text-muted-foreground">Routing to Hiring Team</p>
-                      <p className="text-[11px] text-muted-foreground">
+                      <p className="text-sm font-semibold text-muted-foreground">Routing to Hiring Team</p>
+                      <p className="text-sm text-muted-foreground">
                         Preparing submission profile for hiring manager review...
                       </p>
                     </div>
                   </div>
                 </div>
 
-                <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                <p className="text-sm text-muted-foreground max-w-sm mx-auto">
                   Feel free to close this window. Processing will finish in the background and update your application status.
                 </p>
 
@@ -570,14 +570,14 @@ export function ApplyModal({
                 <div className="p-5 rounded-xl border border-border bg-card text-left space-y-3.5 shadow-xs">
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-muted-foreground">Current Status:</span>
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-sm font-bold bg-blue-50 text-blue-700 border border-blue-200">
                       <Clock className="w-3.5 h-3.5" />
                       Application Received
                     </span>
                   </div>
                   <div className="flex justify-between items-center text-sm">
                     <span className="text-muted-foreground">Position:</span>
-                    <span className="text-foreground font-semibold text-xs truncate max-w-[220px]">
+                    <span className="text-foreground font-semibold text-sm truncate max-w-[220px]">
                       {job.title} ({job.department})
                     </span>
                   </div>
@@ -595,11 +595,11 @@ export function ApplyModal({
             <div className="flex-1 overflow-y-auto py-4 space-y-4 pr-1">
               {!userId && (
                 <div className="p-3.5 rounded-xl bg-amber-50/85 border border-amber-200/90 text-amber-950 text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5 text-xs sm:text-sm">
+                  <div className="flex items-center gap-2.5 text-sm sm:text-sm">
                     <AlertCircle className="h-4 w-4 text-amber-600 shrink-0" />
                     <span>Please sign in with your applicant account to submit and track your application.</span>
                   </div>
-                  <Button asChild size="sm" variant="outline" className="font-semibold text-xs shrink-0 bg-white">
+                  <Button asChild size="sm" variant="outline" className="font-semibold text-sm shrink-0 bg-white">
                     <Link href="/applicant/login?next=/careers">Sign In / Register</Link>
                   </Button>
                 </div>
@@ -685,7 +685,7 @@ export function ApplyModal({
                     aria-describedby={fieldErrors.email ? "apply-email-error apply-email-help" : "apply-email-help"}
                     readOnly
                   />
-                  <p id="apply-email-help" className="text-xs text-slate-600">Uses the email on your signed-in account.</p>
+                  <p id="apply-email-help" className="text-sm text-slate-600">Uses the email on your signed-in account.</p>
                   <FieldError id="apply-email-error" message={fieldErrors.email} />
                 </div>
 
@@ -740,13 +740,13 @@ export function ApplyModal({
                     fieldErrors.resume
                       ? "border-rose-400 bg-rose-50/40 hover:border-rose-500 focus-within:ring-rose-500/15 focus-within:border-rose-500"
                       : isDragging
-                      ? "border-[#2196F3] bg-blue-50/50 focus-within:ring-[#2196F3]/15"
+                      ? "border-primary bg-blue-50/50 focus-within:ring-primary/15"
                       : file
-                      ? "border-emerald-300 bg-emerald-50/30 hover:border-emerald-400 focus-within:ring-[#2196F3]/15 focus-within:border-[#2196F3]"
-                      : "border-border hover:border-[#2196F3]/60 bg-muted/20 hover:bg-muted/40 focus-within:ring-[#2196F3]/15 focus-within:border-[#2196F3]"
+                      ? "border-emerald-300 bg-emerald-50/30 hover:border-emerald-400 focus-within:ring-primary/15 focus-within:border-primary"
+                      : "border-border hover:border-primary/60 bg-muted/20 hover:bg-muted/40 focus-within:ring-primary/15 focus-within:border-primary"
                   }`}
                 >
-                  <input
+                  <Input
                     type="file"
                     accept=".pdf,.docx,.txt"
                     onChange={handleFileChange}
@@ -757,10 +757,10 @@ export function ApplyModal({
                   />
                   {file ? (
                     <div className="flex items-center gap-3 text-foreground">
-                      <FileText className="h-7 w-7 text-[#2196F3] shrink-0" />
+                      <FileText className="h-7 w-7 text-primary shrink-0" />
                       <div className="text-left min-w-0">
                         <div className="text-sm font-semibold truncate max-w-[340px]">{file.name}</div>
-                        <div className="text-xs text-muted-foreground">
+                        <div className="text-sm text-muted-foreground">
                           {(file.size / (1024 * 1024)).toFixed(2)} MB · Ready to submit (click to replace)
                         </div>
                       </div>
@@ -771,13 +771,13 @@ export function ApplyModal({
                         className={`h-8 w-8 transition mb-2 ${
                           fieldErrors.resume
                             ? "text-rose-500"
-                            : "text-muted-foreground group-hover:text-[#2196F3]"
+                            : "text-muted-foreground group-hover:text-primary"
                         }`}
                       />
                       <div className="text-sm font-medium text-foreground">
                         Click or drop resume file here
                       </div>
-                      <div className="text-xs text-muted-foreground mt-1">
+                      <div className="text-sm text-muted-foreground mt-1">
                         Digital PDF, DOCX, or TXT documents up to 10MB
                       </div>
                     </>
@@ -794,7 +794,7 @@ export function ApplyModal({
               <Button
                 type="submit"
                 disabled={!userId}
-                className="min-w-[170px] bg-[#2196F3] hover:bg-[#1976D2] text-white"
+                className="min-w-[170px] bg-primary hover:bg-primary/90 text-white"
               >
                 {!userId ? "Sign In Required to Apply" : "Continue to Review"}
               </Button>
@@ -840,7 +840,7 @@ export function ApplyModal({
               </div>
 
               {/* Compact Submission Summary */}
-              <div className="pt-4 border-t border-border flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+              <div className="pt-4 border-t border-border flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
                 <div>
                   <span className="font-semibold text-foreground">Applicant:</span>{" "}
                   {firstName} {lastName} ({email} · {phone})
@@ -848,8 +848,8 @@ export function ApplyModal({
                 {file && (
                   <div>
                     <span className="font-semibold text-foreground">Resume:</span>{" "}
-                    <span className="font-mono text-[11px]">{file.name}</span>{" "}
-                    <span className="text-[11px]">({(file.size / (1024 * 1024)).toFixed(2)} MB)</span>
+                    <span className="text-sm">{file.name}</span>{" "}
+                    <span className="text-sm">({(file.size / (1024 * 1024)).toFixed(2)} MB)</span>
                   </div>
                 )}
               </div>
@@ -865,7 +865,7 @@ export function ApplyModal({
                 htmlFor="ai-disclosure-checkbox"
                 className="flex items-center gap-2.5 cursor-pointer select-none py-1 text-left flex-1 min-w-0"
               >
-                <input
+                <Input
                   id="ai-disclosure-checkbox"
                   type="checkbox"
                   checked={acknowledged}
@@ -895,7 +895,7 @@ export function ApplyModal({
                   type="button"
                   onClick={handleFinalSubmit}
                   disabled={submitting}
-                  className="min-w-[155px] bg-[#2196F3] hover:bg-[#1976D2] text-white"
+                  className="min-w-[155px] bg-primary hover:bg-primary/90 text-white"
                 >
                   {submitting ? (
                     <>

@@ -1,11 +1,72 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import {
+  Archive,
+  ArrowRight,
+  Copy,
+  Lock,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  RotateCcw,
+  Trash2,
+  UsersRound,
+} from "lucide-react";
 import { Job, ArchivedJob } from "@/types/job";
-import { RefreshCw, Copy, RotateCcw, Users } from "lucide-react";
+import { Application } from "@/types/application";
+import { fetchApi } from "@/lib/api";
+import { useRecruiter } from "@/context/RecruiterContext";
+import { ConfirmJobActionModal, JobActionType } from "./ConfirmJobActionModal";
+import { CreateJobModal } from "./CreateJobModal";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { ContextualLoading } from "@/components/ui/contextual-loading";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { EmptyState, ErrorState } from "@/components/ui/feedback";
+import { FilterTabs } from "@/components/ui/filter-tabs";
+import { IconButton } from "@/components/ui/icon-button";
+import {
+  PageHeader,
+  PageHeaderActions,
+  PageHeaderDescription,
+  PageHeaderTitle,
+} from "@/components/ui/page-header";
+import { SearchInput } from "@/components/ui/search-input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { toast } from "@/components/ui/sonner";
+import { StatusBadge } from "@/components/ui/status-badge";
 import {
   Table,
   TableBody,
@@ -14,11 +75,11 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ConfirmJobActionModal, JobActionType } from "./ConfirmJobActionModal";
-import { CreateJobModal } from "./CreateJobModal";
-import { fetchApi } from "@/lib/api";
-import { toast } from "@/components/ui/sonner";
-import { useRecruiter } from "@/context/RecruiterContext";
+import { CollectionToolbar, type ViewMode } from "@/components/ui/toolbar";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+
+type RequisitionTab = "ACTIVE" | "DRAFT" | "CLOSED" | "ARCHIVED";
+type DisplayMode = ViewMode;
 
 function getDepartmentMonogram(department?: string, title?: string): string {
   const dept = (department || "").toLowerCase();
@@ -58,6 +119,117 @@ function calculateDuration(startStr?: string | null, endStr?: string | null): st
   return `Active for ${diffDays} days`;
 }
 
+function getJobStats(jobId: number, applications: Application[]) {
+  const jobApps = applications.filter((a) => a.job === jobId);
+  const scores = jobApps
+    .map((a) => a.match_result?.match_score)
+    .filter((s): s is number => typeof s === "number" && s > 0);
+  const topScore = scores.length > 0 ? Math.max(...scores) : null;
+  const avgScore =
+    scores.length > 0 ? Math.round(scores.reduce((acc, s) => acc + s, 0) / scores.length) : null;
+  return { count: jobApps.length, topScore, avgScore };
+}
+
+function JobStatusBadge({ status }: { status?: Job["status"] }) {
+  if (status === "CLOSED") {
+    return (
+      <StatusBadge status="warning" dot>
+        Closed
+      </StatusBadge>
+    );
+  }
+  if (status === "DRAFT") {
+    return (
+      <StatusBadge status="neutral" dot>
+        Draft
+      </StatusBadge>
+    );
+  }
+  return (
+    <StatusBadge status="success" dot>
+      Active
+    </StatusBadge>
+  );
+}
+
+interface JobLifecycleMenuProps {
+  job: Job;
+  onEditDraft: (job: Job) => void;
+  onOpenRoster: (jobId: number) => void;
+  onLifecycleAction: (job: Job, action: JobActionType) => void;
+}
+
+function JobLifecycleMenu({
+  job,
+  onEditDraft,
+  onOpenRoster,
+  onLifecycleAction,
+}: JobLifecycleMenuProps) {
+  return (
+    <DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <IconButton
+              label={`Actions for ${job.title}`}
+              type="button"
+              variant="outline"
+              size="icon-sm"
+            >
+              <MoreHorizontal aria-hidden="true" />
+            </IconButton>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent>Requisition actions</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align="end">
+        <DropdownMenuLabel>Requisition actions</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {job.status === "DRAFT" ? (
+          <DropdownMenuItem onClick={() => onEditDraft(job)}>
+            <Pencil className="size-4" aria-hidden="true" />
+            <span>Continue editing draft</span>
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem onClick={() => onOpenRoster(job.id)}>
+            <UsersRound className="size-4" aria-hidden="true" />
+            <span>Open candidate roster</span>
+          </DropdownMenuItem>
+        )}
+        {job.status === "CLOSED" ? (
+          <DropdownMenuItem onClick={() => onLifecycleAction(job, "reopen")}>
+            <RotateCcw className="size-4" aria-hidden="true" />
+            <span>Reopen requisition</span>
+          </DropdownMenuItem>
+        ) : job.status !== "DRAFT" ? (
+          <DropdownMenuItem onClick={() => onLifecycleAction(job, "close")}>
+            <Lock className="size-4" aria-hidden="true" />
+            <span>Close applications</span>
+          </DropdownMenuItem>
+        ) : null}
+        <DropdownMenuSeparator />
+        {job.status === "DRAFT" ? (
+          <DropdownMenuItem
+            onClick={() => onLifecycleAction(job, "delete-draft")}
+            className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+          >
+            <Trash2 className="size-4" aria-hidden="true" />
+            <span>Delete permanently</span>
+          </DropdownMenuItem>
+        ) : (
+          <DropdownMenuItem
+            onClick={() => onLifecycleAction(job, "archive")}
+            className="text-destructive focus:bg-destructive/10 focus:text-destructive"
+          >
+            <Archive className="size-4" aria-hidden="true" />
+            <span>Archive requisition</span>
+          </DropdownMenuItem>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export function JobsView() {
   const router = useRouter();
   const {
@@ -66,13 +238,17 @@ export function JobsView() {
     loadData,
     onJobUpdated,
     onJobArchived,
+    setIsCreateJobOpen,
   } = useRecruiter();
 
-  const [displayMode, setDisplayMode] = useState<"cards" | "table">("cards");
-  const [jobTab, setJobTab] = useState<"ACTIVE" | "DRAFT" | "CLOSED" | "ARCHIVED">("ACTIVE");
+  const [displayMode, setDisplayMode] = useState<DisplayMode>("table");
+  const [jobTab, setJobTab] = useState<RequisitionTab>("ACTIVE");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("ALL");
 
   const [archivedJobs, setArchivedJobs] = useState<ArchivedJob[]>([]);
   const [archivedLoading, setArchivedLoading] = useState(false);
+  const [archivedError, setArchivedError] = useState<string | null>(null);
 
   // Action Confirmation Modal State
   const [actionModalType, setActionModalType] = useState<JobActionType | null>(null);
@@ -80,6 +256,7 @@ export function JobsView() {
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [editingJob, setEditingJob] = useState<Job | null>(null);
   const [duplicatingTemplate, setDuplicatingTemplate] = useState<Partial<Job> | null>(null);
+  const [selectedArchivedJob, setSelectedArchivedJob] = useState<ArchivedJob | null>(null);
 
   const handleDuplicateArchivedJob = (archivedJob: ArchivedJob) => {
     setDuplicatingTemplate({
@@ -100,11 +277,15 @@ export function JobsView() {
 
   const loadArchivedJobs = useCallback(async () => {
     setArchivedLoading(true);
+    setArchivedError(null);
     try {
       const data = await fetchApi<ArchivedJob[]>("/archived-jobs/");
       setArchivedJobs(data);
     } catch (err) {
       console.error("Failed to fetch archived jobs:", err);
+      setArchivedError(
+        err instanceof Error ? err.message : "Could not load archived requisitions. Please try again."
+      );
     } finally {
       setArchivedLoading(false);
     }
@@ -139,15 +320,24 @@ export function JobsView() {
     return counts;
   }, [jobs, archivedJobs]);
 
-  const activeJobs = jobs.filter((j) => j.status === "PUBLISHED" || (!j.status && j.status !== "CLOSED"));
-  const draftJobs = jobs.filter((j) => j.status === "DRAFT");
-  const closedJobs = jobs.filter((j) => j.status === "CLOSED");
+  const activeJobs = useMemo(
+    () => jobs.filter((j) => j.status === "PUBLISHED" || (!j.status && j.status !== "CLOSED")),
+    [jobs]
+  );
+  const draftJobs = useMemo(() => jobs.filter((j) => j.status === "DRAFT"), [jobs]);
+  const closedJobs = useMemo(() => jobs.filter((j) => j.status === "CLOSED"), [jobs]);
+
+  const openLifecycleModal = (job: Job, action: JobActionType) => {
+    setActionJob(job);
+    setActionModalType(action);
+  };
 
   const handleRestoreArchivedJob = async (archivedJob: ArchivedJob) => {
     setIsActionLoading(true);
     try {
       const restored = await fetchApi<Job>(`/archived-jobs/${archivedJob.id}/restore/`, { method: "POST" });
       setArchivedJobs((prev) => prev.filter((j) => j.id !== archivedJob.id));
+      setSelectedArchivedJob(null);
       onJobUpdated(restored);
       void loadData();
       toast.success("Position Restored", { description: `"${archivedJob.title}" has been restored to active requisitions.` });
@@ -194,546 +384,689 @@ export function JobsView() {
   };
 
   const displayedJobs = jobTab === "ACTIVE" ? activeJobs : jobTab === "DRAFT" ? draftJobs : closedJobs;
+  const departmentOptions = useMemo(() => {
+    const source = jobTab === "ARCHIVED" ? archivedJobs : displayedJobs;
+    return Array.from(new Set(source.map((job) => job.department).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  }, [archivedJobs, displayedJobs, jobTab]);
 
-  return (
-    <div className="space-y-4">
-      {/* Canvas-Level Control Toolbar: Tabs & View Mode (De-containerized) */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        {/* Tab Selector: Active | Drafts | Closed | Archived */}
-        <Tabs value={jobTab} onValueChange={(v) => setJobTab(v as "ACTIVE" | "DRAFT" | "CLOSED" | "ARCHIVED")} className="max-w-full overflow-x-auto">
-          <TabsList className="w-max bg-slate-200/60 p-1 rounded-xl">
-            <TabsTrigger
-              value="ACTIVE"
-              className="gap-2 text-xs font-semibold rounded-lg data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-2xs"
-            >
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              <span>Active Roles</span>
-              <span className="px-1.5 py-0.5 rounded-full bg-white text-slate-700 font-mono text-[11px] font-bold shadow-2xs">
-                {activeJobs.length}
-              </span>
-            </TabsTrigger>
-            <TabsTrigger
-              value="DRAFT"
-              className="gap-2 text-xs font-semibold rounded-lg data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-2xs"
-            >
-              <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
-              <span>Drafts</span>
-              <span className="px-1.5 py-0.5 rounded-full bg-white text-slate-700 font-mono text-[11px] font-bold shadow-2xs">
-                {draftJobs.length}
-              </span>
-            </TabsTrigger>
-            <TabsTrigger
-              value="CLOSED"
-              className="gap-2 text-xs font-semibold rounded-lg data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-2xs"
-            >
-              <span>Closed</span>
-              <span className="px-1.5 py-0.5 rounded-full bg-white text-slate-700 font-mono text-[11px] font-bold shadow-2xs">
-                {closedJobs.length}
-              </span>
-            </TabsTrigger>
-            <TabsTrigger
-              value="ARCHIVED"
-              className="gap-2 text-xs font-semibold rounded-lg data-[state=active]:bg-white data-[state=active]:text-slate-900 data-[state=active]:shadow-2xs"
-            >
-              <span>Archived</span>
-              <span className="px-1.5 py-0.5 rounded-full bg-white text-slate-700 font-mono text-[11px] font-bold shadow-2xs">
-                {archivedJobs.length}
-              </span>
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const matchesFilters = (job: Pick<Job, "title" | "department" | "location" | "employment_type" | "required_skills">) => {
+    const matchesDepartment = departmentFilter === "ALL" || job.department === departmentFilter;
+    const matchesSearch = !normalizedQuery || [
+      job.title,
+      job.department,
+      job.location,
+      job.employment_type,
+      ...(job.required_skills || []),
+    ].some((value) => value?.toLowerCase().includes(normalizedQuery));
+    return matchesDepartment && matchesSearch;
+  };
+  const filteredJobs = displayedJobs.filter(matchesFilters);
+  const filteredArchivedJobs = archivedJobs.filter(matchesFilters);
+  const hasActiveFilters = Boolean(normalizedQuery || departmentFilter !== "ALL");
 
-        {/* Right: View Mode Toggle */}
-        <div className="flex items-center gap-1 bg-slate-200/60 p-1 rounded-xl self-start sm:self-auto">
-          <button
-            type="button"
-            onClick={() => setDisplayMode("cards")}
-            className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-              displayMode === "cards"
-                ? "bg-white text-slate-900 shadow-2xs"
-                : "text-slate-600 hover:text-slate-900"
-            }`}
-            title="Cards Grid View"
-            aria-label="Cards Grid View"
+  const clearFilters = () => {
+    setSearchQuery("");
+    setDepartmentFilter("ALL");
+  };
+
+  const dateColumnLabel =
+    jobTab === "DRAFT" ? "Date Created" : jobTab === "CLOSED" ? "Date Closed" : "Date Posted";
+
+  const getTabDateValue = (job: Job) =>
+    jobTab === "CLOSED"
+      ? formatLifecycleDate(job.updated_at || job.created_at)
+      : formatLifecycleDate(job.created_at);
+
+  const renderActiveJobCards = () => (
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {filteredJobs.map((job) => {
+        const stats = getJobStats(job.id, applications);
+        const isDuplicateTitle = (titleCounts.get((job.title || "").trim().toLowerCase()) || 0) > 1;
+        const isDraft = job.status === "DRAFT";
+
+        return (
+          <Card
+            key={job.id}
+            className="group flex flex-col justify-between border border-border transition-[border-color,box-shadow] hover:border-primary/40 hover:shadow-sm"
           >
-            Cards
-          </button>
-          <button
-            type="button"
-            onClick={() => setDisplayMode("table")}
-            className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-              displayMode === "table"
-                ? "bg-white text-slate-900 shadow-2xs"
-                : "text-slate-600 hover:text-slate-900"
-            }`}
-            title="Dense Data Table View"
-            aria-label="Dense Data Table View"
-          >
-            Table
-          </button>
-        </div>
-      </div>
-
-      {/* Content Area: Cards or Table directly on canvas */}
-      <div>
-        {jobTab !== "ARCHIVED" && (
-          <div>
-            {displayedJobs.length === 0 ? (
-              <div className="p-12 text-center rounded-xl border border-dashed border-slate-200 space-y-2">
-                <div className="font-semibold text-slate-800 text-sm">
-                  {jobTab === "ACTIVE" ? "No active positions found" : jobTab === "DRAFT" ? "No draft jobs" : "No closed positions"}
+            <CardHeader className="space-y-3 p-5 pb-3">
+              <div className="flex items-start gap-3">
+                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-secondary text-sm font-bold text-primary">
+                  {getDepartmentMonogram(job.department, job.title)}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <CardTitle className="min-w-0 text-base leading-snug">
+                      {isDraft ? (
+                        <Button
+                          type="button"
+                          variant="link"
+                          onClick={() => setEditingJob(job)}
+                          className="h-auto max-w-full justify-start p-0 text-left text-base font-bold text-foreground hover:text-primary"
+                        >
+                          <span className="truncate">{job.title}</span>
+                        </Button>
+                      ) : (
+                        <Link
+                          href={`/admin/jobs/${job.id}`}
+                          className="block truncate transition-colors hover:text-primary hover:underline"
+                          title={job.title}
+                        >
+                          {job.title}
+                        </Link>
+                      )}
+                    </CardTitle>
+                    <JobStatusBadge status={job.status} />
+                  </div>
+                  <CardDescription className="mt-1 truncate text-sm">
+                    {job.department || "Operations"} · {job.location || "Remote"}
+                  </CardDescription>
                 </div>
-                <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                  {jobTab === "ACTIVE"
-                    ? "Click Post New Job above to create your first objective evaluation rubric."
-                    : jobTab === "DRAFT"
-                      ? "Jobs saved before publishing will appear here so you can continue editing them."
-                    : "Closed jobs will appear here when you close an active role."}
+              </div>
+            </CardHeader>
+
+            <CardContent className="space-y-4 px-5 pb-4">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Badge variant="secondary">{formatJobCohort(job.created_at)}</Badge>
+                {isDuplicateTitle ? <Badge variant="warning">Req #{job.id}</Badge> : null}
+                <Badge variant="outline">{job.employment_type || "Full-time"}</Badge>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {dateColumnLabel}:{" "}
+                <span className="font-medium tabular-nums text-foreground">
+                  {getTabDateValue(job)}
+                </span>
+              </p>
+
+              <div className="grid grid-cols-3 divide-x divide-border border-y border-border py-2.5 text-center">
+                <div>
+                  <span className="block text-sm font-medium text-muted-foreground">Total</span>
+                  <span className="mt-0.5 block text-sm font-bold tabular-nums text-foreground">
+                    {stats.count}
+                  </span>
+                </div>
+                <div>
+                  <span className="block text-sm font-medium text-muted-foreground">Top match</span>
+                  <span className="mt-0.5 block text-sm font-bold tabular-nums text-emerald-700">
+                    {stats.topScore !== null ? `${stats.topScore}%` : "—"}
+                  </span>
+                </div>
+                <div>
+                  <span className="block text-sm font-medium text-muted-foreground">Average</span>
+                  <span className="mt-0.5 block text-sm font-bold tabular-nums text-foreground">
+                    {stats.avgScore !== null ? `${stats.avgScore}%` : "—"}
+                  </span>
+                </div>
+              </div>
+            </CardContent>
+
+            <CardFooter className="justify-between gap-3 border-t border-border px-5 py-3.5">
+              <JobLifecycleMenu
+                job={job}
+                onEditDraft={setEditingJob}
+                onOpenRoster={(id) => router.push(`/admin/jobs/${id}`)}
+                onLifecycleAction={openLifecycleModal}
+              />
+
+              {isDraft ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setEditingJob(job)}
+                >
+                  <span>Continue draft</span>
+                  <ArrowRight aria-hidden="true" />
+                </Button>
+              ) : (
+                <Button asChild variant="secondary" size="sm">
+                  <Link href={`/admin/jobs/${job.id}`}>
+                    <span>Candidate roster</span>
+                    <ArrowRight aria-hidden="true" />
+                  </Link>
+                </Button>
+              )}
+            </CardFooter>
+          </Card>
+        );
+      })}
+    </div>
+  );
+
+  const renderArchivedCards = () => (
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {filteredArchivedJobs.map((archived) => {
+        const isArchivedDuplicate =
+          (titleCounts.get((archived.title || "").trim().toLowerCase()) || 0) > 1;
+        return (
+          <Card
+            key={archived.id}
+            className="flex flex-col justify-between border border-border transition-[border-color,box-shadow] hover:border-primary/40 hover:shadow-sm"
+          >
+            <CardHeader className="space-y-3 p-5 pb-3">
+              <div className="flex items-start gap-3">
+                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-muted text-sm font-bold text-muted-foreground">
+                  {getDepartmentMonogram(archived.department, archived.title)}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <CardTitle className="truncate text-base leading-snug" title={archived.title}>
+                      {archived.title}
+                    </CardTitle>
+                    <StatusBadge status="neutral" dot>
+                      Archived
+                    </StatusBadge>
+                  </div>
+                  <CardDescription className="mt-1 truncate text-sm">
+                    {archived.department || "Operations"} · {archived.location || "Remote"}
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+
+            <CardContent className="space-y-3 px-5 pb-4">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Badge variant="secondary">
+                  {formatJobCohort(archived.original_created_at || archived.archived_at)}
+                </Badge>
+                {isArchivedDuplicate ? <Badge variant="warning">Req #{archived.id}</Badge> : null}
+                <Badge variant="outline" className="gap-1.5 tabular-nums">
+                  <UsersRound className="size-3.5 text-muted-foreground" aria-hidden="true" />
+                  <span>{archived.applicant_count ?? 0} applicants</span>
+                </Badge>
+              </div>
+
+              <div className="rounded-xl bg-muted/50 px-3.5 py-2.5 text-sm">
+                <p className="font-medium text-foreground">
+                  {formatLifecycleDate(archived.original_created_at || archived.archived_at)} &rarr;{" "}
+                  {formatLifecycleDate(archived.archived_at)}
+                </p>
+                <p className="mt-0.5 text-sm text-muted-foreground">
+                  {calculateDuration(
+                    archived.original_created_at || archived.archived_at,
+                    archived.archived_at
+                  )}
                 </p>
               </div>
-            ) : displayMode === "cards" ? (
-              /* CARDS GRID VIEW */
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-                {displayedJobs.map((job) => {
-                  const jobApps = applications.filter((a) => a.job === job.id);
-                  const isDuplicateTitle = (titleCounts.get((job.title || "").trim().toLowerCase()) || 0) > 1;
-                  const topScore = jobApps.reduce((max, a) => {
-                    const s = a.match_result?.match_score || 0;
-                    return s > max ? s : max;
-                  }, 0);
+            </CardContent>
 
-                  const avgScore =
-                    jobApps.length > 0
-                      ? Math.round(
-                          jobApps.reduce((acc, a) => acc + (a.match_result?.match_score || 0), 0) /
-                            jobApps.length
-                        )
-                      : 0;
+            <CardFooter className="justify-between gap-2 border-t border-border px-5 py-3.5">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={isActionLoading}
+                onClick={() => void handleRestoreArchivedJob(archived)}
+              >
+                <RotateCcw aria-hidden="true" />
+                <span>Restore</span>
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => handleDuplicateArchivedJob(archived)}
+              >
+                <Copy aria-hidden="true" />
+                <span>Duplicate</span>
+              </Button>
+            </CardFooter>
+          </Card>
+        );
+      })}
+    </div>
+  );
 
-                  return (
-                    <div
-                      key={job.id}
-                      onClick={() => job.status === "DRAFT" ? setEditingJob(job) : router.push(`/admin/jobs/${job.id}`)}
-                      className="bg-white rounded-2xl border border-slate-200/90 hover:border-[#2196F3]/40 p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between group cursor-pointer"
-                    >
-                      <div>
-                        {/* Top Monogram, Title, Status */}
-                        <div className="flex items-start gap-3.5">
-                          <div className="w-11 h-11 rounded-xl bg-blue-50 text-[#2196F3] font-bold text-base flex items-center justify-center shrink-0 border border-blue-100">
-                            {getDepartmentMonogram(job.department, job.title)}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <h3 className="font-bold text-slate-900 text-base group-hover:text-[#2196F3] transition-colors truncate">
-                                {job.title}
-                              </h3>
-                              {isDuplicateTitle && (
-                                <span
-                                  className="px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-blue-50 text-[#1976D2] border border-blue-200 shrink-0"
-                                  title={`Requisition #${job.id}`}
-                                >
-                                  #{job.id}
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-xs text-slate-500 mt-0.5 truncate">
-                              {job.department || "Operations"} &bull; {job.location || "Makati City"}
-                            </p>
-                          </div>
-                          {job.status === "CLOSED" && (
-                            <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold border border-amber-200 bg-amber-50 text-amber-800 shrink-0">
-                              Closed
-                            </span>
-                          )}
-                          {job.status === "DRAFT" && (
-                            <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold border border-slate-200 bg-slate-50 text-slate-700 shrink-0">
-                              Draft
-                            </span>
-                          )}
-                        </div>
+  return (
+    <TooltipProvider>
+      <div className="space-y-6">
+        <PageHeader className="border-b border-border pb-6">
+          <div>
+            <div className="flex flex-wrap items-center gap-3">
+              <PageHeaderTitle>Job requisitions</PageHeaderTitle>
+            </div>
+            <PageHeaderDescription>
+              Manage hiring demand, monitor candidate volume, and move each role through its lifecycle.
+            </PageHeaderDescription>
+          </div>
+          <PageHeaderActions>
+            <Button type="button" onClick={() => setIsCreateJobOpen(true)}>
+              <Plus aria-hidden="true" />
+              Post a new job
+            </Button>
+          </PageHeaderActions>
+        </PageHeader>
 
-                        {/* Metadata Tag Row */}
-                        <div className="flex flex-wrap items-center gap-1.5 my-3 text-xs text-slate-500">
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-blue-50/80 text-[#1976D2] border border-blue-200/80">
-                            {formatJobCohort(job.created_at)}
-                          </span>
-                          {isDuplicateTitle && (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200/80">
-                              Req #{job.id}
-                            </span>
-                          )}
-                          <span className="text-slate-300">&bull;</span>
-                          <span className="font-medium text-slate-600 truncate">
-                            {job.location || "Manila"} &bull; {job.employment_type || "Full time"}
-                          </span>
-                        </div>
+        <div className="space-y-3">
+          <CollectionToolbar
+            label="Job requisition controls"
+            tabs={
+              <FilterTabs
+                className="max-w-full"
+                label="Requisition status"
+                value={jobTab}
+                onValueChange={(value) => {
+                  setJobTab(value as RequisitionTab);
+                  setDepartmentFilter("ALL");
+                }}
+                tabs={[
+                  { id: "ACTIVE", label: "Active", count: activeJobs.length },
+                  { id: "DRAFT", label: "Drafts", count: draftJobs.length },
+                  { id: "CLOSED", label: "Closed", count: closedJobs.length },
+                  { id: "ARCHIVED", label: "Archived", count: archivedJobs.length },
+                ]}
+              />
+            }
+            search={
+              <SearchInput
+                aria-label="Search jobs"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                onClear={() => setSearchQuery("")}
+                placeholder="Search title, skill, or location…"
+                containerClassName="w-full sm:w-64 lg:w-72"
+              />
+            }
+            filters={
+              <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
+                <SelectTrigger aria-label="Filter by department" className="w-full sm:w-44">
+                  <SelectValue placeholder="All departments" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All departments</SelectItem>
+                  {departmentOptions.map((department) => (
+                    <SelectItem key={department} value={department}>
+                      {department}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            }
+            hasActiveFilters={hasActiveFilters}
+            onClearFilters={clearFilters}
+            viewMode={displayMode}
+            onViewModeChange={setDisplayMode}
+          />
+        </div>
 
-                        {/* Candidate Metrics Strip */}
-                        <div className="grid grid-cols-3 divide-x divide-slate-100 py-2.5 my-3 border-y border-slate-100 text-center text-xs">
-                          <div>
-                            <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block">
-                              Total
-                            </span>
-                            <span className="font-mono font-bold text-slate-900 text-sm tabular-nums">
-                              {jobApps.length}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block">
-                              Top Match
-                            </span>
-                            <span className="font-mono font-bold text-emerald-600 text-sm tabular-nums">
-                              {topScore > 0 ? `${topScore}%` : "-"}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider block">
-                              Average
-                            </span>
-                            <span className="font-mono font-bold text-slate-700 text-sm tabular-nums">
-                              {avgScore > 0 ? `${avgScore}%` : "-"}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Card Footer Actions */}
-                      <div
-                        className="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div className="flex items-center gap-1">
-                          {job.status === "CLOSED" ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setActionJob(job);
-                                setActionModalType("reopen");
-                              }}
-                              className="h-7 text-xs text-emerald-700 hover:bg-emerald-50 px-2 font-medium"
-                            >
-                              Reopen
-                            </Button>
-                          ) : job.status === "PUBLISHED" ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setActionJob(job);
-                                setActionModalType("close");
-                              }}
-                              className="h-7 text-xs text-amber-700 hover:bg-amber-50 px-2 font-medium"
-                            >
-                              Close
-                            </Button>
-                          ) : null}
-                          {job.status === "DRAFT" ? (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setActionJob(job);
-                                setActionModalType("delete-draft");
-                              }}
-                              className="h-7 px-2 text-xs font-medium text-red-600 hover:bg-red-50 hover:text-red-700"
-                            >
-                              Delete permanently
-                            </Button>
-                          ) : (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setActionJob(job);
-                                setActionModalType("archive");
-                              }}
-                              className="h-7 text-xs text-slate-500 hover:text-slate-800 hover:bg-slate-100 px-2 font-medium"
-                            >
-                              Archive
-                            </Button>
-                          )}
-                        </div>
-
-                        <Button
-                          onClick={() => job.status === "DRAFT" ? setEditingJob(job) : router.push(`/admin/jobs/${job.id}`)}
-                          className="h-8 text-xs font-semibold bg-blue-50 text-[#1976D2] hover:bg-[#2196F3] hover:text-white transition-colors px-3 rounded-lg cursor-pointer"
-                        >
-                          {job.status === "DRAFT" ? "Continue draft" : "Candidate Roster"} &rarr;
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              /* DENSE DATA TABLE VIEW */
-              <div className="bg-white border border-slate-200/90 rounded-2xl shadow-xs overflow-hidden">
-                <Table>
-                  <TableHeader className="bg-slate-50/80">
+        {/* Main Content Area */}
+        {jobTab !== "ARCHIVED" ? (
+          filteredJobs.length === 0 ? (
+            <EmptyState
+              title={
+                hasActiveFilters
+                  ? "No jobs match these filters"
+                  : jobTab === "ACTIVE"
+                    ? "No active requisitions"
+                    : jobTab === "DRAFT"
+                      ? "No saved drafts"
+                      : "No closed requisitions"
+              }
+              description={
+                hasActiveFilters
+                  ? "Clear the search or choose another department to see more requisitions."
+                  : jobTab === "ACTIVE"
+                    ? "Post a job to begin collecting candidate applications."
+                    : jobTab === "DRAFT"
+                      ? "Requisitions saved before publishing will appear here."
+                      : "Closed requisitions remain here until they are reopened or archived."
+              }
+              actionLabel={
+                hasActiveFilters ? "Clear filters" : jobTab === "ACTIVE" ? "Post a new job" : undefined
+              }
+              onAction={
+                hasActiveFilters
+                  ? clearFilters
+                  : jobTab === "ACTIVE"
+                    ? () => setIsCreateJobOpen(true)
+                    : undefined
+              }
+              className="rounded-2xl border border-dashed border-border bg-muted/30"
+            />
+          ) : displayMode === "cards" ? (
+            renderActiveJobCards()
+          ) : (
+            <>
+              <div className="md:hidden">{renderActiveJobCards()}</div>
+              <section
+                aria-label="Job requisitions table"
+                className="hidden overflow-hidden rounded-2xl border border-border bg-card shadow-xs md:block"
+              >
+                <Table density="compact">
+                  <TableHeader>
                     <TableRow>
-                      <TableHead className="text-xs font-bold text-slate-700">Role Title &amp; Department</TableHead>
-                      <TableHead className="text-xs font-bold text-slate-700">Department</TableHead>
-                      <TableHead className="text-xs font-bold text-slate-700">Work Setup</TableHead>
-                      <TableHead className="text-xs font-bold text-slate-700 text-center w-[110px]">Candidates</TableHead>
-                      <TableHead className="text-xs font-bold text-slate-700 text-center w-[110px]">Top Score</TableHead>
-                      <TableHead className="text-xs font-bold text-slate-700 text-center w-[110px]">Avg Score</TableHead>
-                      <TableHead className="text-xs font-bold text-slate-700 text-center w-[100px]">Status</TableHead>
-                      <TableHead className="text-xs font-bold text-slate-700 text-right w-[120px]">Actions</TableHead>
+                      <TableHead >Job title</TableHead>
+                      <TableHead >Department</TableHead>
+                      <TableHead >{dateColumnLabel}</TableHead>
+                      <TableHead className="text-center">Candidates</TableHead>
+                      <TableHead className="text-center">Top</TableHead>
+                      <TableHead className="text-center">Status</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {displayedJobs.map((job) => {
-                      const jobApps = applications.filter((a) => a.job === job.id);
-                      const isDuplicateTitle = (titleCounts.get((job.title || "").trim().toLowerCase()) || 0) > 1;
-                      const topScore =
-                        jobApps.length > 0
-                          ? Math.max(...jobApps.map((a) => a.match_result?.match_score || 0))
-                          : null;
-                      const avgScore =
-                        jobApps.length > 0
-                          ? Math.round(
-                              jobApps.reduce((acc, a) => acc + (a.match_result?.match_score || 0), 0) /
-                                jobApps.length
-                            )
-                          : null;
+                    {filteredJobs.map((job) => {
+                      const stats = getJobStats(job.id, applications);
+                      const isDuplicateTitle =
+                        (titleCounts.get((job.title || "").trim().toLowerCase()) || 0) > 1;
+                      const isDraft = job.status === "DRAFT";
 
                       return (
                         <TableRow
                           key={job.id}
-                          role="button"
-                          tabIndex={0}
-                          onClick={() => job.status === "DRAFT" ? setEditingJob(job) : router.push(`/admin/jobs/${job.id}`)}
-                          className="cursor-pointer hover:bg-blue-50/40 transition-colors"
+                          onClick={() =>
+                            isDraft ? setEditingJob(job) : router.push(`/admin/jobs/${job.id}`)
+                          }
+                          className="cursor-pointer hover:bg-muted/50"
                         >
-                          <TableCell className="font-semibold text-slate-900 text-xs sm:text-sm">
-                            <div className="flex items-center gap-2.5">
-                              <span className="w-7 h-7 rounded-lg bg-blue-50 text-[#2196F3] font-bold text-xs flex items-center justify-center shrink-0 border border-blue-100">
-                                {getDepartmentMonogram(job.department, job.title)}
-                              </span>
-                              <div>
-                                <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span className="font-bold text-slate-900">{job.title}</span>
-                                  <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-semibold bg-blue-50/80 text-[#1976D2] border border-blue-200/80">
-                                    {formatJobCohort(job.created_at)}
-                                  </span>
-                                  {isDuplicateTitle && (
-                                    <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200/80">
-                                      Req #{job.id}
-                                    </span>
+                          <TableCell>
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  {isDraft ? (
+                                    <Button
+                                      type="button"
+                                      variant="link"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setEditingJob(job);
+                                      }}
+                                      className="h-auto max-w-[240px] justify-start p-0 text-left text-sm font-semibold text-foreground hover:text-primary"
+                                    >
+                                      <span className="truncate">{job.title}</span>
+                                    </Button>
+                                  ) : (
+                                    <Link
+                                      href={`/admin/jobs/${job.id}`}
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="max-w-[240px] truncate text-sm font-semibold text-foreground hover:text-primary hover:underline"
+                                      title={job.title}
+                                    >
+                                      {job.title}
+                                    </Link>
                                   )}
+                                  <Badge variant="secondary" className="px-1.5 py-0 text-sm">
+                                    {formatJobCohort(job.created_at)}
+                                  </Badge>
+                                  {isDuplicateTitle ? (
+                                    <Badge variant="warning" className="px-1.5 py-0 text-sm">
+                                      Req #{job.id}
+                                    </Badge>
+                                  ) : null}
                                 </div>
-                                <div className="text-[11px] text-slate-400 font-mono">ID: #{job.id}</div>
                               </div>
                             </div>
                           </TableCell>
 
-                          <TableCell className="text-xs font-medium text-slate-700">
-                            {job.department || "Operations"}
-                          </TableCell>
-
-                          <TableCell className="text-xs text-slate-600">
-                            {job.location} &bull; {job.employment_type}
-                          </TableCell>
-
-                          <TableCell className="text-center font-mono font-bold text-slate-900 text-xs tabular-nums">
-                            {jobApps.length}
-                          </TableCell>
-
-                          <TableCell className="text-center font-mono font-bold text-emerald-600 text-xs tabular-nums">
-                            {topScore !== null ? `${topScore}%` : "-"}
-                          </TableCell>
-
-                          <TableCell className="text-center font-mono font-bold text-slate-700 text-xs tabular-nums">
-                            {avgScore !== null ? `${avgScore}%` : "-"}
-                          </TableCell>
-
-                          <TableCell className="text-center">
-                            {job.status === "CLOSED" ? (
-                              <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold border border-amber-200 bg-amber-50 text-amber-800">
-                                Closed
-                              </span>
-                            ) : job.status === "DRAFT" ? (
-                              <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold border border-slate-200 bg-slate-50 text-slate-700">
-                                Draft
-                              </span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold border border-emerald-200 bg-emerald-50 text-emerald-700">
-                                Active
-                              </span>
-                            )}
-                          </TableCell>
-
-                          <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                            <div className="flex justify-end gap-1">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => job.status === "DRAFT" ? setEditingJob(job) : router.push(`/admin/jobs/${job.id}`)}
-                                className="h-8 text-xs font-semibold text-[#2196F3] hover:bg-blue-50"
-                              >
-                                {job.status === "DRAFT" ? "Edit" : "Review"}
-                              </Button>
-                              {job.status === "DRAFT" && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => {
-                                    setActionJob(job);
-                                    setActionModalType("delete-draft");
-                                  }}
-                                  className="h-8 text-xs font-semibold text-red-600 hover:bg-red-50 hover:text-red-700"
-                                >
-                                  Delete
-                                </Button>
-                              )}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ARCHIVED TAB */}
-        {jobTab === "ARCHIVED" && (
-          <div>
-            {archivedLoading ? (
-              <div className="text-center py-12 text-slate-500 flex items-center justify-center gap-2">
-                <RefreshCw className="w-4 h-4 animate-spin text-[#2196F3]" />
-                <span className="text-xs font-mono">Loading archived requisitions...</span>
-              </div>
-            ) : archivedJobs.length === 0 ? (
-              <div className="p-12 text-center rounded-xl border border-dashed border-slate-200 space-y-2">
-                <div className="font-semibold text-slate-800 text-sm">No archived requisitions</div>
-                <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                  Archived requisitions are preserved for audit and historical record.
-                </p>
-              </div>
-            ) : (
-              <div className="bg-white border border-slate-200/90 rounded-2xl shadow-xs overflow-hidden">
-                <Table>
-                  <TableHeader className="bg-slate-50/80">
-                    <TableRow>
-                      <TableHead className="text-xs font-bold text-slate-700">Requisition &amp; Cohort</TableHead>
-                      <TableHead className="text-xs font-bold text-slate-700">Department &amp; Setup</TableHead>
-                      <TableHead className="text-xs font-bold text-slate-700">Active Lifecycle</TableHead>
-                      <TableHead className="text-xs font-bold text-slate-700 text-center w-[130px]">Historical Applicants</TableHead>
-                      <TableHead className="text-xs font-bold text-slate-700 text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {archivedJobs.map((archived) => {
-                      const isArchivedDuplicate = (titleCounts.get((archived.title || "").trim().toLowerCase()) || 0) > 1;
-                      return (
-                        <TableRow key={archived.id} className="hover:bg-slate-50/60 transition-colors">
-                          <TableCell className="font-semibold text-slate-900 text-xs sm:text-sm">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-bold text-slate-900">{archived.title}</span>
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-[#1976D2] border border-blue-200">
-                                {formatJobCohort(archived.original_created_at || archived.archived_at)}
-                              </span>
-                              {isArchivedDuplicate && (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
-                                  Req #{archived.id}
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-[11px] text-slate-400 font-mono flex items-center gap-2 mt-0.5">
-                              <span>Archive Record #{archived.id}</span>
-                              {archived.active_job_id ? (
-                                <>
-                                  <span>&bull;</span>
-                                  <span>Origin Job #{archived.active_job_id}</span>
-                                </>
-                              ) : null}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-xs font-medium text-slate-700">
-                            <div>{archived.department || "Operations"}</div>
-                            <div className="text-[11px] text-slate-500 font-normal mt-0.5">
-                              {archived.location || "Manila"} &bull; {archived.employment_type || "Full-time"}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-xs text-slate-600">
-                            <div className="font-medium text-slate-800">
-                              {formatLifecycleDate(archived.original_created_at || archived.archived_at)} &rarr; {formatLifecycleDate(archived.archived_at)}
-                            </div>
-                            <div className="text-[11px] text-slate-500 font-mono mt-0.5">
-                              {calculateDuration(archived.original_created_at || archived.archived_at, archived.archived_at)}
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-center font-mono font-bold text-slate-900 text-xs tabular-nums">
-                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-slate-100 text-slate-800 border border-slate-200/80">
-                              <Users className="w-3.5 h-3.5 text-slate-500" />
-                              {archived.applicant_count ?? 0}
+                          <TableCell className="text-sm font-medium text-foreground">
+                            <span className="block truncate" title={job.department || "Operations"}>
+                              {job.department || "Operations"}
                             </span>
                           </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              <Button
-                                size="sm"
-                                onClick={() => handleDuplicateArchivedJob(archived)}
-                                className="h-7 text-xs bg-[#2196F3] hover:bg-[#1976D2] text-white font-medium gap-1.5 shadow-2xs cursor-pointer"
-                              >
-                                <Copy className="w-3.5 h-3.5" />
-                                Duplicate as New Opening
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => void handleRestoreArchivedJob(archived)}
-                                className="h-7 text-xs border-slate-200 text-slate-700 hover:bg-slate-50 font-medium gap-1 cursor-pointer"
-                              >
-                                <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
-                                Restore
-                              </Button>
-                            </div>
+
+                          <TableCell overflow="nowrap" className="text-sm text-muted-foreground tabular-nums">
+                            {getTabDateValue(job)}
+                          </TableCell>
+
+                          <TableCell overflow="nowrap" className="text-center text-sm font-bold tabular-nums text-foreground">
+                            {stats.count}
+                          </TableCell>
+
+                          <TableCell overflow="nowrap" className="text-center text-sm font-bold tabular-nums text-emerald-700">
+                            {stats.topScore !== null ? `${stats.topScore}%` : "—"}
+                          </TableCell>
+
+                          <TableCell overflow="nowrap" className="text-center">
+                            <JobStatusBadge status={job.status} />
                           </TableCell>
                         </TableRow>
                       );
                     })}
                   </TableBody>
                 </Table>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+              </section>
+            </>
+          )
+        ) : archivedLoading ? (
+          <ContextualLoading label="Loading archived requisitions" />
+        ) : archivedError ? (
+          <ErrorState
+            title="Could not load archived requisitions"
+            description={archivedError}
+            onAction={() => void loadArchivedJobs()}
+            className="rounded-2xl border border-border bg-card"
+          />
+        ) : filteredArchivedJobs.length === 0 ? (
+          <EmptyState
+            title={
+              hasActiveFilters
+                ? "No archived jobs match these filters"
+                : "No archived requisitions"
+            }
+            description={
+              hasActiveFilters
+                ? "Clear the search or choose another department."
+                : "Archived requisitions are preserved for audit and historical review."
+            }
+            actionLabel={hasActiveFilters ? "Clear filters" : undefined}
+            onAction={hasActiveFilters ? clearFilters : undefined}
+            className="rounded-2xl border border-dashed border-border bg-muted/30"
+          />
+        ) : displayMode === "cards" ? (
+          renderArchivedCards()
+        ) : (
+          <>
+            <div className="md:hidden">{renderArchivedCards()}</div>
+            <section
+              aria-label="Archived requisitions table"
+              className="hidden overflow-hidden rounded-2xl border border-border bg-card shadow-xs md:block"
+            >
+              <Table density="compact">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Job title</TableHead>
+                    <TableHead>Department</TableHead>
+                    <TableHead>Active Lifecycle</TableHead>
+                    <TableHead className="text-center">Candidates</TableHead>
+                    <TableHead className="text-center">Top</TableHead>
+                    <TableHead className="text-center">Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredArchivedJobs.map((archived) => {
+                    const isArchivedDuplicate =
+                      (titleCounts.get((archived.title || "").trim().toLowerCase()) || 0) > 1;
+                    const archivedStats = archived.active_job_id
+                      ? getJobStats(archived.active_job_id, applications)
+                      : null;
+                    const candidateCount = Math.max(
+                      archived.applicant_count ?? 0,
+                      archivedStats?.count ?? 0
+                    );
+                    const topScore = archivedStats?.topScore ?? null;
 
-      {/* Confirmation Modal for Job Actions */}
-      <ConfirmJobActionModal
-        isOpen={actionModalType !== null}
-        onClose={() => {
-          setActionModalType(null);
-          setActionJob(null);
-            }}
-        onConfirm={handleConfirmAction}
-        actionType={actionModalType}
-        jobTitle={actionJob?.title || ""}
-        isLoading={isActionLoading}
-      />
-      <CreateJobModal
-        isOpen={editingJob !== null || duplicatingTemplate !== null}
-        jobToEdit={editingJob}
-        initialTemplate={duplicatingTemplate}
-        onClose={() => {
-          setEditingJob(null);
-          setDuplicatingTemplate(null);
-        }}
-        onJobCreated={(newOrUpdatedJob) => {
-          onJobUpdated(newOrUpdatedJob);
-          setEditingJob(null);
-          setDuplicatingTemplate(null);
-        }}
-        onSuccessRedirect={(newJob) => {
-          router.push(`/admin/jobs/${newJob.id}`);
-        }}
-      />
-    </div>
+                    return (
+                      <TableRow
+                        key={archived.id}
+                        onClick={() => setSelectedArchivedJob(archived)}
+                        className="cursor-pointer hover:bg-muted/50"
+                      >
+                        <TableCell>
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <Button
+                                  type="button"
+                                  variant="link"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedArchivedJob(archived);
+                                  }}
+                                  className="h-auto max-w-[220px] justify-start p-0 text-left text-sm font-semibold text-foreground hover:text-primary"
+                                >
+                                  <span className="truncate">{archived.title}</span>
+                                </Button>
+                                <Badge variant="secondary" className="px-1.5 py-0 text-sm">
+                                  {formatJobCohort(archived.original_created_at || archived.archived_at)}
+                                </Badge>
+                                {isArchivedDuplicate ? (
+                                  <Badge variant="warning" className="px-1.5 py-0 text-sm">
+                                    Req #{archived.id}
+                                  </Badge>
+                                ) : null}
+                              </div>
+                            </div>
+                          </div>
+                        </TableCell>
+
+                        <TableCell className="text-sm font-medium text-foreground">
+                          <span className="block truncate" title={archived.department || "Operations"}>
+                            {archived.department || "Operations"}
+                          </span>
+                        </TableCell>
+
+                        <TableCell>
+                          <p className="text-sm font-medium tabular-nums text-foreground">
+                            {formatLifecycleDate(archived.original_created_at || archived.archived_at)} -{" "}
+                            {formatLifecycleDate(archived.archived_at)}
+                          </p>
+                        </TableCell>
+
+                        <TableCell overflow="nowrap" className="text-center text-sm font-bold tabular-nums text-foreground">
+                          {candidateCount}
+                        </TableCell>
+
+                        <TableCell overflow="nowrap" className="text-center text-sm font-bold tabular-nums text-emerald-700">
+                          {topScore !== null ? `${topScore}%` : "—"}
+                        </TableCell>
+
+                        <TableCell overflow="nowrap" className="text-center">
+                          <StatusBadge status="neutral" dot>
+                            Archived
+                          </StatusBadge>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </section>
+          </>
+        )}
+
+        {/* Archived Requisition Details & Actions Dialog */}
+        <Dialog
+          open={selectedArchivedJob !== null}
+          onOpenChange={(open) => {
+            if (!open) setSelectedArchivedJob(null);
+          }}
+        >
+          <DialogContent className="sm:max-w-lg">
+            {selectedArchivedJob ? (
+              <>
+                <DialogHeader>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <StatusBadge status="neutral" dot>
+                      Archived
+                    </StatusBadge>
+                    <Badge variant="secondary">
+                      {formatJobCohort(
+                        selectedArchivedJob.original_created_at || selectedArchivedJob.archived_at
+                      )}
+                    </Badge>
+                  </div>
+                  <DialogTitle className="mt-2">{selectedArchivedJob.title}</DialogTitle>
+                  <DialogDescription>
+                    {selectedArchivedJob.department || "Operations"} ·{" "}
+                    {selectedArchivedJob.location || "Remote"} ·{" "}
+                    {selectedArchivedJob.employment_type || "Full-time"}
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-3 rounded-xl border border-border bg-muted/40 p-4 text-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-muted-foreground">Active lifecycle</span>
+                    <span className="font-medium tabular-nums text-foreground">
+                      {formatLifecycleDate(
+                        selectedArchivedJob.original_created_at || selectedArchivedJob.archived_at
+                      )}{" "}
+                      &rarr; {formatLifecycleDate(selectedArchivedJob.archived_at)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-muted-foreground">Duration</span>
+                    <span className="text-muted-foreground">
+                      {calculateDuration(
+                        selectedArchivedJob.original_created_at || selectedArchivedJob.archived_at,
+                        selectedArchivedJob.archived_at
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-muted-foreground">Historical applicants</span>
+                    <span className="font-bold tabular-nums text-foreground">
+                      {selectedArchivedJob.applicant_count ?? 0}
+                    </span>
+                  </div>
+                </div>
+
+                <DialogFooter className="gap-2 sm:justify-between">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={isActionLoading}
+                    onClick={() => void handleRestoreArchivedJob(selectedArchivedJob)}
+                  >
+                    <RotateCcw aria-hidden="true" />
+                    <span>Restore requisition</span>
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      const target = selectedArchivedJob;
+                      setSelectedArchivedJob(null);
+                      handleDuplicateArchivedJob(target);
+                    }}
+                  >
+                    <Copy aria-hidden="true" />
+                    <span>Duplicate as new opening</span>
+                  </Button>
+                </DialogFooter>
+              </>
+            ) : null}
+          </DialogContent>
+        </Dialog>
+
+        {/* Confirmation Modal for Job Actions */}
+        <ConfirmJobActionModal
+          isOpen={actionModalType !== null}
+          onClose={() => {
+            setActionModalType(null);
+            setActionJob(null);
+          }}
+          onConfirm={handleConfirmAction}
+          actionType={actionModalType}
+          jobTitle={actionJob?.title || ""}
+          isLoading={isActionLoading}
+        />
+
+        <CreateJobModal
+          isOpen={editingJob !== null || duplicatingTemplate !== null}
+          jobToEdit={editingJob}
+          initialTemplate={duplicatingTemplate}
+          onClose={() => {
+            setEditingJob(null);
+            setDuplicatingTemplate(null);
+          }}
+          onJobCreated={(newOrUpdatedJob) => {
+            onJobUpdated(newOrUpdatedJob);
+            setEditingJob(null);
+            setDuplicatingTemplate(null);
+          }}
+          onSuccessRedirect={(newJob) => {
+            router.push(`/admin/jobs/${newJob.id}`);
+          }}
+        />
+      </div>
+    </TooltipProvider>
   );
 }

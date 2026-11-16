@@ -95,7 +95,7 @@ export default function CareersPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#e3f1fe] text-slate-900 flex flex-col font-sans selection:bg-[#2196F3] selection:text-white relative">
+    <div className="min-h-screen bg-[#e3f1fe] text-slate-900 flex flex-col font-sans selection:bg-primary selection:text-white relative">
       {/* Blueprint Background Texture: Fine Dot Mesh + Architectural 48px Grid */}
       <div
         aria-hidden="true"
@@ -108,8 +108,8 @@ export default function CareersPage() {
 
       {loading ? (
         <div className="flex flex-col items-center justify-center min-h-screen gap-3 relative z-10">
-          <div className="w-12 h-12 rounded-2xl bg-white text-[#2196F3] shadow-md flex items-center justify-center border border-blue-200/80">
-            <Loader2 className="h-6 w-6 animate-spin text-[#2196F3]" />
+          <div className="w-12 h-12 rounded-2xl bg-white text-primary shadow-md flex items-center justify-center border border-blue-200/80">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
           </div>
           <div className="text-sm font-semibold text-slate-600">Loading open positions...</div>
         </div>

@@ -1,5 +1,6 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
 import React, { useState, useEffect, useMemo } from "react";
 import { Job, RubricWeights } from "@/types/job";
 import {
@@ -9,7 +10,6 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   CheckCircle2,
@@ -25,6 +25,7 @@ import {
   MapPin,
 } from "lucide-react";
 import { toast } from "@/components/ui/sonner";
+import { getJobOverview } from "@/lib/job-overview";
 
 interface JobDetailSheetProps {
   job: Job | null;
@@ -42,23 +43,7 @@ interface JobDetailSheetProps {
 }
 
 function parseJobDetails(job: Job) {
-  let narrative = "";
-  if (job.description) {
-    const paragraphs = job.description
-      .split(/\n\s*\n/)
-      .map((p) => p.trim())
-      .filter((p) => p.length > 20 && !p.startsWith("•") && !p.startsWith("-") && !p.startsWith("*"));
-    if (paragraphs.length > 0) {
-      narrative = paragraphs.join("\n\n");
-    } else {
-      narrative = job.description.replace(/^[-*•\s]+/gm, "").split(/\n/)[0]?.trim() || "";
-    }
-  }
-
-  if (!narrative || narrative.length < 20) {
-    narrative = `We are seeking a qualified ${job.title} to join our team in ${job.location || "Metro Manila, Philippines"
-      }. This role will collaborate with cross-functional talent in our merit-evaluated candidate calibration workflow.`;
-  }
+  const narrative = getJobOverview(job);
 
   const responsibilities: string[] = [];
   if (job.description) {
@@ -110,6 +95,9 @@ function distillExperience(exp?: string): string {
 }
 
 function parseSalary(range: string) {
+  if (range === "Salary not disclosed") {
+    return { amount: range, frequency: "" };
+  }
   const parts = range.split("/");
   const amount = parts[0]?.trim() || range;
   const frequency = parts[1] ? `/${parts[1].trim()}` : "/ mo";
@@ -125,7 +113,7 @@ export function JobDetailSheet({
   isBookmarked,
   onToggleBookmark,
   onViewApplication,
-  salaryRange = "₱50,000 - ₱75,000 / mo",
+  salaryRange = "Salary not disclosed",
   onNavigateJob,
   hasPrevJob = false,
   hasNextJob = false,
@@ -222,25 +210,25 @@ export function JobDetailSheet({
         <div className="shrink-0 px-5 sm:px-8 lg:px-10 py-3.5 border-b border-slate-200/80 bg-white/95 backdrop-blur-md flex items-center justify-between gap-4">
           {/* Left: Department & Status Indicators */}
           <div className="flex items-center gap-2 flex-wrap min-w-0">
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-slate-100 text-slate-800 border border-slate-200/60">
+            <span className="text-sm font-semibold px-2.5 py-1 rounded-md bg-slate-100 text-slate-800 border border-slate-200/60">
               {job.department}
             </span>
 
             {hasApplied ? (
-              <Badge className="text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 gap-1 px-2.5 py-0.5">
+              <Badge className="text-sm font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 gap-1 px-2.5 py-0.5">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                 Applied
               </Badge>
             ) : isClosed ? (
               <Badge
                 variant="outline"
-                className="text-xs font-semibold border-amber-200 bg-amber-50 text-amber-700 gap-1 px-2.5 py-0.5"
+                className="text-sm font-semibold border-amber-200 bg-amber-50 text-amber-700 gap-1 px-2.5 py-0.5"
               >
                 <Lock className="w-3 h-3 text-amber-600" />
                 {job.status === "CLOSED" ? "Closed" : job.status === "ARCHIVED" ? "Archived" : "Draft"}
               </Badge>
             ) : (
-              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600">
+              <span className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-600">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" aria-hidden="true" />
                 Actively Hiring
               </span>
@@ -250,7 +238,7 @@ export function JobDetailSheet({
           {/* Right: Shortcuts Hint + Navigation & Close Controls */}
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             {/* Keyboard shortcut hint pill */}
-            <div className="hidden lg:flex items-center gap-1.5 text-[11px] font-mono text-slate-500 bg-slate-100/90 px-2.5 py-1 rounded-lg border border-slate-200 select-none">
+            <div className="hidden lg:flex items-center gap-1.5 text-sm text-slate-500 bg-slate-100/90 px-2.5 py-1 rounded-lg border border-slate-200 select-none">
               <span className="font-semibold text-slate-700">[A] Apply</span>
               <span className="text-slate-300">·</span>
               <span className="font-semibold text-slate-700">[B] Save</span>
@@ -339,14 +327,14 @@ export function JobDetailSheet({
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 p-4 sm:p-5 rounded-2xl bg-slate-50/80 border border-slate-200/90 shadow-2xs">
               {/* Primary Salary Spotlight */}
               <div className="space-y-0.5 shrink-0">
-                <div className="text-[11px] sm:text-xs text-slate-500 font-medium">
+                <div className="text-sm sm:text-sm text-slate-500 font-medium">
                   Target Compensation
                 </div>
                 <div className="flex items-baseline gap-1.5 whitespace-nowrap">
-                  <span className="text-xl sm:text-2xl font-extrabold text-emerald-600 font-mono tabular-nums tracking-tight">
+                  <span className="text-xl sm:text-2xl font-extrabold text-emerald-600 tabular-nums tracking-tight">
                     {salaryData.amount}
                   </span>
-                  <span className="text-xs font-semibold text-slate-500 font-mono">
+                  <span className="text-sm font-semibold text-slate-500 ">
                     {salaryData.frequency}
                   </span>
                 </div>
@@ -355,20 +343,20 @@ export function JobDetailSheet({
               {/* Secondary Attribute Pills (Employment, Workplace, Experience) */}
               <div className="flex items-center gap-2 flex-wrap sm:justify-end">
                 {/* Category / Commitment */}
-                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-200/80 text-xs font-semibold text-slate-800 shadow-2xs whitespace-nowrap">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-200/80 text-sm font-semibold text-slate-800 shadow-2xs whitespace-nowrap">
                   <span className="text-slate-400 font-normal">Type:</span>
                   <span>{job.employment_type || "Full Time"}</span>
                 </span>
 
                 {/* Workplace */}
-                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-200/80 text-xs font-semibold text-slate-800 shadow-2xs whitespace-nowrap">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-200/80 text-sm font-semibold text-slate-800 shadow-2xs whitespace-nowrap">
                   <span className="text-slate-400 font-normal">Workplace:</span>
                   <span>{job.location?.toLowerCase().includes("remote") ? "Remote" : "On-site / Hybrid"}</span>
                 </span>
 
                 {/* Experience */}
                 <span
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-200/80 text-xs font-semibold text-slate-800 shadow-2xs whitespace-nowrap"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-200/80 text-sm font-semibold text-slate-800 shadow-2xs whitespace-nowrap"
                   title={job.minimum_experience || "Experience requirement"}
                 >
                   <span className="text-slate-400 font-normal">Exp:</span>
@@ -465,7 +453,7 @@ export function JobDetailSheet({
             <div className="p-3.5 rounded-xl border border-emerald-200 bg-emerald-50/70 text-emerald-900 flex items-center justify-between gap-4">
               <div className="flex items-center gap-2.5">
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <div className="text-xs">
+                <div className="text-sm">
                   <span className="font-bold">Application on File: </span>
                   <span>Your profile is actively indexed in the merit screening pipeline.</span>
                 </div>
@@ -478,7 +466,7 @@ export function JobDetailSheet({
                     onClose();
                     onViewApplication();
                   }}
-                  className="border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50 shrink-0 text-xs font-semibold h-7 px-2.5 rounded-md cursor-pointer"
+                  className="border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50 shrink-0 text-sm font-semibold h-7 px-2.5 rounded-md cursor-pointer"
                 >
                   View Details
                 </Button>
@@ -487,11 +475,11 @@ export function JobDetailSheet({
           )}
 
           {/* ============================================================== */}
-          {/* SECTION 1: JOB DESCRIPTION                                    */}
+          {/* SECTION 1: JOB OVERVIEW                                       */}
           {/* ============================================================== */}
           <div className="space-y-3 pt-1">
             <h3 className="text-base sm:text-lg font-bold text-slate-900">
-              Job Description
+              About this role
             </h3>
             <div className="text-sm sm:text-base text-slate-700 leading-relaxed whitespace-pre-line max-w-3xl">
               {narrative}
@@ -505,9 +493,9 @@ export function JobDetailSheet({
             <div className="space-y-3 pt-1">
               <div className="flex items-center justify-between">
                 <h3 className="text-base sm:text-lg font-bold text-slate-900">
-                  Key Responsibilities
+                  Responsibilities
                 </h3>
-                <span className="text-xs text-slate-500 font-medium">
+                <span className="text-sm text-slate-500 font-medium">
                   {responsibilities.length} items
                 </span>
               </div>
@@ -527,7 +515,7 @@ export function JobDetailSheet({
                     variant="ghost"
                     size="sm"
                     onClick={() => setShowAllResponsibilities(!showAllResponsibilities)}
-                    className="text-xs font-semibold text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2.5 h-8 rounded-lg cursor-pointer"
+                    className="text-sm font-semibold text-blue-600 hover:text-blue-700 hover:bg-blue-50 px-2.5 h-8 rounded-lg cursor-pointer"
                   >
                     {showAllResponsibilities
                       ? "Show fewer responsibilities"
@@ -561,7 +549,7 @@ export function JobDetailSheet({
             {/* Core Required Skills / Qualifications */}
             {job.required_skills && job.required_skills.length > 0 && (
               <div className="space-y-2.5 pt-1">
-                <div className="flex items-center justify-between text-xs font-semibold text-slate-600">
+                <div className="flex items-center justify-between text-sm font-semibold text-slate-600">
                   <span>Must-Have Competencies &amp; State Licenses</span>
                   <span className="text-slate-400 font-normal">
                     {job.required_skills.length} {job.required_skills.length === 1 ? "criterion" : "criteria"}
@@ -572,9 +560,9 @@ export function JobDetailSheet({
                     {job.required_skills.map((skill, idx) => (
                       <li
                         key={idx}
-                        className="flex items-start gap-2.5 text-xs sm:text-sm font-medium px-3.5 py-2.5 rounded-xl bg-blue-50/70 text-slate-800 border border-blue-200/80 leading-relaxed"
+                        className="flex items-start gap-2.5 text-sm sm:text-sm font-medium px-3.5 py-2.5 rounded-xl bg-blue-50/70 text-slate-800 border border-blue-200/80 leading-relaxed"
                       >
-                        <span className="h-5 min-w-[22px] px-1.5 rounded-md bg-[#e3f1fe] text-[#1976D2] font-mono text-[10px] font-bold flex items-center justify-center mt-0.5 shrink-0">
+                        <span className="h-5 min-w-[22px] px-1.5 rounded-md bg-[#e3f1fe] text-primary text-sm font-bold flex items-center justify-center mt-0.5 shrink-0">
                           {String(idx + 1).padStart(2, "0")}
                         </span>
                         <span className="break-words">{skill}</span>
@@ -586,7 +574,7 @@ export function JobDetailSheet({
                     {job.required_skills.map((skill, idx) => (
                       <span
                         key={idx}
-                        className="inline-flex items-center text-xs font-semibold px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-200/90 shadow-2xs"
+                        className="inline-flex items-center text-sm font-semibold px-3 py-1.5 rounded-lg bg-blue-50 text-blue-700 border border-blue-200/90 shadow-2xs"
                       >
                         {skill}
                       </span>
@@ -599,7 +587,7 @@ export function JobDetailSheet({
             {/* Preferred Skills / Qualifications */}
             {job.preferred_skills && job.preferred_skills.length > 0 && (
               <div className="space-y-2.5 pt-1">
-                <div className="flex items-center justify-between text-xs font-semibold text-slate-600">
+                <div className="flex items-center justify-between text-sm font-semibold text-slate-600">
                   <span>Preferred Qualifications &amp; Bonus Assets</span>
                   <span className="text-slate-400 font-normal">
                     {job.preferred_skills.length} {job.preferred_skills.length === 1 ? "item" : "items"}
@@ -610,9 +598,9 @@ export function JobDetailSheet({
                     {job.preferred_skills.map((skill, idx) => (
                       <li
                         key={idx}
-                        className="flex items-start gap-2.5 text-xs sm:text-sm font-normal px-3.5 py-2 rounded-xl bg-slate-50 text-slate-700 border border-slate-200/80 leading-relaxed"
+                        className="flex items-start gap-2.5 text-sm sm:text-sm font-normal px-3.5 py-2 rounded-xl bg-slate-50 text-slate-700 border border-slate-200/80 leading-relaxed"
                       >
-                        <span className="h-5 min-w-[22px] px-1.5 rounded-md bg-slate-200/70 text-slate-600 font-mono text-[10px] font-bold flex items-center justify-center mt-0.5 shrink-0">
+                        <span className="h-5 min-w-[22px] px-1.5 rounded-md bg-slate-200/70 text-slate-600 text-sm font-bold flex items-center justify-center mt-0.5 shrink-0">
                           +{idx + 1}
                         </span>
                         <span className="break-words">{skill}</span>
@@ -624,7 +612,7 @@ export function JobDetailSheet({
                     {job.preferred_skills.map((skill, idx) => (
                       <span
                         key={idx}
-                        className="inline-flex items-center text-xs font-medium px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 border border-slate-200/80"
+                        className="inline-flex items-center text-sm font-medium px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 border border-slate-200/80"
                       >
                         {skill}
                       </span>
@@ -641,14 +629,14 @@ export function JobDetailSheet({
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
                   <h3 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
-                    <Scale className="w-5 h-5 text-[#2196F3]" />
+                    <Scale className="w-5 h-5 text-primary" />
                     <span>Explainable Merit Evaluation Rubric</span>
                   </h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
+                  <p className="text-sm text-slate-500 mt-0.5">
                     How your qualifications and resume evidence are mathematically evaluated.
                   </p>
                 </div>
-                <span className="text-[11px] font-mono font-bold px-2.5 py-1 rounded-lg bg-blue-50 text-[#1976D2] border border-blue-200 shrink-0 self-start sm:self-auto">
+                <span className="text-sm font-bold px-2.5 py-1 rounded-lg bg-blue-50 text-primary border border-blue-200 shrink-0 self-start sm:self-auto">
                   100% Calibrated
                 </span>
               </div>
@@ -657,51 +645,51 @@ export function JobDetailSheet({
               <div className="p-4 sm:p-5 rounded-2xl bg-slate-50/80 border border-slate-200/90 space-y-4">
                 {/* 1. Required Skills */}
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs font-semibold">
+                  <div className="flex items-center justify-between text-sm font-semibold">
                     <span className="text-slate-800">1. Required Skills & Hands-On Competencies</span>
-                    <span className="font-mono text-[#2196F3] font-bold">{weights.required_skills}%</span>
+                    <span className="text-primary font-bold">{weights.required_skills}%</span>
                   </div>
                   <div className="h-2 w-full rounded-full bg-slate-200/80 overflow-hidden">
                     <div
-                      className="h-full bg-[#2196F3] rounded-full transition-all duration-500"
+                      className="h-full bg-primary rounded-full transition-all duration-500"
                       style={{ width: `${weights.required_skills}%` }}
                     />
                   </div>
-                  <p className="text-[11px] text-slate-500">
+                  <p className="text-sm text-slate-500">
                     Sentence-grounded qualification verification across required competencies.
                   </p>
                 </div>
 
                 {/* 2. Experience Tenure */}
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs font-semibold">
+                  <div className="flex items-center justify-between text-sm font-semibold">
                     <span className="text-slate-800">2. Relevant Experience Tenure</span>
-                    <span className="font-mono text-[#2196F3] font-bold">{weights.experience}%</span>
+                    <span className="text-primary font-bold">{weights.experience}%</span>
                   </div>
                   <div className="h-2 w-full rounded-full bg-slate-200/80 overflow-hidden">
                     <div
-                      className="h-full bg-[#2196F3] rounded-full transition-all duration-500"
+                      className="h-full bg-primary rounded-full transition-all duration-500"
                       style={{ width: `${weights.experience}%` }}
                     />
                   </div>
-                  <p className="text-[11px] text-slate-500">
+                  <p className="text-sm text-slate-500">
                     Demonstrated depth in relevant roles with progressive domain responsibility.
                   </p>
                 </div>
 
                 {/* 3. Education Credentials */}
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs font-semibold">
+                  <div className="flex items-center justify-between text-sm font-semibold">
                     <span className="text-slate-800">3. Education & Regulatory Licensing</span>
-                    <span className="font-mono text-[#2196F3] font-bold">{weights.education}%</span>
+                    <span className="text-primary font-bold">{weights.education}%</span>
                   </div>
                   <div className="h-2 w-full rounded-full bg-slate-200/80 overflow-hidden">
                     <div
-                      className="h-full bg-[#2196F3] rounded-full transition-all duration-500"
+                      className="h-full bg-primary rounded-full transition-all duration-500"
                       style={{ width: `${weights.education}%` }}
                     />
                   </div>
-                  <p className="text-[11px] text-slate-500">
+                  <p className="text-sm text-slate-500">
                     Degree baseline and mandatory PRC board license verification where applicable.
                   </p>
                 </div>
@@ -709,9 +697,9 @@ export function JobDetailSheet({
                 {/* 4 & 5 Grid: Projects & Preferred Skills */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                   <div className="p-3 rounded-xl bg-white border border-slate-200/90 space-y-1.5 shadow-2xs">
-                    <div className="flex items-center justify-between text-xs font-semibold">
+                    <div className="flex items-center justify-between text-sm font-semibold">
                       <span className="text-slate-700">4. Projects & Portfolio</span>
-                      <span className="font-mono text-slate-900 font-bold">{weights.projects}%</span>
+                      <span className="text-slate-900 font-bold">{weights.projects}%</span>
                     </div>
                     <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
                       <div
@@ -722,9 +710,9 @@ export function JobDetailSheet({
                   </div>
 
                   <div className="p-3 rounded-xl bg-white border border-slate-200/90 space-y-1.5 shadow-2xs">
-                    <div className="flex items-center justify-between text-xs font-semibold">
+                    <div className="flex items-center justify-between text-sm font-semibold">
                       <span className="text-slate-700">5. Preferred Skills</span>
-                      <span className="font-mono text-slate-900 font-bold">{weights.preferred_skills}%</span>
+                      <span className="text-slate-900 font-bold">{weights.preferred_skills}%</span>
                     </div>
                     <div className="h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
                       <div
@@ -736,7 +724,7 @@ export function JobDetailSheet({
                 </div>
 
                 {/* Anti-Bias & Blind Screening Assurance */}
-                <div className="pt-3 border-t border-slate-200/70 flex items-start sm:items-center gap-2 text-xs text-slate-600">
+                <div className="pt-3 border-t border-slate-200/70 flex items-start sm:items-center gap-2 text-sm text-slate-600">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 mt-1 sm:mt-0" />
                   <div>
                     <span className="font-semibold text-slate-800">Demographic Blind Screening Active: </span>

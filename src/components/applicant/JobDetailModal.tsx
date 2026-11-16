@@ -1,11 +1,12 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
 import React from "react";
 import { Job } from "@/types/job";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MapPin, Clock, GraduationCap, CheckCircle2, Sparkles, Briefcase, ArrowRight, Lock } from "lucide-react";
+import { getJobOverview } from "@/lib/job-overview";
 
 interface JobDetailModalProps {
   job: Job | null;
@@ -24,25 +25,25 @@ export function JobDetailModal({ job, hasApplied, isOpen, onClose, onApply, onVi
       <DialogContent onClose={onClose} className="max-w-3xl max-h-[88vh] overflow-y-auto">
         <DialogHeader className="pb-4 border-b border-border space-y-3">
           <div className="flex flex-wrap items-center gap-2.5">
-            <Badge variant="outline" className="text-xs font-semibold">
+            <Badge variant="outline" className="text-sm font-semibold">
               {job.department}
             </Badge>
-            <Badge variant="secondary" className="text-xs">
+            <Badge variant="secondary" className="text-sm">
               {job.employment_type}
             </Badge>
             {job.status === "CLOSED" && (
-              <Badge variant="outline" className="text-xs font-semibold border-amber-500/40 text-amber-600 bg-amber-500/10 gap-1">
+              <Badge variant="outline" className="text-sm font-semibold border-amber-500/40 text-amber-600 bg-amber-500/10 gap-1">
                 <Lock className="h-3 w-3" />
                 Applications Closed
               </Badge>
             )}
             {hasApplied && (
-              <Badge variant="secondary" className="text-xs font-semibold bg-emerald-500/15 text-emerald-600 border border-emerald-500/30 gap-1">
+              <Badge variant="secondary" className="text-sm font-semibold bg-emerald-500/15 text-emerald-600 border border-emerald-500/30 gap-1">
                 <CheckCircle2 className="h-3.5 w-3.5" />
                 Already Applied
               </Badge>
             )}
-            <span className="text-xs text-muted-foreground ml-auto font-mono">
+            <span className="text-sm text-muted-foreground ml-auto ">
               {job.applicant_count || 0} applicants
             </span>
           </div>
@@ -68,16 +69,25 @@ export function JobDetailModal({ job, hasApplied, isOpen, onClose, onApply, onVi
 
         <div className="space-y-6 py-3 text-sm">
           {job.status === "CLOSED" && (
-            <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-900 text-xs flex items-center gap-2.5">
+            <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-amber-900 text-sm flex items-center gap-2.5">
               <Lock className="h-4 w-4 text-amber-600 shrink-0" />
               <span>This position is currently closed and no longer accepting new submissions. Existing applicants can still view and track their application progress.</span>
             </div>
           )}
 
-          {/* Description */}
+          {/* Overview */}
           <div className="space-y-2">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-foreground">
-              Role Scope &amp; Responsibilities
+            <h4 className="text-sm font-bold uppercase tracking-wider text-foreground">
+              About this role
+            </h4>
+            <p className="text-muted-foreground leading-relaxed whitespace-pre-line text-sm">
+              {getJobOverview(job)}
+            </p>
+          </div>
+
+          <div className="space-y-2 pt-3 border-t border-border">
+            <h4 className="text-sm font-bold uppercase tracking-wider text-foreground">
+              Responsibilities
             </h4>
             <p className="text-muted-foreground leading-relaxed whitespace-pre-line text-sm">
               {job.description}
@@ -87,7 +97,7 @@ export function JobDetailModal({ job, hasApplied, isOpen, onClose, onApply, onVi
           {/* Required Skills / Qualifications */}
           {job.required_skills && job.required_skills.length > 0 && (
             <div className="space-y-2.5 pt-3 border-t border-border">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
+              <h4 className="text-sm font-bold uppercase tracking-wider text-foreground flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-primary" />
                 Must-Have Competencies &amp; State Licenses
               </h4>
@@ -96,9 +106,9 @@ export function JobDetailModal({ job, hasApplied, isOpen, onClose, onApply, onVi
                   {job.required_skills.map((skill, idx) => (
                     <li
                       key={idx}
-                      className="flex items-start gap-2.5 text-xs sm:text-sm font-medium px-3 py-2 rounded-xl bg-primary/5 text-foreground border border-primary/20 leading-relaxed"
+                      className="flex items-start gap-2.5 text-sm sm:text-sm font-medium px-3 py-2 rounded-xl bg-primary/5 text-foreground border border-primary/20 leading-relaxed"
                     >
-                      <span className="text-primary font-mono font-bold text-[10px] mt-0.5 shrink-0">
+                      <span className="text-primary font-bold text-sm mt-0.5 shrink-0">
                         {String(idx + 1).padStart(2, "0")}
                       </span>
                       <span className="break-words">{skill}</span>
@@ -108,7 +118,7 @@ export function JobDetailModal({ job, hasApplied, isOpen, onClose, onApply, onVi
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {job.required_skills.map((skill, idx) => (
-                    <Badge key={idx} variant="secondary" className="text-xs px-3 py-1 font-medium">
+                    <Badge key={idx} variant="secondary" className="text-sm px-3 py-1 font-medium">
                       {skill}
                     </Badge>
                   ))}
@@ -120,7 +130,7 @@ export function JobDetailModal({ job, hasApplied, isOpen, onClose, onApply, onVi
           {/* Preferred Skills / Qualifications */}
           {job.preferred_skills && job.preferred_skills.length > 0 && (
             <div className="space-y-2.5 pt-3 border-t border-border">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+              <h4 className="text-sm font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-primary" />
                 Preferred Qualifications &amp; Bonus Assets
               </h4>
@@ -129,9 +139,9 @@ export function JobDetailModal({ job, hasApplied, isOpen, onClose, onApply, onVi
                   {job.preferred_skills.map((skill, idx) => (
                     <li
                       key={idx}
-                      className="flex items-start gap-2.5 text-xs sm:text-sm font-normal px-3 py-2 rounded-xl bg-muted/40 text-muted-foreground border border-border leading-relaxed"
+                      className="flex items-start gap-2.5 text-sm sm:text-sm font-normal px-3 py-2 rounded-xl bg-muted/40 text-muted-foreground border border-border leading-relaxed"
                     >
-                      <span className="font-mono font-bold text-[10px] mt-0.5 shrink-0">+{idx + 1}</span>
+                      <span className="font-bold text-sm mt-0.5 shrink-0">+{idx + 1}</span>
                       <span className="break-words">{skill}</span>
                     </li>
                   ))}
@@ -139,7 +149,7 @@ export function JobDetailModal({ job, hasApplied, isOpen, onClose, onApply, onVi
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {job.preferred_skills.map((skill, idx) => (
-                    <Badge key={idx} variant="outline" className="text-xs px-3 py-1 font-normal">
+                    <Badge key={idx} variant="outline" className="text-sm px-3 py-1 font-normal">
                       {skill}
                     </Badge>
                   ))}
@@ -149,7 +159,7 @@ export function JobDetailModal({ job, hasApplied, isOpen, onClose, onApply, onVi
           )}
 
           {/* Scoring Notice */}
-          <div className="p-4 rounded-xl border border-border bg-muted/30 space-y-1.5 text-xs text-muted-foreground">
+          <div className="p-4 rounded-xl border border-border bg-muted/30 space-y-1.5 text-sm text-muted-foreground">
             <div className="font-semibold text-foreground flex items-center gap-2 text-sm">
               <Briefcase className="h-4 w-4 text-primary" />
               <span>Automated Merit-Based Screening</span>
