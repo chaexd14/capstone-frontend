@@ -1,7 +1,12 @@
 "use client";
 
-import { useMemo, useState, type FormEvent } from "react";
-import { Download, FileSpreadsheet, FileText, Loader2, ShieldCheck } from "lucide-react";
+import React, { useMemo, useState, type FormEvent } from "react";
+import { Download, RotateCcw, ShieldCheck } from "lucide-react";
+import { ApiError, downloadApiFile } from "@/lib/api";
+import { Application, ApplicationStatus } from "@/types/application";
+import { Job } from "@/types/job";
+import { ReportFormatCards, type ReportFileType } from "./ReportFormatCards";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,11 +16,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ApiError, downloadApiFile } from "@/lib/api";
-import { Application, ApplicationStatus } from "@/types/application";
-import { Job } from "@/types/job";
+import { Spinner } from "@/components/ui/feedback";
+import { FilterTabs } from "@/components/ui/filter-tabs";
+import { FormField } from "@/components/ui/form-field";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { toast } from "@/components/ui/sonner";
 
 const STAGES: Array<{ value: ApplicationStatus; label: string }> = [
   { value: "SUBMITTED", label: "New" },
@@ -26,17 +38,24 @@ const STAGES: Array<{ value: ApplicationStatus; label: string }> = [
   { value: "REJECTED", label: "Rejected" },
 ];
 
-type ReportScope = "status" | "pipeline" | "selected";
-type FileType = "pdf" | "xlsx";
+type ReportScope = "pipeline" | "status" | "selected";
 
 function normalizedStatus(status: ApplicationStatus) {
   return status === "PROCESSING" ? "SUBMITTED" : status;
 }
 
+function toUtcDateKey(value?: string | null): string | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString().slice(0, 10);
+}
+
 interface PipelineReportDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  job: Job | null;
+  jobs: Job[];
+  initialJobId?: number | null;
   applications: Application[];
   selectedIds: number[];
 }
@@ -44,49 +63,113 @@ interface PipelineReportDialogProps {
 export function PipelineReportDialog({
   open,
   onOpenChange,
-  job,
+  jobs,
+  initialJobId = null,
   applications,
   selectedIds,
 }: PipelineReportDialogProps) {
-  const [scope, setScope] = useState<ReportScope>("status");
+  const today = new Date().toISOString().slice(0, 10);
+  const sortedJobs = useMemo(
+    () => [...jobs].sort((a, b) => a.title.localeCompare(b.title)),
+    [jobs]
+  );
+
+  const defaultJobId = useMemo(() => {
+    if (initialJobId && jobs.some((job) => job.id === initialJobId)) {
+      return String(initialJobId);
+    }
+    return sortedJobs[0] ? String(sortedJobs[0].id) : "";
+  }, [initialJobId, jobs, sortedJobs]);
+
+  const [jobId, setJobId] = useState(defaultJobId);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [scope, setScope] = useState<ReportScope>("pipeline");
   const [stage, setStage] = useState<ApplicationStatus>("UNDER_REVIEW");
-  const [fileType, setFileType] = useState<FileType>("pdf");
+  const [fileType, setFileType] = useState<ReportFileType>("pdf");
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState("");
 
-  const jobApplications = useMemo(
-    () => applications.filter((application) => application.job === job?.id),
-    [applications, job?.id]
+  const activeJob = useMemo(
+    () => jobs.find((item) => String(item.id) === jobId) || null,
+    [jobId, jobs]
   );
-  const selectedJobIds = useMemo(() => {
-    const available = new Set(jobApplications.map((application) => application.id));
-    return selectedIds.filter((id) => available.has(id));
-  }, [jobApplications, selectedIds]);
-  const candidateCount = scope === "pipeline"
-    ? jobApplications.length
-    : scope === "selected"
-      ? selectedJobIds.length
-      : jobApplications.filter((application) => normalizedStatus(application.status) === stage).length;
 
-  async function generateReport(event: FormEvent<HTMLFormElement>) {
+  const dateValidationError = useMemo(() => {
+    if ((dateFrom && dateFrom > today) || (dateTo && dateTo > today)) {
+      return "Application dates must be today or earlier (UTC).";
+    }
+    if (dateFrom && dateTo && dateFrom > dateTo) {
+      return "From date must be on or before To date.";
+    }
+    return "";
+  }, [dateFrom, dateTo, today]);
+
+  const dateFilteredJobApps = useMemo(() => {
+    if (!activeJob || dateValidationError) return [];
+    return applications.filter((application) => {
+      if (application.job !== activeJob.id) return false;
+      if (dateFrom || dateTo) {
+        const appliedKey = toUtcDateKey(application.applied_at);
+        if (!appliedKey) return false;
+        if (dateFrom && appliedKey < dateFrom) return false;
+        if (dateTo && appliedKey > dateTo) return false;
+      }
+      return true;
+    });
+  }, [activeJob, applications, dateFrom, dateTo, dateValidationError]);
+
+  const selectedJobIds = useMemo(() => {
+    const available = new Set(dateFilteredJobApps.map((application) => application.id));
+    return selectedIds.filter((id) => available.has(id));
+  }, [dateFilteredJobApps, selectedIds]);
+
+  const candidateCount = useMemo(() => {
+    if (!activeJob || dateValidationError) return 0;
+    if (scope === "pipeline") return dateFilteredJobApps.length;
+    if (scope === "selected") return selectedJobIds.length;
+    return dateFilteredJobApps.filter(
+      (application) => normalizedStatus(application.status) === stage
+    ).length;
+  }, [activeJob, dateFilteredJobApps, dateValidationError, scope, selectedJobIds.length, stage]);
+
+  const hasCustomFilters =
+    Boolean(dateFrom) ||
+    Boolean(dateTo) ||
+    scope !== "pipeline" ||
+    stage !== "UNDER_REVIEW";
+
+  function resetFilters() {
+    setDateFrom("");
+    setDateTo("");
+    setScope("pipeline");
+    setStage("UNDER_REVIEW");
+    setError("");
+  }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!job || downloading || candidateCount === 0) return;
+    if (!activeJob || downloading || dateValidationError || candidateCount === 0) return;
+
     setDownloading(true);
     setError("");
     try {
       await downloadApiFile(
-        `/jobs/${job.id}/report/`,
-        `talentmatch-${job.id}-${scope}-report.${fileType}`,
+        `/jobs/${activeJob.id}/report/`,
+        `talentmatch-${activeJob.id}-${scope}-report.${fileType}`,
         {
           method: "POST",
           body: JSON.stringify({
             file_type: fileType,
             scope,
+            ...(dateFrom && { date_from: dateFrom }),
+            ...(dateTo && { date_to: dateTo }),
             ...(scope === "status" && { status: stage }),
             ...(scope === "selected" && { application_ids: selectedJobIds }),
           }),
         }
       );
+      toast.success(`${fileType === "pdf" ? "PDF" : "Excel"} pipeline report downloaded`);
       onOpenChange(false);
     } catch (caught) {
       setError(
@@ -100,85 +183,194 @@ export function PipelineReportDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent onClose={() => onOpenChange(false)} className="max-w-xl">
+    <Dialog open={open} onOpenChange={(next) => !downloading && onOpenChange(next)}>
+      <DialogContent onClose={() => !downloading && onOpenChange(false)} className="max-w-xl">
         <DialogHeader>
           <DialogTitle>Generate pipeline report</DialogTitle>
           <DialogDescription>
-            {job ? `Create a private report for ${job.title}.` : "Choose a job from the pipeline filters first."}
+            Filter by job requisition, application date, and pipeline scope, then export as PDF or Excel.
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={generateReport} className="space-y-5">
-          <fieldset disabled={downloading || !job} className="space-y-2">
-            <legend className="text-sm font-semibold text-slate-900">Report coverage</legend>
-            <div className="grid gap-2 sm:grid-cols-3">
-              {([
-                ["status", "One stage"],
-                ["pipeline", "Entire pipeline"],
-                ["selected", "Selected"],
-              ] as const).map(([value, label]) => (
-                <label key={value} className="relative">
-                  <input
-                    type="radio"
-                    name="pipeline-report-scope"
-                    value={value}
-                    checked={scope === value}
-                    disabled={value === "selected" && selectedJobIds.length === 0}
-                    onChange={() => { setScope(value); setError(""); }}
-                    className="peer absolute right-3 top-3 size-4 accent-blue-600"
-                  />
-                  <span className="flex min-h-16 cursor-pointer items-end rounded-xl border border-slate-200 p-3 pr-8 text-sm font-medium text-slate-700 peer-checked:border-blue-500 peer-checked:bg-blue-50 peer-checked:text-blue-900 peer-focus-visible:ring-2 peer-focus-visible:ring-blue-500 peer-disabled:cursor-not-allowed peer-disabled:opacity-45">
-                    {label}
-                  </span>
-                </label>
-              ))}
-            </div>
+        <form onSubmit={handleSubmit} className="space-y-5">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <FormField
+              label="From date (UTC)"
+              htmlFor="pipeline-report-date-from"
+              error={dateValidationError || undefined}
+            >
+              <Input
+                id="pipeline-report-date-from"
+                type="date"
+                max={today}
+                value={dateFrom}
+                disabled={downloading || !activeJob}
+                onChange={(event) => {
+                  setDateFrom(event.target.value);
+                  setError("");
+                }}
+              />
+            </FormField>
+
+            <FormField label="To date (UTC)" htmlFor="pipeline-report-date-to">
+              <Input
+                id="pipeline-report-date-to"
+                type="date"
+                min={dateFrom || undefined}
+                max={today}
+                value={dateTo}
+                disabled={downloading || !activeJob}
+                onChange={(event) => {
+                  setDateTo(event.target.value);
+                  setError("");
+                }}
+              />
+            </FormField>
+          </div>
+
+          <FormField label="Job requisition" htmlFor="pipeline-report-job">
+            <Select
+              value={jobId}
+              onValueChange={(value) => {
+                setJobId(value);
+                setError("");
+              }}
+              disabled={downloading || sortedJobs.length === 0}
+            >
+              <SelectTrigger id="pipeline-report-job">
+                <SelectValue placeholder="Select a job requisition" />
+              </SelectTrigger>
+              <SelectContent>
+                {sortedJobs.map((job) => (
+                  <SelectItem key={job.id} value={String(job.id)}>
+                    {job.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FormField>
+
+          <fieldset disabled={downloading || !activeJob} className="space-y-2">
+            <legend className="text-sm font-semibold text-foreground">Report coverage</legend>
+            <FilterTabs
+              label="Report coverage"
+              value={scope}
+              onValueChange={(value) => {
+                setScope(value as ReportScope);
+                setError("");
+              }}
+              fullWidth
+              tabs={[
+                { id: "pipeline", label: "Entire pipeline" },
+                { id: "status", label: "One stage" },
+                { id: "selected", label: "Selected", count: selectedJobIds.length },
+              ]}
+            />
           </fieldset>
 
-          {scope === "status" && (
-            <div className="space-y-2">
-              <Label htmlFor="pipeline-report-stage">Pipeline stage</Label>
-              <Select value={stage} onValueChange={(value) => { setStage(value as ApplicationStatus); setError(""); }} disabled={!job || downloading}>
-                <SelectTrigger id="pipeline-report-stage"><SelectValue /></SelectTrigger>
-                <SelectContent>{STAGES.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
+          {scope === "status" ? (
+            <FormField label="Pipeline stage" htmlFor="pipeline-report-stage">
+              <Select
+                value={stage}
+                onValueChange={(value) => {
+                  setStage(value as ApplicationStatus);
+                  setError("");
+                }}
+                disabled={!activeJob || downloading}
+              >
+                <SelectTrigger id="pipeline-report-stage">
+                  <SelectValue placeholder="Select a pipeline stage" />
+                </SelectTrigger>
+                <SelectContent>
+                  {STAGES.map((item) => (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
-            </div>
-          )}
+            </FormField>
+          ) : null}
 
-          <fieldset disabled={downloading || !job} className="space-y-2">
-            <legend className="text-sm font-semibold text-slate-900">File format</legend>
-            <div className="grid grid-cols-2 gap-2">
-              <Button type="button" variant={fileType === "pdf" ? "secondary" : "outline"} onClick={() => setFileType("pdf")} className="justify-start">
-                <FileText />PDF
-              </Button>
-              <Button type="button" variant={fileType === "xlsx" ? "secondary" : "outline"} onClick={() => setFileType("xlsx")} className="justify-start">
-                <FileSpreadsheet />Excel
-              </Button>
-            </div>
-          </fieldset>
+          <ReportFormatCards
+            value={fileType}
+            onValueChange={(value) => {
+              setFileType(value);
+              setError("");
+            }}
+            disabled={downloading || !activeJob}
+          />
 
-          <div className="rounded-xl bg-slate-50 px-4 py-3">
-            <p className="text-sm font-semibold text-slate-900">
-              {candidateCount} candidate{candidateCount === 1 ? "" : "s"} included
-            </p>
-            <p className="mt-1 flex gap-2 text-xs leading-5 text-slate-600">
-              <ShieldCheck className="mt-0.5 size-4 shrink-0 text-blue-600" />
-              Early-stage records use applicant numbers. Names appear only for shortlisted, interview, and hired candidates. Contact details are omitted.
+          <div className="rounded-xl border border-border bg-muted/40 px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-semibold text-foreground">Report preview</p>
+              <Badge variant={candidateCount > 0 ? "secondary" : "outline"} className="tabular-nums">
+                {candidateCount} {candidateCount === 1 ? "candidate" : "candidates"}
+              </Badge>
+            </div>
+            <p className="mt-1.5 flex gap-2 text-sm leading-5 text-muted-foreground">
+              <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+              <span>
+                Early-stage records use applicant numbers. Names appear only for shortlisted,
+                interview, and hired candidates. Contact details are omitted.
+              </span>
             </p>
           </div>
 
-          {candidateCount === 0 && job && (
-            <p role="alert" className="text-sm text-amber-700">No candidates match this report selection.</p>
-          )}
-          {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+          {!dateValidationError && activeJob && candidateCount === 0 ? (
+            <p role="alert" className="text-sm font-medium text-warning">
+              {scope === "selected" && selectedJobIds.length === 0
+                ? "Select candidates on the pipeline board to export a selected-only report."
+                : "No candidates match the selected report filters."}
+            </p>
+          ) : null}
 
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" disabled={!job || candidateCount === 0 || downloading}>
-              {downloading ? <Loader2 className="animate-spin" /> : <Download />}
-              {downloading ? "Preparing report…" : `Download ${fileType === "pdf" ? "PDF" : "Excel"}`}
-            </Button>
+          {error ? (
+            <p role="alert" className="text-sm font-medium text-destructive">
+              {error}
+            </p>
+          ) : null}
+
+          <DialogFooter className="sm:justify-between">
+            <div>
+              {hasCustomFilters ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={resetFilters}
+                  disabled={downloading}
+                >
+                  <RotateCcw aria-hidden="true" />
+                  Reset filters
+                </Button>
+              ) : null}
+            </div>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={downloading}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={
+                  !activeJob || Boolean(dateValidationError) || candidateCount === 0 || downloading
+                }
+              >
+                {downloading ? (
+                  <Spinner className="text-current" label="Preparing report" />
+                ) : (
+                  <Download aria-hidden="true" />
+                )}
+                {downloading
+                  ? "Preparing report…"
+                  : `Download ${fileType === "pdf" ? "PDF" : "Excel"}`}
+              </Button>
+            </div>
           </DialogFooter>
         </form>
       </DialogContent>

@@ -1,10 +1,37 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import Link from "next/link";
-import { Search, Shield } from "lucide-react";
-import { Application } from "@/types/application";
+import { ArrowRight, Download, ShieldCheck, UsersRound } from "lucide-react";
+import { Application, ApplicationStatus } from "@/types/application";
+import { useRecruiter } from "@/context/RecruiterContext";
+import { AllApplicationsReportDialog } from "./AllApplicationsReportDialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/feedback";
+import {
+  PageHeader,
+  PageHeaderActions,
+  PageHeaderDescription,
+  PageHeaderTitle,
+} from "@/components/ui/page-header";
+import { SearchInput } from "@/components/ui/search-input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { StatusBadge, type StatusBadgeProps } from "@/components/ui/status-badge";
 import {
   Table,
   TableBody,
@@ -13,211 +40,426 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useRecruiter } from "@/context/RecruiterContext";
+import { CollectionToolbar } from "@/components/ui/toolbar";
+
+type DisplayMode = "cards" | "table";
 
 interface AllApplicantsViewProps {
   onSelectApplication: (app: Application) => void;
 }
 
+const STATUS_META: Record<
+  ApplicationStatus,
+  { label: string; status: NonNullable<StatusBadgeProps["status"]> }
+> = {
+  SUBMITTED: { label: "Submitted", status: "neutral" },
+  PROCESSING: { label: "Processing", status: "processing" },
+  UNDER_REVIEW: { label: "Under review", status: "processing" },
+  SHORTLISTED: { label: "Shortlisted", status: "success" },
+  INTERVIEW: { label: "Interview", status: "warning" },
+  HIRED: { label: "Hired", status: "success" },
+  REJECTED: { label: "Rejected", status: "danger" },
+};
+
+const STATUS_OPTIONS: ApplicationStatus[] = [
+  "SUBMITTED",
+  "PROCESSING",
+  "UNDER_REVIEW",
+  "SHORTLISTED",
+  "INTERVIEW",
+  "HIRED",
+  "REJECTED",
+];
+
+function formatAppliedDate(dateStr?: string | null): string {
+  if (!dateStr) return "—";
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function getApplicantNumber(application: Application): string {
+  return application.candidate_code || `Applicant #${application.id}`;
+}
+
+function ApplicationStatusBadge({ status }: { status: ApplicationStatus }) {
+  const meta = STATUS_META[status] || { label: status.replace(/_/g, " "), status: "neutral" };
+  return (
+    <StatusBadge status={meta.status} dot>
+      {meta.label}
+    </StatusBadge>
+  );
+}
+
 export function AllApplicantsView({ onSelectApplication }: AllApplicantsViewProps) {
-  const { applications, anonymize } = useRecruiter();
+  const { applications, jobs, anonymize } = useRecruiter();
+  const [displayMode, setDisplayMode] = useState<DisplayMode>("table");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [departmentFilter, setDepartmentFilter] = useState<string>("ALL");
+  const [isReportOpen, setIsReportOpen] = useState(false);
+  const [reportSession, setReportSession] = useState(0);
+
+  const jobDepartmentById = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const job of jobs) {
+      if (job.department) map.set(job.id, job.department);
+    }
+    return map;
+  }, [jobs]);
+
+  const getDepartment = (app: Application): string =>
+    app.job_department || jobDepartmentById.get(app.job) || "General recruitment";
+
+  const departmentOptions = useMemo(() => {
+    const unique = new Set<string>();
+    for (const app of applications) {
+      const dept = app.job_department || jobDepartmentById.get(app.job);
+      if (dept) unique.add(dept);
+    }
+    return Array.from(unique).sort((a, b) => a.localeCompare(b));
+  }, [applications, jobDepartmentById]);
 
   const filteredApplications = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
     return applications.filter((app) => {
-      // Status filter
-      if (statusFilter !== "ALL") {
-        if (statusFilter === "SHORTLISTED" && app.status !== "SHORTLISTED") return false;
-        if (
-          statusFilter === "IN_REVIEW" &&
-          app.status !== "UNDER_REVIEW" &&
-          app.status !== "PROCESSING"
-        )
-          return false;
-        if (statusFilter === "REJECTED" && app.status !== "REJECTED") return false;
-      }
+      if (statusFilter !== "ALL" && app.status !== statusFilter) return false;
+      const department = app.job_department || jobDepartmentById.get(app.job) || "General recruitment";
+      if (departmentFilter !== "ALL" && department !== departmentFilter) return false;
+      if (!query) return true;
 
-      // Search query filter
-      if (!searchQuery.trim()) return true;
-      const q = searchQuery.toLowerCase();
-      return (
-        (app.applicant_name && app.applicant_name.toLowerCase().includes(q)) ||
-        (app.candidate_code && app.candidate_code.toLowerCase().includes(q)) ||
-        (app.job_title && app.job_title.toLowerCase().includes(q)) ||
-        (app.email && app.email.toLowerCase().includes(q)) ||
-        (app.phone && app.phone.includes(q))
-      );
+      return [
+        app.candidate_code,
+        `#${app.id}`,
+        app.job_title,
+        department,
+        ...(anonymize ? [] : [app.applicant_name, app.email, app.phone]),
+      ].some((value) => value?.toLowerCase().includes(query));
     });
-  }, [applications, searchQuery, statusFilter]);
+  }, [applications, anonymize, departmentFilter, jobDepartmentById, searchQuery, statusFilter]);
 
-  const getStatusBadgeClass = (status: string): string => {
-    switch (status) {
-      case "SHORTLISTED":
-        return "bg-emerald-50 text-emerald-700 border-emerald-200";
-      case "REJECTED":
-        return "bg-rose-50 text-rose-700 border-rose-200";
-      case "UNDER_REVIEW":
-      case "PROCESSING":
-        return "bg-blue-50 text-[#1976D2] border-blue-200";
-      default:
-        return "bg-slate-100 text-slate-700 border-slate-200";
-    }
+  const hasFilters =
+    Boolean(searchQuery.trim()) || statusFilter !== "ALL" || departmentFilter !== "ALL";
+
+  const clearFilters = () => {
+    setSearchQuery("");
+    setStatusFilter("ALL");
+    setDepartmentFilter("ALL");
   };
 
-  return (
-    <div className="space-y-4">
-      {/* Canvas-Level Control Bar: Filters & Search */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        {/* Status Filters */}
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <div className="flex items-center bg-slate-200/60 p-1 rounded-xl text-xs font-semibold">
-            {[
-              { id: "ALL", label: "All Candidates" },
-              { id: "SHORTLISTED", label: "Shortlisted" },
-              { id: "IN_REVIEW", label: "In Review" },
-              { id: "REJECTED", label: "Rejected" },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setStatusFilter(tab.id)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-                  statusFilter === tab.id
-                    ? "bg-white text-slate-900 shadow-2xs font-semibold"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+  const renderApplicationCards = () => (
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+      {filteredApplications.map((app) => {
+        const applicantNumber = getApplicantNumber(app);
+        const department = getDepartment(app);
+        const score = app.match_result?.match_score;
+        const hasScore = typeof score === "number";
 
-          {anonymize && (
-            <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-blue-50 text-[#1976D2] border border-blue-100">
-              Demographics Masked
-            </span>
-          )}
-        </div>
-
-        {/* Search & Count */}
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-slate-500 font-mono hidden md:inline">
-            {filteredApplications.length} candidate{filteredApplications.length === 1 ? "" : "s"}
-          </span>
-          <div className="relative w-full sm:w-72">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search candidate, email, role..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3.5 py-1.5 rounded-xl border border-slate-200/90 text-xs sm:text-sm bg-white shadow-2xs focus:outline-none focus:border-[#2196F3] focus:ring-4 focus:ring-[#2196F3]/10 transition-all text-slate-900 placeholder:text-slate-400"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Single Surface Data Table */}
-      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-xs overflow-hidden">
-        <Table>
-          <TableHeader className="bg-slate-50/80">
-            <TableRow>
-              <TableHead className="text-xs font-bold text-slate-700 w-[120px]">Candidate ID</TableHead>
-              <TableHead className="text-xs font-bold text-slate-700">Applicant &amp; Contact</TableHead>
-              <TableHead className="text-xs font-bold text-slate-700">Applied Position</TableHead>
-              <TableHead className="text-xs font-bold text-slate-700 text-center w-[140px]">AI Match Score</TableHead>
-              <TableHead className="text-xs font-bold text-slate-700 text-center w-[140px]">Status</TableHead>
-              <TableHead className="text-xs font-bold text-slate-700 text-right w-[140px]">Action</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {filteredApplications.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="text-center py-12 text-slate-500 text-sm">
-                  {searchQuery || statusFilter !== "ALL"
-                    ? "No applicants found matching your filter criteria."
-                    : "No candidate applications recorded yet."}
-                </TableCell>
-              </TableRow>
-            ) : (
-              filteredApplications.map((app) => {
-                const score = app.match_result?.match_score || 0;
-                return (
-                  <TableRow
-                    key={app.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => onSelectApplication(app)}
-                    className="cursor-pointer hover:bg-blue-50/30 transition-colors focus-visible:outline-none focus-visible:bg-blue-50/50"
-                  >
-                    <TableCell className="font-mono font-bold text-xs text-[#1976D2] tabular-nums">
-                      {app.candidate_code || `#${app.id}`}
-                    </TableCell>
-
-                    <TableCell>
-                      {anonymize ? (
-                        <div className="flex items-center gap-1.5">
-                          <Shield className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          <span className="font-semibold text-xs text-slate-800 font-mono">
-                            {app.candidate_code || `Applicant #${app.id}`}
-                          </span>
-                        </div>
-                      ) : (
-                        <div className="space-y-0.5">
-                          <span className="font-semibold text-xs text-slate-900 block">
-                            {app.applicant_name || `Applicant #${app.id}`}
-                          </span>
-                          <span className="text-[11px] text-slate-500 block">
-                            {app.email || "No email"} &bull; {app.phone || "No phone"}
-                          </span>
-                        </div>
-                      )}
-                    </TableCell>
-
-                    <TableCell className="text-xs font-medium text-slate-700">
-                      <Link
-                        href={`/admin/jobs/${app.job}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-[#1976D2] hover:text-[#1565C0] hover:underline font-semibold"
-                      >
-                        {app.job_title || `Job Requisition #${app.job}`}
-                      </Link>
-                    </TableCell>
-
-                    <TableCell className="text-center font-mono font-extrabold text-xs text-slate-900 tabular-nums">
-                      <span className="px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200">
-                        {score}%
-                      </span>
-                    </TableCell>
-
-                    <TableCell className="text-center">
-                      <span
-                        className={`inline-flex px-2 py-0.5 rounded-md text-[11px] font-semibold border ${getStatusBadgeClass(
-                          app.status
-                        )}`}
-                      >
-                        {app.status.replace(/_/g, " ")}
-                      </span>
-                    </TableCell>
-
-                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+        return (
+          <Card
+            key={app.id}
+            className="group flex flex-col justify-between border border-border transition-[border-color,box-shadow] hover:border-primary/40 hover:shadow-sm"
+          >
+            <CardHeader className="space-y-3 p-5 pb-3">
+              <div className="flex items-start gap-3">
+                <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-secondary text-primary">
+                  <UsersRound className="size-4" aria-hidden="true" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <CardTitle className="min-w-0 text-base leading-snug">
                       <Button
-                        variant="outline"
-                        size="sm"
+                        type="button"
+                        variant="link"
                         onClick={() => onSelectApplication(app)}
-                        className="h-8 px-3 text-xs font-semibold text-[#1976D2] border-blue-200 bg-blue-50/50 hover:bg-[#2196F3] hover:text-white hover:border-[#2196F3] transition-all rounded-lg cursor-pointer"
+                        className="h-auto max-w-full justify-start p-0 text-left text-sm font-bold text-foreground hover:text-primary"
                       >
-                        View Profile
+                        <span className="truncate">{applicantNumber}</span>
                       </Button>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
-      </div>
+                    </CardTitle>
+                    <ApplicationStatusBadge status={app.status} />
+                  </div>
+                  <CardDescription className="mt-1 truncate text-sm">
+                    {anonymize
+                      ? "Identity hidden by blind screening"
+                      : app.applicant_name || "Name unavailable"}
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+
+            <CardContent className="space-y-4 px-5 pb-4">
+              <div className="space-y-2">
+                <Link
+                  href={`/admin/jobs/${app.job}`}
+                  className="block truncate text-sm font-semibold text-foreground transition-colors hover:text-primary hover:underline"
+                  title={app.job_title || `Job Requisition #${app.job}`}
+                >
+                  {app.job_title || `Job Requisition #${app.job}`}
+                </Link>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Badge variant="secondary">{department}</Badge>
+                  {app.match_result?.ai_insights?.band ? (
+                    <Badge variant="outline">{app.match_result.ai_insights.band} fit</Badge>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 divide-x divide-border border-y border-border py-2.5 text-center">
+                <div>
+                  <span className="block text-sm font-medium text-muted-foreground">
+                    AI match
+                  </span>
+                  <span className="mt-0.5 block text-sm font-bold tabular-nums text-success">
+                    {hasScore ? `${score}%` : "—"}
+                  </span>
+                </div>
+                <div>
+                  <span className="block text-sm font-medium text-muted-foreground">
+                    Applied
+                  </span>
+                  <span className="mt-0.5 block text-sm font-semibold tabular-nums text-foreground">
+                    {formatAppliedDate(app.applied_at)}
+                  </span>
+                </div>
+              </div>
+            </CardContent>
+
+            <CardFooter className="justify-between gap-3 border-t border-border px-5 py-3.5">
+              <span className="min-w-0 truncate text-sm text-muted-foreground">
+                {anonymize
+                  ? "Contact masked"
+                  : app.email || app.phone || "No contact details"}
+              </span>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => onSelectApplication(app)}
+                className="shrink-0"
+              >
+                <span>Review</span>
+                <ArrowRight aria-hidden="true" />
+              </Button>
+            </CardFooter>
+          </Card>
+        );
+      })}
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      <PageHeader className="border-b border-border pb-6">
+        <div>
+          <PageHeaderTitle>All applications</PageHeaderTitle>
+          <PageHeaderDescription>
+            Compare applicants across active requisitions and open the evidence behind each evaluation.
+          </PageHeaderDescription>
+        </div>
+        {anonymize ? (
+          <PageHeaderActions>
+            <StatusBadge status="info" dot>
+              <ShieldCheck className="size-3.5" aria-hidden="true" />
+              Blind screening active
+            </StatusBadge>
+          </PageHeaderActions>
+        ) : null}
+      </PageHeader>
+
+      <CollectionToolbar
+        label="All applications controls"
+        search={
+          <SearchInput
+            aria-label="Search applications"
+            placeholder="Search applicant number, role, or contact…"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            onClear={() => setSearchQuery("")}
+            containerClassName="w-full sm:w-72 lg:w-80"
+          />
+        }
+        filters={
+          <>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger aria-label="Filter by status" className="w-full sm:w-44">
+                <SelectValue placeholder="All statuses" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All statuses</SelectItem>
+                {STATUS_OPTIONS.map((status) => (
+                  <SelectItem key={status} value={status}>
+                    {STATUS_META[status].label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
+              <SelectTrigger aria-label="Filter by department" className="w-full sm:w-48">
+                <SelectValue placeholder="All departments" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All departments</SelectItem>
+                {departmentOptions.map((department) => (
+                  <SelectItem key={department} value={department}>
+                    {department}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </>
+        }
+        hasActiveFilters={hasFilters}
+        onClearFilters={clearFilters}
+        viewMode={displayMode}
+        onViewModeChange={setDisplayMode}
+        actions={
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setReportSession((count) => count + 1);
+              setIsReportOpen(true);
+            }}
+          >
+            <Download aria-hidden="true" />
+            Generate report
+          </Button>
+        }
+      />
+
+      {filteredApplications.length === 0 ? (
+        <EmptyState
+          title={hasFilters ? "No applications match these filters" : "No applications yet"}
+          description={
+            hasFilters
+              ? "Clear the search or choose another status or department to see more applications."
+              : "Candidate applications will appear here after a resume is submitted."
+          }
+          actionLabel={hasFilters ? "Clear filters" : undefined}
+          onAction={hasFilters ? clearFilters : undefined}
+          className="rounded-2xl border border-dashed border-border bg-muted/30"
+        />
+      ) : displayMode === "cards" ? (
+        renderApplicationCards()
+      ) : (
+        <>
+          <div className="md:hidden">{renderApplicationCards()}</div>
+          <section
+            aria-label="All applications table"
+            className="hidden overflow-hidden rounded-2xl border border-border bg-card shadow-xs md:block"
+          >
+            <Table density="compact">
+              <TableHeader>
+                <TableRow>
+                  <TableHead >Applicant Number</TableHead>
+                  <TableHead >Applied Position</TableHead>
+                  <TableHead >Department</TableHead>
+                  <TableHead >Contact</TableHead>
+                  <TableHead className="text-center">AI Match</TableHead>
+                  <TableHead >Date Applied</TableHead>
+                  <TableHead className="text-center">Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredApplications.map((app) => {
+                  const applicantNumber = getApplicantNumber(app);
+                  const department = getDepartment(app);
+                  const score = app.match_result?.match_score;
+                  const hasScore = typeof score === "number";
+
+                  return (
+                    <TableRow
+                      key={app.id}
+                      onClick={() => onSelectApplication(app)}
+                      className="cursor-pointer hover:bg-muted/50"
+                    >
+                      <TableCell>
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="min-w-0 flex-1">
+                            <Button
+                              type="button"
+                              variant="link"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                onSelectApplication(app);
+                              }}
+                              className="h-auto max-w-full justify-start p-0 text-left text-sm font-bold text-foreground hover:text-primary"
+                            >
+                              <span className="truncate">{applicantNumber}</span>
+                            </Button>
+                            <p className="mt-0.5 truncate text-sm text-muted-foreground">
+                              {anonymize
+                                ? "Blind screening active"
+                                : app.applicant_name || "Applicant record"}
+                            </p>
+                          </div>
+                        </div>
+                      </TableCell>
+
+                      <TableCell>
+                        <Link
+                          href={`/admin/jobs/${app.job}`}
+                          onClick={(event) => event.stopPropagation()}
+                          className="block truncate text-sm font-semibold text-foreground hover:text-primary hover:underline"
+                          title={app.job_title || `Job Requisition #${app.job}`}
+                        >
+                          {app.job_title || `Job Requisition #${app.job}`}
+                        </Link>
+                      </TableCell>
+
+                      <TableCell className="text-sm font-medium text-foreground">
+                        <span className="block truncate" title={department}>
+                          {department}
+                        </span>
+                      </TableCell>
+
+                      <TableCell>
+                        {anonymize ? (
+                          <span className="text-sm text-muted-foreground">
+                            Hidden by blind screening
+                          </span>
+                        ) : (
+                          <div className="min-w-0">
+                            <p className="truncate text-sm text-foreground">
+                              {app.email || "No email"}
+                            </p>
+                            <p className="mt-0.5 truncate text-sm text-muted-foreground">
+                              {app.phone || "No phone"}
+                            </p>
+                          </div>
+                        )}
+                      </TableCell>
+
+                      <TableCell overflow="nowrap" className="text-center text-sm font-bold tabular-nums text-success">
+                        {hasScore ? `${score}%` : "—"}
+                      </TableCell>
+
+                      <TableCell overflow="nowrap" className="text-sm text-muted-foreground tabular-nums">
+                        {formatAppliedDate(app.applied_at)}
+                      </TableCell>
+
+                      <TableCell overflow="nowrap" className="text-center">
+                        <ApplicationStatusBadge status={app.status} />
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </section>
+        </>
+      )}
+
+      <AllApplicationsReportDialog
+        key={reportSession}
+        open={isReportOpen}
+        onOpenChange={setIsReportOpen}
+        applications={applications}
+        jobs={jobs}
+        initialStatus={statusFilter}
+      />
     </div>
   );
 }
