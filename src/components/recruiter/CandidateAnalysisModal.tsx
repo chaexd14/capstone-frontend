@@ -1,31 +1,45 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
-  FileText,
-  Download,
-  RotateCcw,
-  ShieldCheck,
-  User,
-  Columns2,
-  ClipboardCheck,
   Briefcase,
-  Maximize2,
-  Minimize2,
+  ChevronDown,
+  ClipboardCheck,
+  Columns2,
+  Download,
+  FileText,
+  RefreshCcw,
 } from "lucide-react";
 import { Job } from "@/types/job";
 import { Application, ApplicationStatus } from "@/types/application";
 import { downloadApiFile, fetchApi } from "@/lib/api";
+import { getCandidateDisplayName } from "@/lib/candidate-identity";
+import { cn } from "@/lib/utils";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
+import { ButtonGroup } from "@/components/ui/button-group";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Spinner } from "@/components/ui/feedback";
+import { FilterTabs } from "@/components/ui/filter-tabs";
 import { toast } from "@/components/ui/sonner";
+import { StatusBadge, type StatusBadgeProps } from "@/components/ui/status-badge";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { CandidatePinpointDossier } from "./CandidatePinpointDossier";
 import { CandidateResumePreview } from "./CandidateResumePreview";
 import { JobDetailsReferencePane } from "./JobDetailsReferencePane";
@@ -39,6 +53,16 @@ interface CandidateAnalysisModalProps {
   onStatusUpdated: (updatedApp: Application) => void;
 }
 
+const STATUS_LABEL: Record<ApplicationStatus, { label: string; tone: NonNullable<StatusBadgeProps["status"]> }> = {
+  SUBMITTED: { label: "Submitted", tone: "neutral" },
+  PROCESSING: { label: "Processing", tone: "processing" },
+  UNDER_REVIEW: { label: "Under review", tone: "processing" },
+  SHORTLISTED: { label: "Shortlisted", tone: "success" },
+  INTERVIEW: { label: "Interview", tone: "warning" },
+  HIRED: { label: "Hired", tone: "success" },
+  REJECTED: { label: "Rejected", tone: "danger" },
+};
+
 export function CandidateAnalysisModal({
   application,
   job,
@@ -48,11 +72,26 @@ export function CandidateAnalysisModal({
   onStatusUpdated,
 }: CandidateAnalysisModalProps) {
   const [updating, setUpdating] = useState(false);
-  const [reprocessing, setReprocessing] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [downloadingResume, setDownloadingResume] = useState(false);
-  const [paneLayout, setPaneLayout] = useState<"split" | "resume" | "evaluation">("split");
-  const [rightPaneView, setRightPaneView] = useState<"evaluation" | "job">("evaluation");
-  const [mobilePane, setMobilePane] = useState<"resume" | "evaluation" | "job">("resume");
+  const [viewMode, setViewMode] = useState<"split" | "resume" | "evaluation">("split");
+  const [isDesktop, setIsDesktop] = useState(true);
+  const [showJobRequirements, setShowJobRequirements] = useState(false);
+  const [confirmation, setConfirmation] = useState<"reject" | "refresh" | null>(null);
+
+  useEffect(() => {
+    const query = window.matchMedia("(min-width: 1024px)");
+    const syncViewport = () => {
+      const matches = query.matches;
+      setIsDesktop(matches);
+      if (!matches) {
+        setViewMode((current) => (current === "split" ? "evaluation" : current));
+      }
+    };
+    syncViewport();
+    query.addEventListener("change", syncViewport);
+    return () => query.removeEventListener("change", syncViewport);
+  }, []);
 
   if (!application) return null;
 
@@ -66,8 +105,8 @@ export function CandidateAnalysisModal({
         { redirect: "error" }
       );
     } catch {
-      toast.error("Download Failed", {
-        description: "Unable to download this resume. Please try again.",
+      toast.error("Download failed", {
+        description: "We could not download this resume. Please try again.",
       });
     } finally {
       setDownloadingResume(false);
@@ -76,424 +115,284 @@ export function CandidateAnalysisModal({
 
   const handleStatusChange = async (newStatus: ApplicationStatus) => {
     setUpdating(true);
-    const prevStatus = application.status;
+    const previousStatus = application.status;
     try {
-      const updated = await fetchApi<Application>(
-        `/applications/${application.id}/status/`,
-        {
-          method: "PATCH",
-          body: JSON.stringify({ status: newStatus }),
-        }
-      );
+      const updated = await fetchApi<Application>(`/applications/${application.id}/status/`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: newStatus }),
+      });
       onStatusUpdated(updated);
+
       if (newStatus === "SHORTLISTED") {
-        toast.success("Candidate Shortlisted", {
-          description: `${application.candidate_code} has been advanced to the Shortlist pipeline.`,
-          action: {
-            label: "Undo",
-            onClick: () => void handleStatusChange(prevStatus),
-          },
+        toast.success("Candidate shortlisted", {
+          description: `${application.candidate_code} was moved to the shortlist.`,
+          action: { label: "Undo", onClick: () => void handleStatusChange(previousStatus) },
         });
       } else if (newStatus === "REJECTED") {
-        toast.info("Candidate Rejected", {
-          description: `${application.candidate_code} marked as rejected.`,
-          action: {
-            label: "Undo",
-            onClick: () => void handleStatusChange(prevStatus),
-          },
+        toast.info("Candidate rejected", {
+          description: `${application.candidate_code} was marked as rejected.`,
+          action: { label: "Undo", onClick: () => void handleStatusChange(previousStatus) },
         });
       } else {
-        toast.success("Status Updated", {
-          description: `${application.candidate_code} status changed to ${newStatus.replace(
-            /_/g,
-            " "
-          )}.`,
-        });
+        toast.success("Candidate kept under review");
       }
-    } catch (err) {
-      console.error("Error updating status:", err);
-      toast.error("Update Failed", {
-        description: "Could not update candidate status. Please try again.",
+    } catch (error) {
+      console.error("Error updating status:", error);
+      toast.error("Update failed", {
+        description: "We could not update the candidate. Please try again.",
       });
     } finally {
       setUpdating(false);
     }
   };
 
-  const handleReprocess = async () => {
-    setReprocessing(true);
+  const handleRefreshAnalysis = async () => {
+    setRefreshing(true);
     try {
-      const updated = await fetchApi<Application>(
-        `/applications/${application.id}/reprocess/`,
-        {
-          method: "POST",
-        }
-      );
-      onStatusUpdated(updated);
-      toast.success("AI Re-evaluation Queued", {
-        description: `Scores and evidence for ${application.candidate_code} will update after processing.`,
+      const updated = await fetchApi<Application>(`/applications/${application.id}/reprocess/`, {
+        method: "POST",
       });
-    } catch (err) {
-      console.error("Error reprocessing:", err);
-      toast.error("Reprocessing Failed", {
-        description: "Could not re-evaluate candidate application.",
+      onStatusUpdated(updated);
+      toast.success("Analysis is refreshing", {
+        description: "The score and evidence will update when processing finishes.",
+      });
+    } catch (error) {
+      console.error("Error refreshing analysis:", error);
+      toast.error("Refresh failed", {
+        description: "We could not refresh this analysis. Please try again.",
       });
     } finally {
-      setReprocessing(false);
+      setRefreshing(false);
     }
   };
 
   const resume = application.resume;
-  const matchScore = application.match_result?.match_score ?? 0;
+  const appliedDate = new Date(application.applied_at).toLocaleDateString();
+  const statusMeta = STATUS_LABEL[application.status] || {
+    label: application.status.replace(/_/g, " "),
+    tone: "neutral",
+  };
+  const candidateLabel = getCandidateDisplayName(application, anonymize);
+
+  const viewTabs = [
+    ...(isDesktop ? [{ id: "split", label: "Split", icon: <Columns2 /> }] : []),
+    { id: "resume", label: "Resume", icon: <FileText /> },
+    { id: "evaluation", label: "Evaluated result", icon: <ClipboardCheck /> },
+  ];
+
+  const effectiveView = !isDesktop && viewMode === "split" ? "evaluation" : viewMode;
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent
         onClose={onClose}
-        className="max-w-[1480px] w-[96vw] h-[92vh] max-h-[92vh] flex flex-col p-0 gap-0 overflow-hidden bg-white"
+        aria-labelledby="candidate-analysis-title"
+        aria-describedby="candidate-analysis-description"
+        className="h-[94vh] max-h-[94vh] w-[96vw] max-w-[1560px] gap-0 overflow-hidden bg-card p-0"
       >
-        {/* 1. Compact Modal Header */}
-        <div className="px-6 py-3.5 pr-14 border-b border-slate-200/90 bg-white shrink-0 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-3 min-w-0">
-            <Badge
-              variant="outline"
-              className="font-mono font-bold text-xs px-2.5 py-1 text-[#1976D2] border-blue-200 bg-blue-50/60 shrink-0"
-            >
-              {application.candidate_code}
-            </Badge>
-
-            <DialogHeader className="p-0 space-y-0 text-left">
-              <div className="flex flex-wrap items-center gap-2">
-                <DialogTitle className="text-base sm:text-lg text-slate-900 font-bold leading-snug">
-                  {application.job_title}
-                </DialogTitle>
-                <span className="text-slate-300 hidden sm:inline">&bull;</span>
-                <DialogDescription className="text-xs text-slate-500">
-                  {application.job_department || "Operations"} &middot; Applied{" "}
-                  {new Date(application.applied_at).toLocaleDateString()}
+        <TooltipProvider delayDuration={250}>
+          <header className="shrink-0 border-b border-border bg-card px-5 py-4 pr-14 sm:px-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <DialogHeader className="min-w-0 space-y-1 p-0 text-left">
+                <DialogTitle id="candidate-analysis-title"><div className="flex items-center gap-2">{candidateLabel}<StatusBadge status={statusMeta.tone} dot className="self-start">
+                  {statusMeta.label}
+                </StatusBadge></div></DialogTitle>
+                <DialogDescription
+                  id="candidate-analysis-description"
+                  className="flex flex-wrap items-center gap-x-2 gap-y-1"
+                >
+                  <span>{application.job_title || "General application"}</span>
+                  {application.job_department ? (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span>{application.job_department}</span>
+                    </>
+                  ) : null}
+                  <span aria-hidden="true">·</span>
+                  <span className="tabular-nums">Applied {appliedDate}</span>
                 </DialogDescription>
-              </div>
-            </DialogHeader>
+              </DialogHeader>
 
-            <div className="h-4 w-px bg-slate-200 hidden md:block shrink-0" />
-
-            {anonymize && application.status !== "SHORTLISTED" ? (
-              <Badge variant="secondary" className="gap-1.5 text-xs py-0.5 px-2.5">
-                <ShieldCheck className="h-3.5 w-3.5 text-[#1976D2]" />
-                <span>Demographics Masked</span>
-              </Badge>
-            ) : (
-              <span className="text-xs text-slate-800 font-semibold flex items-center gap-1.5">
-                <User className="h-3.5 w-3.5 text-[#1976D2]" />
-                <span>
-                  {application.applicant_name} ({application.email})
-                </span>
-              </span>
-            )}
-          </div>
-
-          {/* Right Header Controls: Desktop Layout Switcher & Status Badge */}
-          <div className="flex items-center gap-2.5">
-            <div
-              className="hidden lg:flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200/80"
-              role="group"
-              aria-label="Workspace pane layout"
-            >
-              <button
-                type="button"
-                onClick={() => setPaneLayout("split")}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
-                  paneLayout === "split"
-                    ? "bg-white text-slate-900 shadow-2xs"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-                title="Side-by-side 50/50 split: Resume Preview and Evaluated Result / Job Details"
-              >
-                <Columns2 className="w-3.5 h-3.5 text-[#2196F3]" />
-                <span>Split View</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setPaneLayout("resume")}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
-                  paneLayout === "resume"
-                    ? "bg-white text-slate-900 shadow-2xs"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-                title="Maximize Applicant Resume Preview"
-              >
-                <FileText className="w-3.5 h-3.5" />
-                <span>Resume Only</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setPaneLayout("evaluation")}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
-                  paneLayout === "evaluation"
-                    ? "bg-white text-slate-900 shadow-2xs"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-                title="Maximize Right Pane (Evaluated Result or Job Details)"
-              >
-                <ClipboardCheck className="w-3.5 h-3.5" />
-                <span>{rightPaneView === "job" ? "Job Details Only" : "Evaluation Only"}</span>
-              </button>
             </div>
+          </header>
 
-            <Badge variant="secondary" className="text-xs px-2.5 py-1 font-semibold">
-              {application.status.replace(/_/g, " ")}
-            </Badge>
-          </div>
-        </div>
-
-        {/* Mobile / Tablet Segmented Switcher (< lg) */}
-        <div className="flex lg:hidden items-center p-2.5 bg-slate-50 border-b border-slate-200/90 shrink-0">
-          <div className="flex items-center gap-1 p-1 bg-white rounded-xl border border-slate-200/90 w-full">
-            <button
-              type="button"
-              onClick={() => setMobilePane("resume")}
-              className={`flex-1 py-1.5 px-2.5 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                mobilePane === "resume"
-                  ? "bg-[#2196F3] text-white shadow-2xs"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              <FileText className="w-3.5 h-3.5" />
-              <span>Resume</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMobilePane("evaluation");
-                setRightPaneView("evaluation");
-              }}
-              className={`flex-1 py-1.5 px-2.5 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                mobilePane === "evaluation"
-                  ? "bg-[#2196F3] text-white shadow-2xs"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              <ClipboardCheck className="w-3.5 h-3.5" />
-              <span>Evaluation ({matchScore}%)</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setMobilePane("job");
-                setRightPaneView("job");
-              }}
-              className={`flex-1 py-1.5 px-2.5 rounded-lg text-xs font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                mobilePane === "job"
-                  ? "bg-[#2196F3] text-white shadow-2xs"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              <Briefcase className="w-3.5 h-3.5" />
-              <span>Job Details</span>
-            </button>
-          </div>
-        </div>
-
-        {/* 2. Side-by-Side Dual-Pane Body: [Applicant Actual Resume Preview] | [Evaluated Result / Job Details] */}
-        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
-          {/* LEFT PANE: Applicant Actual Resume Preview */}
-          <div
-            className={`min-h-0 h-full overflow-hidden ${
-              mobilePane === "resume" ? "flex flex-col" : "hidden"
-            } ${
-              paneLayout === "evaluation"
-                ? "lg:hidden"
-                : paneLayout === "resume"
-                ? "lg:flex lg:col-span-12"
-                : "lg:flex lg:col-span-6"
-            }`}
-          >
-            <CandidateResumePreview
-              application={application}
-              isExpanded={paneLayout === "resume"}
-              onToggleExpand={() =>
-                setPaneLayout((prev) => (prev === "resume" ? "split" : "resume"))
+          <div className="shrink-0 border-b border-border bg-card px-5 py-2.5 sm:px-6">
+            <FilterTabs
+              label="Candidate view"
+              value={effectiveView}
+              onValueChange={(value) =>
+                setViewMode(value as "split" | "resume" | "evaluation")
               }
-              className="h-full"
+              tabs={viewTabs}
             />
           </div>
 
-          {/* RIGHT PANE: Switchable [Evaluated Result] or [Job Details] */}
           <div
-            className={`min-h-0 h-full flex-col bg-[#f8fafc] overflow-hidden ${
-              mobilePane === "evaluation" || mobilePane === "job" ? "flex" : "hidden"
-            } ${
-              paneLayout === "resume"
-                ? "lg:hidden"
-                : paneLayout === "evaluation"
-                ? "lg:flex lg:col-span-12"
-                : "lg:flex lg:col-span-6"
-            }`}
+            className={cn(
+              "grid min-h-0 flex-1 overflow-hidden",
+              effectiveView === "split" ? "lg:grid-cols-2" : "grid-cols-1"
+            )}
           >
-            {/* Right Pane Sub-Header Toolbar with View Switcher */}
-            <div className="px-4 py-2.5 bg-white border-b border-slate-200/90 flex flex-wrap items-center justify-between gap-2 shrink-0">
-              {/* Segmented Switcher: Evaluated Result vs Job Details */}
-              <div
-                className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200/80"
-                role="group"
-                aria-label="Switch between Evaluated Result and Job Details"
-              >
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRightPaneView("evaluation");
-                    if (mobilePane === "job") setMobilePane("evaluation");
-                  }}
-                  className={`px-3 py-1 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
-                    rightPaneView === "evaluation"
-                      ? "bg-white text-slate-900 shadow-2xs"
-                      : "text-slate-600 hover:text-slate-900"
-                  }`}
-                  title="View AI Evaluated Result and Rubric Breakdown"
-                >
-                  <ClipboardCheck className="w-3.5 h-3.5 text-[#2196F3]" />
-                  <span>Evaluated Result</span>
-                  <span className="font-mono text-[11px] font-extrabold text-[#1976D2] bg-blue-50 px-1.5 py-0 rounded border border-blue-200/70 tabular-nums">
-                    {matchScore}%
-                  </span>
-                </button>
+            <div
+              className={cn(
+                "min-h-0 overflow-hidden border-border",
+                effectiveView === "resume"
+                  ? "flex"
+                  : effectiveView === "split"
+                    ? "hidden lg:flex lg:border-r"
+                    : "hidden"
+              )}
+            >
+              <CandidateResumePreview
+                application={application}
+                isExpanded={effectiveView === "resume"}
+                onToggleExpand={() =>
+                  setViewMode(effectiveView === "resume" ? "split" : "resume")
+                }
+                className="h-full w-full"
+              />
+            </div>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRightPaneView("job");
-                    if (mobilePane === "evaluation") setMobilePane("job");
-                  }}
-                  className={`px-3 py-1 rounded-md text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
-                    rightPaneView === "job"
-                      ? "bg-white text-slate-900 shadow-2xs"
-                      : "text-slate-600 hover:text-slate-900"
-                  }`}
-                  title="View Job Requisition Details, Requirements, and Rubric Weights"
-                >
-                  <Briefcase className="w-3.5 h-3.5 text-[#2196F3]" />
-                  <span>Job Details</span>
-                </button>
+            <div
+              className={cn(
+                "min-h-0 overflow-y-auto bg-muted/30 px-5 py-6 sm:px-6",
+                effectiveView === "resume" ? "hidden" : "block"
+              )}
+            >
+              <div
+                className={cn(
+                  "mx-auto",
+                  effectiveView === "evaluation" ? "max-w-4xl" : "max-w-3xl"
+                )}
+              >
+                <CandidatePinpointDossier application={application} anonymize={anonymize} />
+
+                <div className="mt-6 border-t border-border pt-4">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    aria-expanded={showJobRequirements}
+                    onClick={() => setShowJobRequirements((open) => !open)}
+                    className="w-full justify-between text-foreground"
+                  >
+                    <span className="inline-flex items-center gap-2">
+                      <Briefcase className="size-4 text-primary" aria-hidden="true" />
+                      <span>View job requirements</span>
+                    </span>
+                    <ChevronDown
+                      className={cn(
+                        "size-4 text-muted-foreground transition-transform duration-200",
+                        showJobRequirements && "rotate-180"
+                      )}
+                      aria-hidden="true"
+                    />
+                  </Button>
+
+                  {showJobRequirements ? (
+                    <div className="mt-4">
+                      <JobDetailsReferencePane application={application} job={job} />
+                    </div>
+                  ) : null}
+                </div>
               </div>
+            </div>
+          </div>
+
+          <DialogFooter className="shrink-0 border-t border-border bg-card px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+            <ButtonGroup className="flex-wrap">
+              {resume && !resume.is_purged ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleDownloadResume}
+                  disabled={downloadingResume}
+                >
+                  {downloadingResume ? (
+                    <Spinner className="text-current" label="Downloading resume" />
+                  ) : (
+                    <Download aria-hidden="true" />
+                  )}
+                  <span>{downloadingResume ? "Downloading…" : "Download resume"}</span>
+                </Button>
+              ) : null}
 
               <Button
                 type="button"
-                variant="outline"
+                variant="ghost"
                 size="sm"
-                onClick={() =>
-                  setPaneLayout((prev) =>
-                    prev === "evaluation" ? "split" : "evaluation"
-                  )
-                }
-                className="h-7.5 w-7.5 p-0 rounded-lg border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 hidden lg:inline-flex items-center justify-center cursor-pointer"
-                title={
-                  paneLayout === "evaluation"
-                    ? "Restore 50/50 split view"
-                    : "Maximize right pane"
-                }
-                aria-label={
-                  paneLayout === "evaluation"
-                    ? "Restore 50/50 split view"
-                    : "Maximize right pane"
-                }
+                onClick={() => setConfirmation("refresh")}
+                disabled={refreshing}
               >
-                {paneLayout === "evaluation" ? (
-                  <Minimize2 className="w-3.5 h-3.5" />
+                {refreshing ? (
+                  <Spinner className="text-current" label="Refreshing analysis" />
                 ) : (
-                  <Maximize2 className="w-3.5 h-3.5" />
+                  <RefreshCcw aria-hidden="true" />
                 )}
+                <span>{refreshing ? "Refreshing…" : "Refresh analysis"}</span>
               </Button>
-            </div>
+            </ButtonGroup>
 
-            {/* Scrollable Right Pane Body */}
-            <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-slate-300/80 [&::-webkit-scrollbar-thumb]:rounded-full">
-              {rightPaneView === "job" ? (
-                <JobDetailsReferencePane application={application} job={job} />
-              ) : (
-                <CandidatePinpointDossier
-                  application={application}
-                  anonymize={anonymize}
-                />
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* 3. Persistent Sticky Footer Actions */}
-        <div className="py-3 px-6 border-t border-slate-200/90 bg-white shrink-0 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            {resume && !resume.is_purged && (
+            <ButtonGroup className="grid grid-cols-1 gap-2 sm:flex sm:items-center">
               <Button
+                type="button"
                 variant="outline"
-                size="sm"
-                onClick={handleDownloadResume}
-                disabled={downloadingResume}
-                className="h-9 gap-2 text-xs font-semibold cursor-pointer"
+                disabled={updating || application.status === "UNDER_REVIEW"}
+                onClick={() => handleStatusChange("UNDER_REVIEW")}
               >
-                <Download className="h-3.5 w-3.5" />
-                <span>{downloadingResume ? "Retrieving..." : "Download File"}</span>
+                Keep under review
               </Button>
-            )}
-
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleReprocess}
-              disabled={reprocessing}
-              className="h-9 gap-2 text-xs font-semibold cursor-pointer"
-            >
-              <RotateCcw
-                className={`h-3.5 w-3.5 ${reprocessing ? "animate-spin" : ""}`}
-              />
-              <span>Re-analyze</span>
-            </Button>
-          </div>
-
-          {/* Decision Buttons */}
-          <div className="flex items-center gap-2">
-            <span className="text-slate-500 text-xs font-semibold pr-1">
-              Decision:
-            </span>
-            <Button
-              size="sm"
-              disabled={updating}
-              onClick={() => handleStatusChange("UNDER_REVIEW")}
-              className={`h-9 px-4 font-semibold text-xs rounded-xl transition-all cursor-pointer ${
-                application.status === "UNDER_REVIEW" ||
-                application.status === "PROCESSING"
-                  ? "bg-[#2196F3] hover:bg-[#1976D2] text-white shadow-2xs"
-                  : "bg-blue-50 text-[#1976D2] border border-blue-200 hover:bg-blue-100/80"
-              }`}
-            >
-              Review
-            </Button>
-            <Button
-              size="sm"
-              disabled={updating}
-              onClick={() => handleStatusChange("SHORTLISTED")}
-              className={`h-9 px-4 font-semibold text-xs rounded-xl transition-all cursor-pointer ${
-                application.status === "SHORTLISTED"
-                  ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs"
-                  : "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100/80"
-              }`}
-            >
-              Shortlist
-            </Button>
-            <Button
-              size="sm"
-              disabled={updating}
-              onClick={() => handleStatusChange("REJECTED")}
-              className={`h-9 px-4 font-semibold text-xs rounded-xl transition-all cursor-pointer ${
-                application.status === "REJECTED"
-                  ? "bg-rose-600 hover:bg-rose-700 text-white shadow-2xs"
-                  : "bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100/80"
-              }`}
-            >
-              Reject
-            </Button>
-          </div>
-        </div>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={updating || application.status === "REJECTED"}
+                onClick={() => setConfirmation("reject")}
+              >
+                Reject
+              </Button>
+              <Button
+                type="button"
+                disabled={updating || application.status === "SHORTLISTED"}
+                onClick={() => handleStatusChange("SHORTLISTED")}
+              >
+                Shortlist
+              </Button>
+            </ButtonGroup>
+          </DialogFooter>
+        </TooltipProvider>
       </DialogContent>
+
+      <AlertDialog
+        open={confirmation !== null}
+        onOpenChange={(open) => !open && setConfirmation(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmation === "reject" ? "Reject this candidate?" : "Refresh this analysis?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmation === "reject"
+                ? "The candidate will leave active review. You can undo the status change from the confirmation message."
+                : "The current score and evidence will be replaced when processing finishes."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant={confirmation === "reject" ? "destructive" : "default"}
+              onClick={() => {
+                const action = confirmation;
+                setConfirmation(null);
+                if (action === "reject") void handleStatusChange("REJECTED");
+                else if (action === "refresh") void handleRefreshAnalysis();
+              }}
+            >
+              {confirmation === "reject" ? "Reject candidate" : "Refresh analysis"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }

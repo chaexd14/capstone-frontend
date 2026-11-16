@@ -1,5 +1,6 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
 import React, { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import {
@@ -62,15 +63,15 @@ export function Navigation({
         {/* Left: Canonical TM Brand Badge & Recruiter Identity */}
         <div className="flex items-center gap-3">
           <Link href="/" className="flex items-center gap-2.5 group shrink-0">
-            <div className="w-8 h-8 rounded-lg bg-[#2196F3] text-white font-bold text-sm flex items-center justify-center tracking-tight shadow-2xs transition-transform group-hover:scale-105">
+            <div className="w-8 h-8 rounded-lg bg-primary text-white font-bold text-sm flex items-center justify-center tracking-tight shadow-2xs transition-transform group-hover:scale-105">
               TM
             </div>
-            <span className="font-bold text-lg sm:text-xl tracking-tight text-slate-900 group-hover:text-[#2196F3] transition-colors leading-none">
+            <span className="font-bold text-lg sm:text-xl tracking-tight text-slate-900 group-hover:text-primary transition-colors leading-none">
               TalentMatch
             </span>
           </Link>
 
-          <div className="hidden sm:inline-flex items-center px-2.5 py-0.5 rounded-md text-[11px] font-semibold bg-blue-50 text-[#1976D2] border border-blue-100">
+          <div className="hidden sm:inline-flex items-center px-2.5 py-0.5 rounded-md text-sm font-semibold bg-blue-50 text-primary border border-blue-100">
             Recruiter Studio
           </div>
         </div>
@@ -79,28 +80,28 @@ export function Navigation({
         <div className="flex items-center gap-2 sm:gap-3">
           {/* Anonymize Toggle for Recruiters */}
           {onToggleAnonymize && (
-            <button
+            <Button
               type="button"
               onClick={() => onToggleAnonymize(!anonymize)}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer shadow-2xs ${anonymize
-                ? "bg-blue-50 border-blue-200 text-[#1976D2] hover:bg-blue-100/70"
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-semibold border transition-all cursor-pointer shadow-2xs ${anonymize
+                ? "bg-blue-50 border-blue-200 text-primary hover:bg-blue-100/70"
                 : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                 }`}
               title="Toggle Candidate Demographic Anonymization"
               aria-label="Toggle Demographic Blind Screening"
             >
-              <Shield className={`w-3.5 h-3.5 ${anonymize ? "text-[#2196F3]" : "text-slate-400"}`} />
+              <Shield className={`w-3.5 h-3.5 ${anonymize ? "text-primary" : "text-slate-400"}`} />
               <span className="hidden md:inline">Demographics Masked:</span>
-              <span className={`font-mono font-bold ${anonymize ? "text-[#1976D2]" : "text-slate-500"}`}>
+              <span className={`font-bold ${anonymize ? "text-primary" : "text-slate-500"}`}>
                 {anonymize ? "ON" : "OFF"}
               </span>
-            </button>
+            </Button>
           )}
 
           {/* Switch to Applicant Portal Link */}
           <Link
             href="/careers"
-            className="hidden lg:inline-flex items-center text-xs font-medium text-slate-600 hover:text-slate-900 px-2.5 py-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+            className="hidden lg:inline-flex items-center text-sm font-medium text-slate-600 hover:text-slate-900 px-2.5 py-1.5 rounded-lg hover:bg-slate-100 transition-colors"
           >
             Applicant Portal
           </Link>
@@ -112,16 +113,16 @@ export function Navigation({
 
           {/* Recruiter Avatar Dropdown Menu */}
           <div className="relative" ref={userMenuRef}>
-            <button
+            <Button
               type="button"
               onClick={() => setOpenUserMenu(!openUserMenu)}
               aria-expanded={openUserMenu}
               aria-haspopup="menu"
-              className="flex items-center gap-1.5 p-1 rounded-full hover:bg-slate-100 transition-colors cursor-pointer select-none min-h-[40px] min-w-[40px] justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2196F3]"
+              className="flex items-center gap-1.5 p-1 rounded-full hover:bg-slate-100 transition-colors cursor-pointer select-none min-h-[40px] min-w-[40px] justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
               aria-label="Recruiter account menu"
             >
               <Avatar className="w-8 h-8 border border-slate-200 shadow-2xs">
-                <AvatarFallback className="bg-[#2196F3] text-white font-bold text-xs">
+                <AvatarFallback className="bg-primary text-white font-bold text-sm">
                   {userInitial}
                 </AvatarFallback>
               </Avatar>
@@ -129,7 +130,7 @@ export function Navigation({
                 className={`w-3.5 h-3.5 text-slate-400 transition-transform ${openUserMenu ? "rotate-180" : ""
                   }`}
               />
-            </button>
+            </Button>
 
             {openUserMenu && (
               <div
@@ -138,22 +139,22 @@ export function Navigation({
               >
                 <div className="p-3 bg-slate-50/80 rounded-xl space-y-1 border border-slate-100">
                   <div className="font-bold text-sm text-slate-900 truncate">{displayName}</div>
-                  <div className="text-xs text-slate-500 font-mono truncate">
+                  <div className="text-sm text-slate-500 truncate">
                     {currentUser?.email || "Recruiter Account"}
                   </div>
                   <div className="pt-1 flex items-center gap-1.5">
-                    <span className="inline-flex items-center text-[11px] font-semibold text-[#1976D2] bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
+                    <span className="inline-flex items-center text-sm font-semibold text-primary bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
                       {currentUser?.role === "superadmin" ? "Superadmin" : "Recruiter"}
                     </span>
                     {currentUser?.company && (
-                      <span className="text-[11px] font-medium text-slate-500 truncate" title={currentUser.company}>
+                      <span className="text-sm font-medium text-slate-500 truncate" title={currentUser.company}>
                         {currentUser.company}
                       </span>
                     )}
                   </div>
                 </div>
 
-                <div className="pt-1 space-y-0.5 text-xs">
+                <div className="pt-1 space-y-0.5 text-sm">
                   <Link
                     role="menuitem"
                     href="/careers"
@@ -171,16 +172,16 @@ export function Navigation({
                 </div>
 
                 <div className="pt-2 border-t border-slate-100">
-                  <button
+                  <Button
                     role="menuitem"
                     onClick={() => {
                       setOpenUserMenu(false);
                       if (onLogout) onLogout();
                     }}
-                    className="w-full px-3 py-2 rounded-lg font-semibold text-xs text-rose-600 hover:bg-rose-50 text-left transition-colors cursor-pointer"
+                    className="w-full px-3 py-2 rounded-lg font-semibold text-sm text-rose-600 hover:bg-rose-50 text-left transition-colors cursor-pointer"
                   >
                     Sign Out
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}

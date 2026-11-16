@@ -1,15 +1,39 @@
 "use client";
 
 import React, { useMemo, useState } from "react";
-import { BriefcaseBusiness, CheckSquare2, Clock3, FileDown, Search, UserRoundCheck } from "lucide-react";
+import {
+  CheckSquare2,
+  Clock3,
+  Download,
+  ShieldCheck,
+} from "lucide-react";
 import { useRecruiter } from "@/context/RecruiterContext";
 import { fetchApi } from "@/lib/api";
 import { getCandidateDisplayName } from "@/lib/candidate-identity";
+import { cn } from "@/lib/utils";
 import { Application, ApplicationStatus } from "@/types/application";
+import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { EmptyState } from "@/components/ui/feedback";
+import {
+  PageHeader,
+  PageHeaderActions,
+  PageHeaderDescription,
+  PageHeaderTitle,
+} from "@/components/ui/page-header";
+import { SearchInput } from "@/components/ui/search-input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "@/components/ui/sonner";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { CollectionToolbar } from "@/components/ui/toolbar";
 import { CandidateWorkflowPanel } from "./CandidateWorkflowPanel";
 import { PipelineReportDialog } from "./PipelineReportDialog";
 
@@ -27,10 +51,11 @@ function normalizeStage(status: ApplicationStatus): ApplicationStatus {
   return status;
 }
 
-function scoreColor(score: number) {
-  if (score >= 85) return "text-emerald-700 bg-emerald-50";
-  if (score >= 70) return "text-blue-700 bg-blue-50";
-  return "text-slate-600 bg-slate-100";
+function getScoreBadgeVariant(score?: number | null): NonNullable<BadgeProps["variant"]> {
+  if (typeof score !== "number") return "outline";
+  if (score >= 85) return "success";
+  if (score >= 70) return "info";
+  return "secondary";
 }
 
 export function RecruitmentPipelineView() {
@@ -42,21 +67,38 @@ export function RecruitmentPipelineView() {
   const [working, setWorking] = useState(false);
   const [workspaceApplication, setWorkspaceApplication] = useState<Application | null>(null);
   const [draggedId, setDraggedId] = useState<number | null>(null);
+  const [dragOverStage, setDragOverStage] = useState<ApplicationStatus | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
+  const [reportSession, setReportSession] = useState(0);
 
   const visibleApplications = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return applications.filter((application) => {
       const matchesJob = jobFilter === "all" || String(application.job) === jobFilter;
-      const matchesQuery = !needle || [
-        application.candidate_code,
-        application.applicant_name,
-        application.email,
-        application.job_title,
-      ].some((value) => value?.toLowerCase().includes(needle));
+      const matchesQuery =
+        !needle ||
+        [
+          application.candidate_code,
+          application.applicant_name,
+          application.email,
+          application.job_title,
+        ].some((value) => value?.toLowerCase().includes(needle));
       return matchesJob && matchesQuery;
     });
   }, [applications, jobFilter, query]);
+
+  const hasFilters = Boolean(query.trim()) || jobFilter !== "all";
+
+  const clearFilters = () => {
+    setQuery("");
+    setJobFilter("all");
+    setSelectedIds([]);
+  };
+
+  const openReportModal = () => {
+    setReportSession((count) => count + 1);
+    setReportOpen(true);
+  };
 
   const moveApplication = async (application: Application, status: ApplicationStatus) => {
     if (application.status === status) return;
@@ -109,131 +151,286 @@ export function RecruitmentPipelineView() {
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-col justify-between gap-4 xl:flex-row xl:items-end">
-        <div className="max-w-2xl">
-          <h1 className="text-2xl font-bold tracking-tight text-slate-950">Recruitment pipeline</h1>
-          <p className="mt-2 text-sm leading-6 text-slate-600">
+      <PageHeader className="border-b border-border pb-6">
+        <div>
+          <PageHeaderTitle>Recruitment pipeline</PageHeaderTitle>
+          <PageHeaderDescription>
             Keep ownership and next actions visible from first review through the final decision.
-          </p>
+          </PageHeaderDescription>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2 text-sm text-slate-600">
-            <UserRoundCheck className="h-4 w-4 text-blue-600" />
-            <span><strong className="font-semibold text-slate-900">{visibleApplications.length}</strong> active records in this view</span>
-          </div>
-          <Button variant="outline" onClick={() => setReportOpen(true)} disabled={jobFilter === "all"} title={jobFilter === "all" ? "Select a job to generate a report" : undefined} className="gap-2">
-            <FileDown className="h-4 w-4" />Generate report
+        <PageHeaderActions>
+          {anonymize ? (
+            <StatusBadge status="info" dot>
+              <ShieldCheck className="size-3.5" aria-hidden="true" />
+              Blind screening active
+            </StatusBadge>
+          ) : null}
+        </PageHeaderActions>
+      </PageHeader>
+
+      <CollectionToolbar
+        label="Pipeline controls"
+        search={
+          <SearchInput
+            aria-label="Search pipeline"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            onClear={() => setQuery("")}
+            placeholder="Search candidate, role, or email…"
+            containerClassName="w-full sm:w-72 lg:w-80"
+          />
+        }
+        filters={
+          <Select
+            value={jobFilter}
+            onValueChange={(value) => {
+              setJobFilter(value);
+              setSelectedIds([]);
+            }}
+          >
+            <SelectTrigger className="w-full sm:w-64" aria-label="Filter by job">
+              <SelectValue placeholder="All job requisitions" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All job requisitions</SelectItem>
+              {jobs.map((job) => (
+                <SelectItem key={job.id} value={String(job.id)}>
+                  {job.title}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        }
+        hasActiveFilters={hasFilters}
+        onClearFilters={clearFilters}
+        actions={
+          <Button
+            type="button"
+            variant="outline"
+            onClick={openReportModal}
+            disabled={jobs.length === 0}
+          >
+            <Download aria-hidden="true" />
+            Generate report
           </Button>
-        </div>
-      </header>
+        }
+      />
 
-      <section className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-xs lg:flex-row lg:items-center" aria-label="Pipeline controls">
-        <div className="relative min-w-0 flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search candidate, role, or email" className="pl-9" />
-        </div>
-        <Select value={jobFilter} onValueChange={(value) => { setJobFilter(value); setSelectedIds([]); }}>
-          <SelectTrigger className="w-full lg:w-64" aria-label="Filter by job"><SelectValue placeholder="All jobs" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All job requisitions</SelectItem>
-            {jobs.map((job) => <SelectItem key={job.id} value={String(job.id)}>{job.title}</SelectItem>)}
-          </SelectContent>
-        </Select>
-
-        {selectedIds.length > 0 && (
-          <div className="flex flex-col gap-2 border-t border-slate-200 pt-3 sm:flex-row lg:border-l lg:border-t-0 lg:pl-3 lg:pt-0">
-            <span className="flex items-center gap-1.5 whitespace-nowrap text-xs font-semibold text-blue-700"><CheckSquare2 className="h-4 w-4" />{selectedIds.length} selected</span>
-            <Select value={bulkStatus} onValueChange={(value) => setBulkStatus(value as ApplicationStatus)}>
-              <SelectTrigger className="h-9 w-full sm:w-40" aria-label="Bulk destination"><SelectValue /></SelectTrigger>
-              <SelectContent>{PIPELINE.map((stage) => <SelectItem key={stage.status} value={stage.status}>{stage.label}</SelectItem>)}</SelectContent>
-            </Select>
-            <Button size="sm" onClick={applyBulkMove} disabled={working}>Move selected</Button>
-          </div>
-        )}
-      </section>
-
-      <div className="overflow-x-auto pb-3 [scrollbar-color:#cbd5e1_transparent]" aria-label="Candidate pipeline board">
-        <div className="grid min-w-[1180px] grid-cols-6 gap-3">
-          {PIPELINE.map((stage) => {
-            const stageApplications = visibleApplications.filter(
-              (application) => normalizeStage(application.status) === stage.status
-            );
-            return (
-              <section
-                key={stage.status}
-                className="min-h-[540px] rounded-2xl bg-slate-100/80 p-2.5"
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={() => {
-                  const application = applications.find((item) => item.id === draggedId);
-                  if (application) void moveApplication(application, stage.status);
-                  setDraggedId(null);
-                }}
-                aria-labelledby={`pipeline-${stage.status}`}
+      {selectedIds.length > 0 ? (
+        <Card className="border border-primary/25 bg-secondary/40 shadow-xs">
+          <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <StatusBadge status="info" dot>
+                <CheckSquare2 className="size-3.5" aria-hidden="true" />
+                {selectedIds.length} selected
+              </StatusBadge>
+              <p className="text-sm text-muted-foreground">
+                Choose a target stage to move the selected candidates together.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Select
+                value={bulkStatus}
+                onValueChange={(value) => setBulkStatus(value as ApplicationStatus)}
               >
-                <div className="px-1.5 pb-3 pt-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <h2 id={`pipeline-${stage.status}`} className="text-sm font-bold text-slate-900">{stage.label}</h2>
-                    <span className="rounded-full bg-white px-2 py-0.5 font-mono text-xs font-bold tabular-nums text-slate-600">{stageApplications.length}</span>
-                  </div>
-                  <p className="mt-1 text-[11px] leading-4 text-slate-500">{stage.description}</p>
-                </div>
+                <SelectTrigger className="h-9 w-full bg-card sm:w-44" aria-label="Bulk destination">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PIPELINE.map((stage) => (
+                    <SelectItem key={stage.status} value={stage.status}>
+                      {stage.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button type="button" size="sm" onClick={applyBulkMove} disabled={working}>
+                Move selected
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelectedIds([])}
+                disabled={working}
+              >
+                Clear selection
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
-                <div className="space-y-2.5">
-                  {stageApplications.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-slate-300 px-3 py-8 text-center text-xs leading-5 text-slate-500">Drop a candidate here</div>
-                  ) : stageApplications.map((application) => {
-                    const score = Math.round(application.match_result?.match_score || 0);
-                    const selected = selectedIds.includes(application.id);
-                    return (
-                      <article
-                        key={application.id}
-                        draggable
-                        onDragStart={() => setDraggedId(application.id)}
-                        onDragEnd={() => setDraggedId(null)}
-                        className={`rounded-xl bg-white p-3 shadow-xs transition-shadow hover:shadow-sm ${selected ? "ring-2 ring-blue-500" : "ring-1 ring-slate-200"}`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <button type="button" onClick={() => setWorkspaceApplication(application)} className="min-w-0 flex-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded-md">
-                            <span className="block truncate text-sm font-semibold text-slate-950">{getCandidateDisplayName(application, anonymize)}</span>
-                            <span className="mt-0.5 block truncate text-[11px] text-slate-500">{application.job_title || `Job #${application.job}`}</span>
-                          </button>
-                          <input type="checkbox" checked={selected} onChange={() => toggleSelected(application.id)} aria-label={`Select ${application.candidate_code}`} className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+      {visibleApplications.length === 0 ? (
+        <EmptyState
+          title={applications.length === 0 ? "The pipeline is ready" : "No candidates match this view"}
+          description={
+            applications.length === 0
+              ? "Candidates will appear here when applications are submitted to an active job."
+              : "Clear the search or choose another requisition to see candidate records."
+          }
+          actionLabel={hasFilters ? "Clear filters" : undefined}
+          onAction={hasFilters ? clearFilters : undefined}
+          className="rounded-2xl border border-dashed border-border bg-muted/30"
+        />
+      ) : (
+        <>
+          <p className="text-sm text-muted-foreground md:hidden">
+            Swipe horizontally to review every pipeline stage.
+          </p>
+          <div className="overflow-x-auto pb-3" aria-label="Candidate pipeline board">
+            <div className="grid min-w-[2100px] grid-cols-6 gap-3">
+              {PIPELINE.map((stage) => {
+                const stageApplications = visibleApplications.filter(
+                  (application) => normalizeStage(application.status) === stage.status
+                );
+                const isDropTarget = dragOverStage === stage.status;
+
+                return (
+                  <section
+                    key={stage.status}
+                    className={cn(
+                      "min-h-[440px] rounded-2xl border p-2.5 transition-colors lg:min-h-[520px]",
+                      isDropTarget
+                        ? "border-primary/40 bg-secondary/50"
+                        : "border-border/60 bg-muted/50"
+                    )}
+                    onDragOver={(event) => {
+                      event.preventDefault();
+                      if (dragOverStage !== stage.status) {
+                        setDragOverStage(stage.status);
+                      }
+                    }}
+                    onDragLeave={() => {
+                      setDragOverStage((current) => (current === stage.status ? null : current));
+                    }}
+                    onDrop={() => {
+                      const application = applications.find((item) => item.id === draggedId);
+                      if (application) void moveApplication(application, stage.status);
+                      setDraggedId(null);
+                      setDragOverStage(null);
+                    }}
+                    aria-labelledby={`pipeline-${stage.status}`}
+                  >
+                    <div className="px-1.5 pb-3 pt-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <h2
+                          id={`pipeline-${stage.status}`}
+                          className="text-sm font-bold text-foreground"
+                        >
+                          {stage.label}
+                        </h2>
+                        <Badge variant="outline" className="bg-card px-2 py-0.5 text-sm tabular-nums">
+                          {stageApplications.length}
+                        </Badge>
+                      </div>
+                      <p className="mt-1 text-sm leading-5 text-muted-foreground">
+                        {stage.description}
+                      </p>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      {stageApplications.length === 0 ? (
+                        <div className="rounded-xl border border-dashed border-border px-3 py-8 text-center text-sm leading-5 text-muted-foreground">
+                          Drop a candidate here
                         </div>
+                      ) : (
+                        stageApplications.map((application) => {
+                          const rawScore = application.match_result?.match_score;
+                          const hasScore = typeof rawScore === "number";
+                          const score = hasScore ? Math.round(rawScore) : null;
+                          const selected = selectedIds.includes(application.id);
+                          const taskCount = application.open_task_count || 0;
 
-                        <div className="mt-3 flex items-center justify-between gap-2">
-                          <span className={`rounded-md px-2 py-1 font-mono text-xs font-bold tabular-nums ${scoreColor(score)}`}>{score}%</span>
-                          <span className="flex items-center gap-1 text-[11px] text-slate-500"><Clock3 className="h-3.5 w-3.5" />{application.open_task_count || 0} tasks</span>
-                        </div>
+                          return (
+                            <Card
+                              key={application.id}
+                              draggable
+                              onClick={() => setWorkspaceApplication(application)}
+                              onDragStart={() => setDraggedId(application.id)}
+                              onDragEnd={() => {
+                                setDraggedId(null);
+                                setDragOverStage(null);
+                              }}
+                              className={cn(
+                                "group cursor-pointer rounded-xl border bg-card shadow-xs transition-[border-color,box-shadow,transform] hover:border-primary/40 hover:shadow-sm active:scale-[0.99]",
+                                selected
+                                  ? "border-primary ring-2 ring-primary/20"
+                                  : "border-border"
+                              )}
+                            >
+                              <CardContent className="p-3.5">
+                                <div className="flex items-start justify-between gap-2">
+                                  <Button
+                                    variant="ghost"
+                                    type="button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setWorkspaceApplication(application);
+                                    }}
+                                    className="h-auto min-w-0 flex-1 flex-col items-start justify-start rounded-md p-0 text-left hover:bg-transparent"
+                                  >
+                                    <span className="w-full truncate text-sm font-semibold text-foreground transition-colors group-hover:text-primary">
+                                      {getCandidateDisplayName(application, anonymize)}
+                                    </span>
+                                    <span className="mt-0.5 line-clamp-2 w-full break-words text-left text-sm font-normal leading-5 text-muted-foreground">
+                                      {application.job_title || `Job #${application.job}`}
+                                    </span>
+                                  </Button>
+                                  <div
+                                    onClick={(event) => event.stopPropagation()}
+                                    className="pt-0.5"
+                                  >
+                                    <Checkbox
+                                      checked={selected}
+                                      onCheckedChange={() => toggleSelected(application.id)}
+                                      aria-label={`Select ${application.candidate_code}`}
+                                    />
+                                  </div>
+                                </div>
 
-                        <div className="mt-3 border-t border-slate-100 pt-2">
-                          <Select value={normalizeStage(application.status)} onValueChange={(value) => void moveApplication(application, value as ApplicationStatus)} disabled={working}>
-                            <SelectTrigger className="h-8 w-full border-0 bg-slate-50 px-2 text-xs shadow-none" aria-label={`Move ${application.candidate_code}`}><SelectValue /></SelectTrigger>
-                            <SelectContent>{PIPELINE.map((destination) => <SelectItem key={destination.status} value={destination.status}>{destination.label}</SelectItem>)}</SelectContent>
-                          </Select>
-                        </div>
-                      </article>
-                    );
-                  })}
-                </div>
-              </section>
-            );
-          })}
-        </div>
-      </div>
-
-      {applications.length === 0 && (
-        <div className="flex flex-col items-center rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center">
-          <BriefcaseBusiness className="h-8 w-8 text-slate-400" />
-          <h2 className="mt-4 font-semibold text-slate-900">The pipeline is ready</h2>
-          <p className="mt-1 max-w-md text-sm text-slate-500">Candidates will appear here when applications are submitted to an active job.</p>
-        </div>
+                                <div className="mt-3 flex flex-col gap-2">
+                                  <div>
+                                    <span className="text-sm text-muted-foreground">Match Score: </span>
+                                    <Badge
+                                      variant={getScoreBadgeVariant(score)}
+                                      className="px-2 py-0.5 text-sm font-bold tabular-nums"
+                                    >
+                                      {score !== null ? `${score}%` : "—"}
+                                    </Badge>
+                                  </div>
+                                  <span className="flex items-center gap-1 text-sm text-muted-foreground tabular-nums">
+                                    Remaining Tasks: {" "}
+                                    {taskCount}
+                                  </span>
+                                </div>
+                              </CardContent>
+                            </Card>
+                          );
+                        })
+                      )}
+                    </div>
+                  </section>
+                );
+              })}
+            </div>
+          </div>
+        </>
       )}
 
-      <CandidateWorkflowPanel key={workspaceApplication?.id ?? "empty"} application={workspaceApplication} anonymize={anonymize} onClose={() => setWorkspaceApplication(null)} onApplicationUpdated={onApplicationUpdated} />
+      <CandidateWorkflowPanel
+        key={workspaceApplication?.id ?? "empty"}
+        application={workspaceApplication}
+        anonymize={anonymize}
+        onClose={() => setWorkspaceApplication(null)}
+        onApplicationUpdated={onApplicationUpdated}
+      />
       <PipelineReportDialog
+        key={reportSession}
         open={reportOpen}
         onOpenChange={setReportOpen}
-        job={jobs.find((job) => String(job.id) === jobFilter) || null}
+        jobs={jobs}
+        initialJobId={jobFilter !== "all" ? Number(jobFilter) : null}
         applications={applications}
         selectedIds={selectedIds}
       />

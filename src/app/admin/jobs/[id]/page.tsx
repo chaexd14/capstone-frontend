@@ -1,11 +1,11 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
 import React, { useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { useRecruiter } from "@/context/RecruiterContext";
 import { JobProfileView } from "@/components/recruiter/JobProfileView";
-import { Button } from "@/components/ui/button";
 
 export default function JobDetailPage() {
   const params = useParams();
@@ -28,10 +28,10 @@ export default function JobDetailPage() {
 
   if (loading && !currentJob) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[50vh] gap-3">
-        <Loader2 className="h-6 w-6 animate-spin text-[#2196F3]" />
-        <span className="text-xs text-slate-500 font-mono">
-          Loading job requisition #{jobId}...
+      <div className="flex flex-col items-center justify-center min-h-[50vh] gap-3" role="status" aria-live="polite">
+        <Loader2 className="h-6 w-6 animate-spin text-primary motion-reduce:animate-none" aria-hidden="true" />
+        <span className="text-sm text-slate-500 ">
+          Loading job #{jobId}...
         </span>
       </div>
     );
@@ -40,17 +40,17 @@ export default function JobDetailPage() {
   if (!currentJob) {
     return (
       <div className="p-12 text-center rounded-2xl border border-dashed border-slate-200 bg-white space-y-3 my-8">
-        <h2 className="text-base font-bold text-slate-900">Job Requisition Not Found</h2>
-        <p className="text-xs text-slate-500 max-w-sm mx-auto">
-          The requisition #{jobId} does not exist, may have been deleted, or is not yet loaded.
+        <h2 className="text-base font-bold text-slate-900">Job not found</h2>
+        <p className="text-sm text-slate-500 max-w-sm mx-auto">
+          Job #{jobId} may have been removed or could not be loaded. Return to the job list and try again.
         </p>
         <Button
           onClick={() => router.push("/admin?view=jobs")}
           variant="outline"
           size="sm"
-          className="text-xs font-semibold"
+          className="text-sm font-semibold"
         >
-          &larr; Back to Job Requisitions
+          &larr; Back to jobs
         </Button>
       </div>
     );

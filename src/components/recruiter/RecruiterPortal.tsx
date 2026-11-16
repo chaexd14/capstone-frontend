@@ -1,5 +1,7 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { Job, ArchivedJob } from "@/types/job";
 import { Application } from "@/types/application";
@@ -17,7 +19,6 @@ import { JobProfileView } from "./JobProfileView";
 import { ConfirmJobActionModal, JobActionType } from "./ConfirmJobActionModal";
 import { fetchApi } from "@/lib/api";
 import { toast } from "@/components/ui/sonner";
-import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Table,
@@ -252,7 +253,7 @@ export function RecruiterPortal({
         return "bg-rose-50 text-rose-700 border-rose-200";
       case "UNDER_REVIEW":
       case "PROCESSING":
-        return "bg-blue-50 text-[#1976D2] border-blue-200";
+        return "bg-blue-50 text-primary border-blue-200";
       default:
         return "bg-slate-100 text-slate-700 border-slate-200";
     }
@@ -288,38 +289,38 @@ export function RecruiterPortal({
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Metric 1: Open Jobs */}
         <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:shadow-sm transition-all space-y-1">
-          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Open Positions</span>
-          <div className="font-mono font-extrabold text-2xl sm:text-3xl text-slate-900 tracking-tight tabular-nums">
+          <span className="text-sm font-semibold text-slate-500 uppercase tracking-wider block">Open Positions</span>
+          <div className="font-extrabold text-2xl sm:text-3xl text-slate-900 tracking-tight tabular-nums">
             {totalJobs}
           </div>
-          <p className="text-xs text-slate-400">Active benchmark roles</p>
+          <p className="text-sm text-slate-400">Active benchmark roles</p>
         </div>
 
         {/* Metric 2: Total Applicants */}
         <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:shadow-sm transition-all space-y-1">
-          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider block">Total Candidates</span>
-          <div className="font-mono font-extrabold text-2xl sm:text-3xl text-slate-900 tracking-tight tabular-nums">
+          <span className="text-sm font-semibold text-slate-500 uppercase tracking-wider block">Total Candidates</span>
+          <div className="font-extrabold text-2xl sm:text-3xl text-slate-900 tracking-tight tabular-nums">
             {totalApplicants}
           </div>
-          <p className="text-xs text-slate-400">Screened resumes</p>
+          <p className="text-sm text-slate-400">Screened resumes</p>
         </div>
 
         {/* Metric 3: In Review */}
         <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:shadow-sm transition-all space-y-1">
-          <span className="text-xs font-semibold text-[#1976D2] uppercase tracking-wider block">In Review</span>
-          <div className="font-mono font-extrabold text-2xl sm:text-3xl text-[#2196F3] tracking-tight tabular-nums">
+          <span className="text-sm font-semibold text-primary uppercase tracking-wider block">In Review</span>
+          <div className="font-extrabold text-2xl sm:text-3xl text-primary tracking-tight tabular-nums">
             {inReviewCount}
           </div>
-          <p className="text-xs text-slate-400">Active evaluations</p>
+          <p className="text-sm text-slate-400">Active evaluations</p>
         </div>
 
         {/* Metric 4: Shortlisted */}
         <div className="p-5 sm:p-6 rounded-2xl bg-white border border-slate-200/90 shadow-xs hover:shadow-sm transition-all space-y-1">
-          <span className="text-xs font-semibold text-emerald-700 uppercase tracking-wider block">Shortlisted</span>
-          <div className="font-mono font-extrabold text-2xl sm:text-3xl text-emerald-600 tracking-tight tabular-nums">
+          <span className="text-sm font-semibold text-emerald-700 uppercase tracking-wider block">Shortlisted</span>
+          <div className="font-extrabold text-2xl sm:text-3xl text-emerald-600 tracking-tight tabular-nums">
             {shortlistedCount}
           </div>
-          <p className="text-xs text-slate-400">Qualified talent</p>
+          <p className="text-sm text-slate-400">Qualified talent</p>
         </div>
       </div>
 
@@ -332,11 +333,11 @@ export function RecruiterPortal({
               <h2 className="text-lg sm:text-xl font-bold text-slate-900 tracking-tight">
                 Posted Job Profiles
               </h2>
-              <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 font-mono text-xs font-bold border border-slate-200/80">
+              <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 text-sm font-bold border border-slate-200/80">
                 {jobs.length} requisitions
               </span>
             </div>
-            <p className="text-xs sm:text-sm text-slate-500">
+            <p className="text-sm sm:text-sm text-slate-500">
               Manage requisition lifecycles, inspect candidate rosters, and audit AI ranking leaderboards.
             </p>
           </div>
@@ -344,10 +345,10 @@ export function RecruiterPortal({
           <div className="flex items-center gap-2.5 self-start sm:self-auto">
             {/* View Mode Toggle: Cards vs Table */}
             <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200/70">
-              <button
+              <Button
                 type="button"
                 onClick={() => setDisplayMode("cards")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
                   displayMode === "cards"
                     ? "bg-white text-slate-900 shadow-xs"
                     : "text-slate-500 hover:text-slate-900"
@@ -356,11 +357,11 @@ export function RecruiterPortal({
                 aria-label="Cards Grid View"
               >
                 Cards
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
                 onClick={() => setDisplayMode("table")}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                className={`px-3 py-1.5 rounded-lg text-sm font-semibold transition-all cursor-pointer ${
                   displayMode === "table"
                     ? "bg-white text-slate-900 shadow-xs"
                     : "text-slate-500 hover:text-slate-900"
@@ -369,13 +370,13 @@ export function RecruiterPortal({
                 aria-label="Dense Data Table View"
               >
                 Table
-              </button>
+              </Button>
             </div>
 
             {/* Post New Job CTA */}
             <Button
               onClick={() => setIsCreateJobOpen(true)}
-              className="bg-[#2196F3] hover:bg-[#1976D2] text-white font-semibold text-xs px-4 h-9 rounded-xl shadow-2xs gap-1.5 transition-all cursor-pointer"
+              className="bg-primary hover:bg-primary/90 text-white font-semibold text-sm px-4 h-9 rounded-xl shadow-2xs gap-1.5 transition-all cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>Post New Job</span>
@@ -387,22 +388,22 @@ export function RecruiterPortal({
         <div className="px-5 sm:px-6 py-3 border-b border-slate-100 bg-slate-50/50 flex flex-wrap items-center justify-between gap-4">
           <Tabs value={jobTab} onValueChange={(v) => setJobTab(v as "ACTIVE" | "CLOSED" | "ARCHIVED")}>
             <TabsList className="bg-slate-100/90 p-1 rounded-xl">
-              <TabsTrigger value="ACTIVE" className="gap-2 text-xs font-semibold rounded-lg">
+              <TabsTrigger value="ACTIVE" className="gap-2 text-sm font-semibold rounded-lg">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                 <span>Active Roles</span>
-                <span className="px-1.5 py-0.5 rounded-full bg-white text-slate-700 font-mono text-[11px] font-bold shadow-2xs">
+                <span className="px-1.5 py-0.5 rounded-full bg-white text-slate-700 text-sm font-bold shadow-2xs">
                   {activeJobs.length}
                 </span>
               </TabsTrigger>
-              <TabsTrigger value="CLOSED" className="gap-2 text-xs font-semibold rounded-lg">
+              <TabsTrigger value="CLOSED" className="gap-2 text-sm font-semibold rounded-lg">
                 <span>Closed Positions</span>
-                <span className="px-1.5 py-0.5 rounded-full bg-white text-slate-700 font-mono text-[11px] font-bold shadow-2xs">
+                <span className="px-1.5 py-0.5 rounded-full bg-white text-slate-700 text-sm font-bold shadow-2xs">
                   {closedJobs.length}
                 </span>
               </TabsTrigger>
-              <TabsTrigger value="ARCHIVED" className="gap-2 text-xs font-semibold rounded-lg">
+              <TabsTrigger value="ARCHIVED" className="gap-2 text-sm font-semibold rounded-lg">
                 <span>Archived Requisitions</span>
-                <span className="px-1.5 py-0.5 rounded-full bg-white text-slate-700 font-mono text-[11px] font-bold shadow-2xs">
+                <span className="px-1.5 py-0.5 rounded-full bg-white text-slate-700 text-sm font-bold shadow-2xs">
                   {archivedJobs.length}
                 </span>
               </TabsTrigger>
@@ -415,7 +416,7 @@ export function RecruiterPortal({
               size="sm"
               onClick={loadArchivedJobs}
               disabled={archivedLoading}
-              className="gap-1.5 text-xs text-slate-600 h-8 rounded-lg cursor-pointer"
+              className="gap-1.5 text-sm text-slate-600 h-8 rounded-lg cursor-pointer"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${archivedLoading ? "animate-spin" : ""}`} />
               <span>Refresh</span>
@@ -432,7 +433,7 @@ export function RecruiterPortal({
                   <div className="text-sm font-semibold text-slate-900">
                     {jobTab === "ACTIVE" ? "No active positions found" : "No closed positions"}
                   </div>
-                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                  <p className="text-sm text-slate-500 max-w-sm mx-auto">
                     {jobTab === "ACTIVE"
                       ? "Create and publish a new job opening to start receiving and screening candidate resumes."
                       : "Positions closed by recruiters will appear here. Candidates can view closed roles, but cannot submit new applications."}
@@ -465,31 +466,31 @@ export function RecruiterPortal({
                           }
                         }}
                         aria-label={`View candidate roster and metrics for ${job.title}`}
-                        className="group p-5 rounded-2xl border border-slate-200/90 hover:border-[#2196F3]/50 transition-all duration-200 flex flex-col justify-between space-y-4 bg-white hover:shadow-md hover:-translate-y-0.5 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2196F3]"
+                        className="group p-5 rounded-2xl border border-slate-200/90 hover:border-primary/50 transition-all duration-200 flex flex-col justify-between space-y-4 bg-white hover:shadow-md hover:-translate-y-0.5 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                       >
                         <div className="space-y-3">
                           {/* Top Monogram + Status */}
                           <div className="flex items-start justify-between gap-2.5">
                             <div className="flex items-center gap-2.5 min-w-0">
-                              <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#2196F3] font-bold text-sm flex items-center justify-center shrink-0 border border-blue-100 shadow-2xs group-hover:scale-105 transition-transform">
+                              <div className="w-10 h-10 rounded-xl bg-blue-50 text-primary font-bold text-sm flex items-center justify-center shrink-0 border border-blue-100 shadow-2xs group-hover:scale-105 transition-transform">
                                 {monogram}
                               </div>
                               <div className="min-w-0">
-                                <span className="text-xs font-semibold text-slate-700 block truncate">
+                                <span className="text-sm font-semibold text-slate-700 block truncate">
                                   {job.department || "General"}
                                 </span>
-                                <span className="text-[11px] text-slate-400 font-mono">
+                                <span className="text-sm text-slate-400 ">
                                   ID: #{job.id}
                                 </span>
                               </div>
                             </div>
 
                             {job.status === "CLOSED" ? (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold border border-amber-200 bg-amber-50 text-amber-800">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-sm font-semibold border border-amber-200 bg-amber-50 text-amber-800">
                                 Closed
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-semibold border border-emerald-200 bg-emerald-50 text-emerald-700">
+                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-sm font-semibold border border-emerald-200 bg-emerald-50 text-emerald-700">
                                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                                 <span>Active</span>
                               </span>
@@ -497,12 +498,12 @@ export function RecruiterPortal({
                           </div>
 
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <h3 className="text-base font-bold text-slate-900 group-hover:text-[#2196F3] transition-colors line-clamp-1 leading-snug">
+                            <h3 className="text-base font-bold text-slate-900 group-hover:text-primary transition-colors line-clamp-1 leading-snug">
                               {job.title}
                             </h3>
                             {isDuplicateTitle && (
                               <span
-                                className="px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-blue-50 text-[#1976D2] border border-blue-200 shrink-0"
+                                className="px-1.5 py-0.5 rounded text-sm font-semibold bg-blue-50 text-primary border border-blue-200 shrink-0"
                                 title={`Requisition #${job.id}`}
                               >
                                 #{job.id}
@@ -510,12 +511,12 @@ export function RecruiterPortal({
                             )}
                           </div>
 
-                          <div className="flex items-center gap-1.5 flex-wrap text-xs text-slate-500">
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-semibold bg-blue-50/80 text-[#1976D2] border border-blue-200/80">
+                          <div className="flex items-center gap-1.5 flex-wrap text-sm text-slate-500">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-sm font-semibold bg-blue-50/80 text-primary border border-blue-200/80">
                               {formatJobCohort(job.created_at)}
                             </span>
                             {isDuplicateTitle && (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200/80">
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-sm font-semibold bg-amber-50 text-amber-800 border border-amber-200/80">
                                 Req #{job.id}
                               </span>
                             )}
@@ -523,7 +524,7 @@ export function RecruiterPortal({
                             <span className="truncate">{job.location || "Makati City"} &bull; {job.employment_type || "Full time"}</span>
                           </div>
 
-                          <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed">
+                          <p className="text-sm text-slate-600 line-clamp-2 leading-relaxed">
                             {job.description}
                           </p>
                         </div>
@@ -532,20 +533,20 @@ export function RecruiterPortal({
                         <div className="space-y-3 pt-3 border-t border-slate-100">
                           <div className="grid grid-cols-3 gap-2 text-center">
                             <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
-                              <div className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Applicants</div>
-                              <div className="font-mono font-bold text-slate-900 text-sm mt-0.5 tabular-nums">
+                              <div className="text-sm text-slate-400 uppercase tracking-wider font-semibold">Applicants</div>
+                              <div className="font-bold text-slate-900 text-sm mt-0.5 tabular-nums">
                                 {jobApps.length}
                               </div>
                             </div>
                             <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
-                              <div className="text-[10px] text-emerald-700 uppercase tracking-wider font-semibold">Top Match</div>
-                              <div className="font-mono font-bold text-emerald-600 text-sm mt-0.5 tabular-nums">
+                              <div className="text-sm text-emerald-700 uppercase tracking-wider font-semibold">Top Match</div>
+                              <div className="font-bold text-emerald-600 text-sm mt-0.5 tabular-nums">
                                 {topScore !== null ? `${topScore}%` : "-"}
                               </div>
                             </div>
                             <div className="p-2 rounded-xl bg-slate-50 border border-slate-100">
-                              <div className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold">Avg Score</div>
-                              <div className="font-mono font-bold text-slate-700 text-sm mt-0.5 tabular-nums">
+                              <div className="text-sm text-slate-400 uppercase tracking-wider font-semibold">Avg Score</div>
+                              <div className="font-bold text-slate-700 text-sm mt-0.5 tabular-nums">
                                 {avgScore !== null ? `${avgScore}%` : "-"}
                               </div>
                             </div>
@@ -553,13 +554,13 @@ export function RecruiterPortal({
 
                           {/* Action Links & Lifecycle Controls */}
                           <div className="flex items-center justify-between pt-1 gap-2 flex-wrap">
-                            <span className="text-xs font-semibold text-[#2196F3] group-hover:text-[#1976D2] transition-colors">
+                            <span className="text-sm font-semibold text-primary group-hover:text-primary transition-colors">
                               Candidate Roster &rarr;
                             </span>
 
                             <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                               {job.status === "CLOSED" ? (
-                                <button
+                                <Button
                                   type="button"
                                   title="Reopen position"
                                   aria-label={`Reopen ${job.title}`}
@@ -568,12 +569,12 @@ export function RecruiterPortal({
                                     setActionJob(job);
                                     setActionModalType("reopen");
                                   }}
-                                  className="h-7 px-2.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 rounded-lg border border-emerald-200 cursor-pointer transition-colors"
+                                  className="h-7 px-2.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 rounded-lg border border-emerald-200 cursor-pointer transition-colors"
                                 >
                                   Reopen
-                                </button>
+                                </Button>
                               ) : (
-                                <button
+                                <Button
                                   type="button"
                                   title="Close position"
                                   aria-label={`Close ${job.title}`}
@@ -582,13 +583,13 @@ export function RecruiterPortal({
                                     setActionJob(job);
                                     setActionModalType("close");
                                   }}
-                                  className="h-7 px-2.5 text-xs font-semibold text-amber-800 hover:bg-amber-50 rounded-lg border border-amber-200 cursor-pointer transition-colors"
+                                  className="h-7 px-2.5 text-sm font-semibold text-amber-800 hover:bg-amber-50 rounded-lg border border-amber-200 cursor-pointer transition-colors"
                                 >
                                   Close
-                                </button>
+                                </Button>
                               )}
 
-                              <button
+                              <Button
                                 type="button"
                                 title="Archive requisition"
                                 aria-label={`Archive ${job.title}`}
@@ -597,10 +598,10 @@ export function RecruiterPortal({
                                   setActionJob(job);
                                   setActionModalType("archive");
                                 }}
-                                className="h-7 px-2.5 text-xs font-medium text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg border border-slate-200 cursor-pointer transition-colors"
+                                className="h-7 px-2.5 text-sm font-medium text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg border border-slate-200 cursor-pointer transition-colors"
                               >
                                 Archive
-                              </button>
+                              </Button>
                             </div>
                           </div>
                         </div>
@@ -614,14 +615,14 @@ export function RecruiterPortal({
                   <Table>
                     <TableHeader className="bg-slate-50/80">
                       <TableRow>
-                        <TableHead className="text-xs font-bold text-slate-700">Requisition</TableHead>
-                        <TableHead className="text-xs font-bold text-slate-700">Department</TableHead>
-                        <TableHead className="text-xs font-bold text-slate-700">Location &amp; Type</TableHead>
-                        <TableHead className="text-xs font-bold text-slate-700 text-center">Applicants</TableHead>
-                        <TableHead className="text-xs font-bold text-slate-700 text-center">Top Match</TableHead>
-                        <TableHead className="text-xs font-bold text-slate-700 text-center">Avg Match</TableHead>
-                        <TableHead className="text-xs font-bold text-slate-700 text-center">Status</TableHead>
-                        <TableHead className="text-xs font-bold text-slate-700 text-right">Actions</TableHead>
+                        <TableHead size="fill" className="text-sm font-bold text-slate-700">Requisition</TableHead>
+                        <TableHead size="standard" className="text-sm font-bold text-slate-700">Department</TableHead>
+                        <TableHead size="wide" className="text-sm font-bold text-slate-700">Location &amp; Type</TableHead>
+                        <TableHead size="fit" className="text-center text-sm font-bold text-slate-700">Applicants</TableHead>
+                        <TableHead size="fit" className="text-center text-sm font-bold text-slate-700">Top Match</TableHead>
+                        <TableHead size="fit" className="text-center text-sm font-bold text-slate-700">Avg Match</TableHead>
+                        <TableHead size="fit" className="text-center text-sm font-bold text-slate-700">Status</TableHead>
+                        <TableHead size="fit" className="text-right text-sm font-bold text-slate-700">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -644,65 +645,65 @@ export function RecruiterPortal({
                           >
                             <TableCell className="font-semibold text-slate-900 text-sm">
                               <div className="flex items-center gap-2">
-                                <span className="w-7 h-7 rounded-lg bg-blue-50 text-[#2196F3] font-bold text-xs flex items-center justify-center border border-blue-100 shrink-0">
+                                <span className="w-7 h-7 rounded-lg bg-blue-50 text-primary font-bold text-sm flex items-center justify-center border border-blue-100 shrink-0">
                                   {monogram}
                                 </span>
                                 <div>
                                   <div className="flex items-center gap-1.5 flex-wrap">
                                     <span className="font-bold text-slate-900">{job.title}</span>
-                                    <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-semibold bg-blue-50/80 text-[#1976D2] border border-blue-200/80">
+                                    <span className="inline-flex items-center px-1.5 py-0.2 rounded text-sm font-semibold bg-blue-50/80 text-primary border border-blue-200/80">
                                       {formatJobCohort(job.created_at)}
                                     </span>
                                     {isDuplicateTitle && (
-                                      <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200/80">
+                                      <span className="inline-flex items-center px-1.5 py-0.2 rounded text-sm font-semibold bg-amber-50 text-amber-800 border border-amber-200/80">
                                         Req #{job.id}
                                       </span>
                                     )}
                                   </div>
-                                  <div className="text-[11px] text-slate-400 font-mono">ID: #{job.id}</div>
+                                  <div className="text-sm text-slate-400 ">ID: #{job.id}</div>
                                 </div>
                               </div>
                             </TableCell>
 
-                            <TableCell className="text-xs font-medium text-slate-700">
+                            <TableCell className="text-sm font-medium text-slate-700">
                               {job.department || "Operations"}
                             </TableCell>
 
-                            <TableCell className="text-xs text-slate-600">
+                            <TableCell className="text-sm text-slate-600">
                               {job.location} &bull; {job.employment_type}
                             </TableCell>
 
-                            <TableCell className="text-center font-mono font-bold text-slate-900 text-xs tabular-nums">
+                            <TableCell overflow="nowrap" className="text-center font-bold text-slate-900 text-sm tabular-nums">
                               {jobApps.length}
                             </TableCell>
 
-                            <TableCell className="text-center font-mono font-bold text-emerald-600 text-xs tabular-nums">
+                            <TableCell overflow="nowrap" className="text-center font-bold text-emerald-600 text-sm tabular-nums">
                               {topScore !== null ? `${topScore}%` : "-"}
                             </TableCell>
 
-                            <TableCell className="text-center font-mono font-bold text-slate-700 text-xs tabular-nums">
+                            <TableCell overflow="nowrap" className="text-center font-bold text-slate-700 text-sm tabular-nums">
                               {avgScore !== null ? `${avgScore}%` : "-"}
                             </TableCell>
 
-                            <TableCell className="text-center">
+                            <TableCell overflow="nowrap" className="text-center">
                               {job.status === "CLOSED" ? (
-                                <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold border border-amber-200 bg-amber-50 text-amber-800">
+                                <span className="px-2 py-0.5 rounded-md text-sm font-semibold border border-amber-200 bg-amber-50 text-amber-800">
                                   Closed
                                 </span>
                               ) : (
-                                <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold border border-emerald-200 bg-emerald-50 text-emerald-700">
+                                <span className="px-2 py-0.5 rounded-md text-sm font-semibold border border-emerald-200 bg-emerald-50 text-emerald-700">
                                   Active
                                 </span>
                               )}
                             </TableCell>
 
-                            <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                            <TableCell overflow="nowrap" className="text-right" onClick={(e) => e.stopPropagation()}>
                               <div className="flex items-center justify-end gap-1.5">
                                 <Button
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => setSelectedJob(job)}
-                                  className="h-8 text-xs font-semibold text-[#2196F3] hover:bg-blue-50"
+                                  className="h-8 text-sm font-semibold text-primary hover:bg-blue-50"
                                 >
                                   Review
                                 </Button>
@@ -723,13 +724,13 @@ export function RecruiterPortal({
             <div>
               {archivedLoading ? (
                 <div className="text-center py-12 text-slate-500 flex items-center justify-center gap-2">
-                  <RefreshCw className="w-4 h-4 animate-spin text-[#2196F3]" />
-                  <span className="text-xs font-mono">Loading archived requisitions...</span>
+                  <RefreshCw className="w-4 h-4 animate-spin text-primary" />
+                  <span className="text-sm ">Loading archived requisitions...</span>
                 </div>
               ) : archivedJobs.length === 0 ? (
                 <div className="text-center py-12 px-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 space-y-1.5">
                   <div className="text-sm font-semibold text-slate-900">No archived requisitions</div>
-                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                  <p className="text-sm text-slate-500 max-w-sm mx-auto">
                     Requisitions moved to archive are safely kept here for compliance auditing and historical reference.
                   </p>
                 </div>
@@ -738,11 +739,11 @@ export function RecruiterPortal({
                   <Table>
                     <TableHeader className="bg-slate-50/80">
                       <TableRow>
-                        <TableHead className="text-xs font-bold text-slate-700">Requisition &amp; Cohort</TableHead>
-                        <TableHead className="text-xs font-bold text-slate-700">Department &amp; Setup</TableHead>
-                        <TableHead className="text-xs font-bold text-slate-700">Active Lifecycle</TableHead>
-                        <TableHead className="text-xs font-bold text-slate-700 text-center w-[130px]">Historical Applicants</TableHead>
-                        <TableHead className="text-xs font-bold text-slate-700 text-right">Actions</TableHead>
+                        <TableHead size="fill" className="text-sm font-bold text-slate-700">Requisition &amp; Cohort</TableHead>
+                        <TableHead size="standard" className="text-sm font-bold text-slate-700">Department &amp; Setup</TableHead>
+                        <TableHead size="wide" className="text-sm font-bold text-slate-700">Active Lifecycle</TableHead>
+                        <TableHead size="fit" className="text-center text-sm font-bold text-slate-700">Historical Applicants</TableHead>
+                        <TableHead size="fit" className="text-right text-sm font-bold text-slate-700">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -753,16 +754,16 @@ export function RecruiterPortal({
                             <TableCell className="font-semibold text-slate-900 text-sm">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="font-bold text-slate-900">{aj.title}</span>
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-[#1976D2] border border-blue-200">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-sm font-semibold bg-blue-50 text-primary border border-blue-200">
                                   {formatJobCohort(aj.original_created_at || aj.archived_at)}
                                 </span>
                                 {isArchivedDuplicate && (
-                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-sm font-semibold bg-amber-50 text-amber-800 border border-amber-200">
                                     Req #{aj.id}
                                   </span>
                                 )}
                               </div>
-                              <div className="text-[11px] text-slate-400 font-mono flex items-center gap-2 mt-0.5">
+                              <div className="text-sm text-slate-400 flex items-center gap-2 mt-0.5">
                                 <span>Archive Record #{aj.id}</span>
                                 {aj.active_job_id ? (
                                   <>
@@ -773,36 +774,36 @@ export function RecruiterPortal({
                               </div>
                             </TableCell>
 
-                            <TableCell className="text-xs font-medium text-slate-700">
+                            <TableCell className="text-sm font-medium text-slate-700">
                               <div>{aj.department || "Operations"}</div>
-                              <div className="text-[11px] text-slate-500 font-normal mt-0.5">
+                              <div className="text-sm text-slate-500 font-normal mt-0.5">
                                 {aj.location || "Manila"} &bull; {aj.employment_type || "Full-time"}
                               </div>
                             </TableCell>
 
-                            <TableCell className="text-xs text-slate-600">
+                            <TableCell className="text-sm text-slate-600">
                               <div className="font-medium text-slate-800">
                                 {formatLifecycleDate(aj.original_created_at || aj.archived_at)} &rarr; {formatLifecycleDate(aj.archived_at)}
                               </div>
-                              <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                              <div className="text-sm text-slate-500 mt-0.5">
                                 {calculateDuration(aj.original_created_at || aj.archived_at, aj.archived_at)}
                               </div>
                             </TableCell>
 
-                            <TableCell className="text-center font-mono font-bold text-slate-900 text-xs tabular-nums">
+                            <TableCell overflow="nowrap" className="text-center font-bold text-slate-900 text-sm tabular-nums">
                               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-slate-100 text-slate-800 border border-slate-200/80">
                                 <Users className="w-3.5 h-3.5 text-slate-500" />
                                 {aj.applicant_count ?? 0}
                               </span>
                             </TableCell>
 
-                            <TableCell className="text-right">
+                            <TableCell overflow="nowrap" className="text-right">
                               <div className="flex items-center justify-end gap-2">
                                 <Button
                                   size="sm"
                                   onClick={() => handleDuplicateArchivedJob(aj)}
                                   disabled={isActionLoading}
-                                  className="h-8 text-xs font-semibold bg-[#2196F3] hover:bg-[#1976D2] text-white gap-1.5 cursor-pointer shadow-2xs"
+                                  className="h-8 text-sm font-semibold bg-primary hover:bg-primary/90 text-white gap-1.5 cursor-pointer shadow-2xs"
                                 >
                                   <Copy className="w-3.5 h-3.5" />
                                   Duplicate as New Opening
@@ -812,7 +813,7 @@ export function RecruiterPortal({
                                   variant="outline"
                                   onClick={() => handleRestoreArchivedJob(aj)}
                                   disabled={isActionLoading}
-                                  className="h-8 text-xs font-semibold text-slate-700 border-slate-200 hover:bg-slate-50 cursor-pointer"
+                                  className="h-8 text-sm font-semibold text-slate-700 border-slate-200 hover:bg-slate-50 cursor-pointer"
                                 >
                                   <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
                                   Restore
@@ -840,38 +841,38 @@ export function RecruiterPortal({
                 All Received Candidate Applications
               </h2>
               {anonymize && (
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-[11px] font-semibold bg-blue-50 text-[#1976D2] border border-blue-100">
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-sm font-semibold bg-blue-50 text-primary border border-blue-100">
                   Demographics Masked
                 </span>
               )}
             </div>
-            <p className="text-xs sm:text-sm text-slate-500">
+            <p className="text-sm sm:text-sm text-slate-500">
               Cross-job applicant repository with instant AI match verification and candidate contact info.
             </p>
           </div>
 
           <div className="relative w-full sm:w-80">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
+            <Input
               type="text"
               placeholder="Search candidate, email, job..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-200 text-xs sm:text-sm bg-slate-50/50 focus:bg-white focus:outline-none focus:border-[#2196F3] focus:ring-4 focus:ring-[#2196F3]/15 transition-all text-slate-900 placeholder:text-slate-400"
+              className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-200 text-sm sm:text-sm bg-slate-50/50 focus:bg-white focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/15 transition-all text-slate-900 placeholder:text-slate-400"
             />
           </div>
         </div>
 
         <div className="overflow-x-auto">
-          <Table>
+          <Table density="compact">
             <TableHeader className="bg-slate-50/80">
               <TableRow>
-                <TableHead className="text-xs font-bold text-slate-700 w-[120px]">Candidate ID</TableHead>
-                <TableHead className="text-xs font-bold text-slate-700">Applicant &amp; Contact</TableHead>
-                <TableHead className="text-xs font-bold text-slate-700">Applied Position</TableHead>
-                <TableHead className="text-xs font-bold text-slate-700 text-center w-[140px]">AI Match Score</TableHead>
-                <TableHead className="text-xs font-bold text-slate-700 text-center w-[140px]">Status</TableHead>
-                <TableHead className="text-xs font-bold text-slate-700 text-right w-[140px]">Action</TableHead>
+                <TableHead size="fit" className="text-sm font-bold text-slate-700">Candidate ID</TableHead>
+                <TableHead size="fill" className="text-sm font-bold text-slate-700">Applicant &amp; Contact</TableHead>
+                <TableHead size="wide" className="text-sm font-bold text-slate-700">Applied Position</TableHead>
+                <TableHead size="fit" className="text-center text-sm font-bold text-slate-700">AI Match Score</TableHead>
+                <TableHead size="fit" className="text-center text-sm font-bold text-slate-700">Status</TableHead>
+                <TableHead size="fit" className="text-right text-sm font-bold text-slate-700">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -915,33 +916,44 @@ export function RecruiterPortal({
                         }
                       }}
                     >
-                      <TableCell className="font-mono font-bold text-[#1976D2] text-xs">
+                      <TableCell overflow="nowrap" className="font-bold text-primary text-sm">
                         {app.candidate_code}
                       </TableCell>
 
-                      <TableCell>
-                        <div className="font-bold text-slate-900 text-sm">
+                      <TableCell className="max-w-0">
+                        <div
+                          className="font-bold text-slate-900 text-sm truncate"
+                          title={anonymize ? "Demographics Masked" : app.applicant_name}
+                        >
                           {anonymize ? "Demographics Masked" : app.applicant_name}
                         </div>
-                        <div className="text-xs text-slate-500 font-mono mt-0.5 flex flex-wrap gap-2">
-                          <span>{anonymize ? "hidden@email.com" : app.email}</span>
-                          {app.phone && <span>&bull; {anonymize ? "+63 ••• ••• ••••" : app.phone}</span>}
+                        <div
+                          className="text-sm text-slate-500 mt-0.5 flex flex-wrap gap-2 truncate select-text"
+                          onClick={(e) => e.stopPropagation()}
+                          title={`${anonymize ? "hidden@email.com" : app.email} • ${anonymize ? "+63 ••• ••• ••••" : app.phone || ""}`}
+                        >
+                          <span className="truncate">{anonymize ? "hidden@email.com" : app.email}</span>
+                          {app.phone && <span className="whitespace-nowrap">&bull; {anonymize ? "+63 ••• ••• ••••" : app.phone}</span>}
                         </div>
                       </TableCell>
 
-                      <TableCell>
-                        <div className="font-semibold text-slate-900 text-sm">{app.job_title}</div>
-                        <div className="text-xs text-slate-500">{app.job_department}</div>
+                      <TableCell className="max-w-0">
+                        <div className="font-semibold text-slate-900 text-sm truncate" title={app.job_title}>
+                          {app.job_title}
+                        </div>
+                        <div className="text-sm text-slate-500 truncate" title={app.job_department}>
+                          {app.job_department}
+                        </div>
                       </TableCell>
 
-                      <TableCell className="text-center">
+                      <TableCell overflow="nowrap" className="text-center">
                         {app.match_result ? (
                           <span
-                            className={`inline-block font-mono font-bold text-xs px-2.5 py-1 rounded-lg border tabular-nums ${
+                            className={`inline-block font-bold text-sm px-2.5 py-0.5 rounded-lg border tabular-nums ${
                               score >= 85
                                 ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                                 : score >= 70
-                                ? "bg-blue-50 text-[#1976D2] border-blue-200"
+                                ? "bg-blue-50 text-primary border-blue-200"
                                 : score >= 50
                                 ? "bg-amber-50 text-amber-800 border-amber-200"
                                 : "bg-slate-100 text-slate-700 border-slate-200"
@@ -950,22 +962,23 @@ export function RecruiterPortal({
                             {score}%
                           </span>
                         ) : (
-                          <span className="text-slate-400 text-xs font-mono">Processing...</span>
+                          <span className="text-slate-400 text-sm ">Processing...</span>
                         )}
                       </TableCell>
 
-                      <TableCell className="text-center">
-                        <span className={`inline-block text-xs font-semibold px-2.5 py-1 rounded-lg border ${getStatusBadgeClass(app.status)}`}>
+                      <TableCell overflow="nowrap" className="text-center">
+                        <span className={`inline-block text-sm font-semibold px-2 py-0.5 rounded-md border whitespace-nowrap ${getStatusBadgeClass(app.status)}`}>
                           {app.status}
                         </span>
                       </TableCell>
 
-                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                      <TableCell overflow="nowrap" className="text-right" onClick={(e) => e.stopPropagation()}>
                         <Button
                           variant="outline"
                           size="sm"
                           onClick={() => openAnalysis(app)}
-                          className="text-xs font-semibold h-8 px-3 rounded-lg border-blue-200 bg-blue-50/50 hover:bg-[#2196F3] hover:text-white hover:border-[#2196F3] text-[#1976D2] cursor-pointer transition-all"
+                          className="text-sm font-semibold h-8 px-2.5 rounded-lg border-blue-200 bg-blue-50/50 hover:bg-primary hover:text-white hover:border-primary text-primary cursor-pointer transition-all"
+                          title="View Profile"
                         >
                           View Profile
                         </Button>

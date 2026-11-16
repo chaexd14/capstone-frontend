@@ -1,31 +1,39 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useLayoutEffect } from "react";
+import React, {
+  useState,
+  useEffect,
+  useRef,
+  useLayoutEffect,
+  useCallback,
+} from "react";
 import {
   FileText,
-  ShieldCheck,
-  Download,
   ExternalLink,
-  RotateCcw,
   Maximize2,
   Minimize2,
-  Copy,
-  Check,
-  AlertCircle,
-  Loader2,
   ZoomIn,
   ZoomOut,
+  RotateCcw,
 } from "lucide-react";
 import { Application } from "@/types/application";
 import {
-  downloadApiFile,
   fetchApiBlob,
   fetchResumePreview,
   ResumePreviewPage,
 } from "@/lib/api";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { toast } from "@/components/ui/sonner";
+import { Button } from "@/components/ui/button";
+import { ButtonGroup } from "@/components/ui/button-group";
+import { ContextualLoading } from "@/components/ui/contextual-loading";
+import { EmptyState } from "@/components/ui/feedback";
+import { FormAlertNote } from "@/components/ui/form-error";
+import { IconButton } from "@/components/ui/icon-button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface CandidateResumePreviewProps {
   application: Application;
@@ -34,13 +42,20 @@ interface CandidateResumePreviewProps {
   className?: string;
 }
 
-function formatFileSize(bytes?: number): string {
-  if (!bytes || bytes <= 0) return "";
-  if (bytes < 1024) return `${bytes} B`;
-  const kb = bytes / 1024;
-  if (kb < 1024) return `${Math.round(kb)} KB`;
-  const mb = kb / 1024;
-  return `${mb.toFixed(1)} MB`;
+const MIN_ZOOM = 75;
+const MAX_ZOOM = 200;
+const ZOOM_STEP = 15;
+const DOUBLE_CLICK_ZOOM = 145;
+const DRAG_THRESHOLD_PX = 3;
+
+function clampZoom(value: number): number {
+  return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.round(value)));
+}
+
+function getTouchDistance(touches: TouchList): number {
+  const dx = touches[0].clientX - touches[1].clientX;
+  const dy = touches[0].clientY - touches[1].clientY;
+  return Math.hypot(dx, dy);
 }
 
 function getFileFormatInfo(filename?: string, mimeType?: string): {
@@ -91,7 +106,7 @@ function renderFormattedDocumentLines(rawText: string) {
       return (
         <h4
           key={idx}
-          className="text-xs font-bold text-slate-900 tracking-wider uppercase pt-4 pb-1.5 mt-2 border-b border-slate-200 first:mt-0 first:pt-0"
+          className="mt-2 border-b border-border pb-1.5 pt-4 text-sm font-bold uppercase tracking-wider text-foreground first:mt-0 first:pt-0"
         >
           {line.replace(/:$/, "")}
         </h4>
@@ -103,9 +118,12 @@ function renderFormattedDocumentLines(rawText: string) {
       return (
         <div
           key={idx}
-          className="flex items-start gap-2.5 pl-2 py-0.5 text-xs sm:text-[13px] text-slate-700 leading-relaxed"
+          className="flex items-start gap-2.5 py-0.5 pl-2 text-sm leading-relaxed text-foreground"
         >
-          <span className="w-1.5 h-1.5 rounded-full bg-slate-400 mt-2 shrink-0" />
+          <span
+            className="mt-2 size-1.5 shrink-0 rounded-full bg-muted-foreground"
+            aria-hidden="true"
+          />
           <span className="flex-1 break-words">{bulletMatch[2]}</span>
         </div>
       );
@@ -114,7 +132,7 @@ function renderFormattedDocumentLines(rawText: string) {
     return (
       <p
         key={idx}
-        className="text-xs sm:text-[13px] text-slate-800 leading-relaxed py-0.5 break-words"
+        className="break-words py-0.5 text-sm leading-relaxed text-foreground"
       >
         {line}
       </p>
@@ -133,37 +151,94 @@ export function CandidateResumePreview({
   const isPurged = Boolean(resume?.is_purged);
   const extractedText = resume?.extracted_text;
 
-  const [previewTab, setPreviewTab] = useState<"original" | "redacted">("original");
-  const [downloading, setDownloading] = useState<boolean>(false);
-  const [copiedRedacted, setCopiedRedacted] = useState<boolean>(false);
   const [retryCount, setRetryCount] = useState<number>(0);
   const [zoomPercent, setZoomPercent] = useState<number>(100);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+
   const pdfStageRef = useRef<HTMLDivElement | null>(null);
-  const zoomAnchorRef = useRef<{ centerRatioY: number; pending: boolean }>({
-    centerRatioY: 0.5,
+  const zoomPercentRef = useRef<number>(100);
+  const zoomAnchorRef = useRef<{
+    ratioX: number;
+    ratioY: number;
+    vpX: number;
+    vpY: number;
+    hasViewportOffset: boolean;
+    pending: boolean;
+  }>({
+    ratioX: 0.5,
+    ratioY: 0.5,
+    vpX: 0,
+    vpY: 0,
+    hasViewportOffset: false,
     pending: false,
   });
 
-  const handleZoomChange = (nextZoom: number) => {
-    const clamped = Math.max(75, Math.min(175, nextZoom));
-    if (clamped === zoomPercent) return;
-    const el = pdfStageRef.current;
-    if (el && el.scrollHeight > 0) {
-      zoomAnchorRef.current = {
-        centerRatioY: (el.scrollTop + el.clientHeight / 2) / el.scrollHeight,
-        pending: true,
-      };
-    }
-    setZoomPercent(clamped);
-  };
+  const dragRef = useRef<{
+    active: boolean;
+    moved: boolean;
+    pointerId: number | null;
+    startX: number;
+    startY: number;
+    startScrollLeft: number;
+    startScrollTop: number;
+  }>({
+    active: false,
+    moved: false,
+    pointerId: null,
+    startX: 0,
+    startY: 0,
+    startScrollLeft: 0,
+    startScrollTop: 0,
+  });
+  const suppressNextDblClickRef = useRef<boolean>(false);
+
+  const pinchRef = useRef<{
+    active: boolean;
+    initialDistance: number;
+    initialZoom: number;
+  }>({
+    active: false,
+    initialDistance: 0,
+    initialZoom: 100,
+  });
+
+  useEffect(() => {
+    zoomPercentRef.current = zoomPercent;
+  }, [zoomPercent]);
+
+  const applyAnchoredZoom = useCallback(
+    (nextZoom: number, clientX?: number, clientY?: number) => {
+      const clamped = clampZoom(nextZoom);
+      if (clamped === zoomPercentRef.current) return;
+
+      const el = pdfStageRef.current;
+      if (el && el.scrollWidth > 0 && el.scrollHeight > 0) {
+        const rect = el.getBoundingClientRect();
+        const hasPoint = clientX !== undefined && clientY !== undefined;
+        const vpX = hasPoint ? clientX - rect.left : el.clientWidth / 2;
+        const vpY = hasPoint ? clientY - rect.top : el.clientHeight / 2;
+        zoomAnchorRef.current = {
+          ratioX: (el.scrollLeft + vpX) / el.scrollWidth,
+          ratioY: (el.scrollTop + vpY) / el.scrollHeight,
+          vpX,
+          vpY,
+          hasViewportOffset: true,
+          pending: true,
+        };
+      }
+
+      zoomPercentRef.current = clamped;
+      setZoomPercent(clamped);
+    },
+    []
+  );
 
   const formatInfo = getFileFormatInfo(resume?.original_filename, resume?.file_type);
-  const fileSizeStr = formatFileSize(resume?.file_size);
 
   const shouldFetchPreview = Boolean(
     resumeId &&
-      !isPurged &&
-      (formatInfo.ext === "pdf" || (formatInfo.ext === "txt" && !extractedText))
+    !isPurged &&
+    (formatInfo.ext === "pdf" || (formatInfo.ext === "txt" && !extractedText))
   );
 
   const requestKey = `${resumeId ?? "none"}:${formatInfo.ext}:${retryCount}`;
@@ -276,36 +351,150 @@ export function CandidateResumePreview({
     if (!el || !zoomAnchorRef.current.pending) return;
     zoomAnchorRef.current.pending = false;
 
-    // Keep horizontal scroll centered in the middle of the page
-    el.scrollLeft = Math.max(0, (el.scrollWidth - el.clientWidth) / 2);
+    const { ratioX, ratioY, vpX, vpY, hasViewportOffset } = zoomAnchorRef.current;
+    const offsetX = hasViewportOffset ? vpX : el.clientWidth / 2;
+    const offsetY = hasViewportOffset ? vpY : el.clientHeight / 2;
 
-    // Keep vertical scroll centered on the middle of the current viewport
-    el.scrollTop = Math.max(
-      0,
-      zoomAnchorRef.current.centerRatioY * el.scrollHeight - el.clientHeight / 2
-    );
+    el.scrollLeft = Math.max(0, ratioX * el.scrollWidth - offsetX);
+    el.scrollTop = Math.max(0, ratioY * el.scrollHeight - offsetY);
   }, [zoomPercent, pdfPages.length]);
 
-  const handleDownload = async () => {
-    if (!resume) return;
-    setDownloading(true);
+  useEffect(() => {
+    const el = pdfStageRef.current;
+    if (!el || pdfPages.length === 0) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const delta = e.deltaY < 0 ? 10 : -10;
+      applyAnchoredZoom(zoomPercentRef.current + delta, e.clientX, e.clientY);
+    };
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        pinchRef.current = {
+          active: true,
+          initialDistance: getTouchDistance(e.touches),
+          initialZoom: zoomPercentRef.current,
+        };
+      } else {
+        pinchRef.current.active = false;
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!pinchRef.current.active || e.touches.length !== 2) return;
+      if (pinchRef.current.initialDistance <= 0) return;
+      e.preventDefault();
+      const dist = getTouchDistance(e.touches);
+      const nextZoom =
+        pinchRef.current.initialZoom * (dist / pinchRef.current.initialDistance);
+      const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      applyAnchoredZoom(nextZoom, midX, midY);
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) {
+        pinchRef.current.active = false;
+      }
+    };
+
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    el.addEventListener("touchstart", handleTouchStart, { passive: true });
+    el.addEventListener("touchmove", handleTouchMove, { passive: false });
+    el.addEventListener("touchend", handleTouchEnd, { passive: true });
+    el.addEventListener("touchcancel", handleTouchEnd, { passive: true });
+
+    return () => {
+      el.removeEventListener("wheel", handleWheel);
+      el.removeEventListener("touchstart", handleTouchStart);
+      el.removeEventListener("touchmove", handleTouchMove);
+      el.removeEventListener("touchend", handleTouchEnd);
+      el.removeEventListener("touchcancel", handleTouchEnd);
+    };
+  }, [pdfPages.length, applyAnchoredZoom]);
+
+  const handleStagePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType === "touch" || e.button !== 0) return;
+    const el = e.currentTarget;
+    el.focus({ preventScroll: true });
+
+    dragRef.current = {
+      active: true,
+      moved: false,
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      startScrollLeft: el.scrollLeft,
+      startScrollTop: el.scrollTop,
+    };
+
     try {
-      await downloadApiFile(
-        `/resumes/${resume.id}/download/`,
-        resume.original_filename || `${application.candidate_code}_resume`,
-        { redirect: "error" }
-      );
+      el.setPointerCapture(e.pointerId);
     } catch {
-      toast.error("Download Failed", {
-        description: "Unable to download this resume file. Please try again.",
-      });
-    } finally {
-      setDownloading(false);
+      // Ignore environments where pointer capture is unavailable
     }
   };
 
+  const handleStagePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag.active || drag.pointerId !== e.pointerId) return;
+
+    const dx = e.clientX - drag.startX;
+    const dy = e.clientY - drag.startY;
+
+    if (!drag.moved) {
+      if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
+      drag.moved = true;
+      setIsDragging(true);
+    }
+
+    e.currentTarget.scrollLeft = drag.startScrollLeft - dx;
+    e.currentTarget.scrollTop = drag.startScrollTop - dy;
+  };
+
+  const handleStagePointerEnd = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag.active || drag.pointerId !== e.pointerId) return;
+
+    if (drag.moved) {
+      suppressNextDblClickRef.current = true;
+      window.setTimeout(() => {
+        suppressNextDblClickRef.current = false;
+      }, 250);
+    }
+
+    try {
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    } catch {
+      // Ignore release errors when pointer capture already ended
+    }
+
+    dragRef.current = {
+      active: false,
+      moved: false,
+      pointerId: null,
+      startX: 0,
+      startY: 0,
+      startScrollLeft: 0,
+      startScrollTop: 0,
+    };
+    setIsDragging(false);
+  };
+
+  const handleStageDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (suppressNextDblClickRef.current) return;
+    const targetZoom = zoomPercent > 100 ? 100 : DOUBLE_CLICK_ZOOM;
+    applyAnchoredZoom(targetZoom, e.clientX, e.clientY);
+  };
+
+  const documentText = resume?.extracted_text || fallbackText || "";
+
   const handleOpenInNewTab = () => {
-    if (previewTab === "original" && pdfPages.length > 0) {
+    if (pdfPages.length > 0) {
       const safeTitle = (
         resume?.original_filename || `${application.candidate_code} Resume`
       ).replace(/[<>&"']/g, "");
@@ -323,388 +512,253 @@ export function CandidateResumePreview({
       return;
     }
 
-    const textToOpen =
-      previewTab === "redacted"
-        ? resume?.redacted_text || resume?.extracted_text || ""
-        : resume?.extracted_text || fallbackText || "";
-
-    if (textToOpen) {
-      const textBlob = new Blob([textToOpen], { type: "text/plain;charset=utf-8" });
+    if (documentText) {
+      const textBlob = new Blob([documentText], { type: "text/plain;charset=utf-8" });
       const url = URL.createObjectURL(textBlob);
       window.open(url, "_blank", "noopener,noreferrer");
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
     }
   };
 
-  const handleCopyText = () => {
-    const text =
-      previewTab === "redacted"
-        ? resume?.redacted_text || resume?.extracted_text || ""
-        : resume?.extracted_text || fallbackText || "";
-    if (!text) return;
-    navigator.clipboard.writeText(text);
-    setCopiedRedacted(true);
-    toast.success("Resume Text Copied", {
-      description: `${
-        previewTab === "redacted" ? "Redacted" : "Extracted"
-      } resume text copied to clipboard.`,
-    });
-    window.setTimeout(() => setCopiedRedacted(false), 2000);
-  };
-
-  const documentText = resume?.extracted_text || fallbackText || "";
-  const redactedText =
-    resume?.redacted_text ||
-    resume?.extracted_text ||
-    "No redacted text available for this candidate.";
+  const hasPdfToolbarControls = Boolean(
+    resume && !isPurged && formatInfo.ext === "pdf" && pdfPages.length > 0
+  );
+  const canOpenNewTab = Boolean(
+    resume && !isPurged && (pdfPages.length > 0 || documentText)
+  );
 
   return (
     <div
-      className={`flex flex-col h-full min-h-0 bg-slate-100/80 border-r border-slate-200/90 overflow-hidden ${className}`}
+      className={`flex h-full min-h-0 flex-col overflow-hidden bg-muted/40 ${className}`}
     >
-      {/* 1. Resume Preview Header Toolbar */}
-      <div className="px-4 py-2.5 bg-white border-b border-slate-200/90 flex flex-wrap items-center justify-between gap-2 shrink-0">
-        {/* Left: Document Identity & Format Badge */}
-        <div className="flex items-center gap-2 min-w-0">
-          <Badge
-            variant="outline"
-            className="font-mono font-bold text-[10px] px-2 py-0.5 text-[#1976D2] border-blue-200 bg-blue-50/70 shrink-0"
-          >
-            {formatInfo.label}
-          </Badge>
+      {/* Single Clean Resume Header Bar */}
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border bg-card px-4 py-2.5">
+        <span
+          className="max-w-[220px] truncate text-sm font-semibold text-foreground sm:max-w-[340px]"
+          title={resume?.original_filename || "Applicant Resume"}
+        >
+          {resume?.original_filename || `${application.candidate_code} Resume`}
+        </span>
 
-          <span
-            className="text-xs font-bold text-slate-900 truncate max-w-[160px] sm:max-w-[220px]"
-            title={resume?.original_filename || "Applicant Resume"}
-          >
-            {resume?.original_filename || `${application.candidate_code} Resume`}
-          </span>
+        <div className="flex flex-wrap items-center gap-3">
+          {hasPdfToolbarControls || canOpenNewTab || onToggleExpand ? (
+            <ButtonGroup>
+              {hasPdfToolbarControls ? (
+                <>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <IconButton
+                        type="button"
+                        variant="outline"
+                        size="icon-sm"
+                        onClick={() => applyAnchoredZoom(zoomPercent - ZOOM_STEP)}
+                        disabled={zoomPercent <= MIN_ZOOM}
+                        label="Zoom out"
+                      >
+                        <ZoomOut />
+                      </IconButton>
+                    </TooltipTrigger>
+                    <TooltipContent>Zoom out</TooltipContent>
+                  </Tooltip>
 
-          {fileSizeStr && (
-            <span className="text-[11px] font-mono text-slate-400 tabular-nums shrink-0 hidden sm:inline">
-              ({fileSizeStr})
-            </span>
-          )}
-        </div>
-
-        {/* Right: Mode Switcher & Document Actions */}
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {/* Segmented Mode Toggle: Original vs Redacted Text */}
-          <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200/80">
-            <button
-              type="button"
-              onClick={() => setPreviewTab("original")}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all flex items-center gap-1 cursor-pointer ${
-                previewTab === "original"
-                  ? "bg-white text-slate-900 shadow-2xs"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-              title="View applicant's actual uploaded resume document"
-            >
-              <FileText className="w-3 h-3 text-[#2196F3]" />
-              <span>Actual Resume</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setPreviewTab("redacted")}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all flex items-center gap-1 cursor-pointer ${
-                previewTab === "redacted"
-                  ? "bg-white text-slate-900 shadow-2xs"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-              title="View PII-redacted text analyzed by the AI scorer"
-            >
-              <ShieldCheck className="w-3 h-3 text-emerald-600" />
-              <span>Redacted Text</span>
-            </button>
-          </div>
-
-          {/* Open in New Tab */}
-          {resume && !resume.is_purged && (pdfPages.length > 0 || documentText) && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleOpenInNewTab}
-              className="h-7.5 w-7.5 p-0 rounded-lg border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 cursor-pointer"
-              title="Open resume preview in new tab"
-              aria-label="Open resume preview in new tab"
-            >
-              <ExternalLink className="w-3.5 h-3.5" />
-            </Button>
-          )}
-
-          {/* Download Original File */}
-          {resume && !resume.is_purged && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={handleDownload}
-              disabled={downloading}
-              className="h-7.5 px-2.5 gap-1.5 rounded-lg border-slate-200 text-slate-700 hover:text-slate-900 hover:bg-slate-50 text-[11px] font-semibold cursor-pointer"
-              title="Download original resume file"
-            >
-              <Download className="w-3.5 h-3.5 text-slate-500" />
-              <span className="hidden xl:inline">
-                {downloading ? "Saving..." : "Download"}
-              </span>
-            </Button>
-          )}
-
-          {/* Expand / Restore Pane Button */}
-          {onToggleExpand && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={onToggleExpand}
-              className="h-7.5 w-7.5 p-0 rounded-lg border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 hidden lg:inline-flex items-center justify-center cursor-pointer"
-              title={
-                isExpanded
-                  ? "Restore 50/50 split view"
-                  : "Maximize resume preview pane"
-              }
-              aria-label={
-                isExpanded
-                  ? "Restore 50/50 split view"
-                  : "Maximize resume preview pane"
-              }
-            >
-              {isExpanded ? (
-                <Minimize2 className="w-3.5 h-3.5" />
-              ) : (
-                <Maximize2 className="w-3.5 h-3.5" />
-              )}
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {/* 2. Main Document Viewport */}
-      <div className="flex-1 min-h-0 relative overflow-hidden flex flex-col">
-        {!resume ? (
-          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-            <FileText className="w-8 h-8 text-slate-400 mb-2" />
-            <p className="text-sm font-bold text-slate-800">No Resume Attached</p>
-            <p className="text-xs text-slate-500 mt-1 max-w-xs">
-              This application does not have an associated resume record.
-            </p>
-          </div>
-        ) : resume.is_purged ? (
-          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center">
-            <AlertCircle className="w-8 h-8 text-amber-500 mb-2" />
-            <p className="text-sm font-bold text-slate-800">
-              Original File Purged per Retention Policy
-            </p>
-            <p className="text-xs text-slate-500 mt-1 max-w-sm">
-              The physical resume file was removed in accordance with data privacy retention rules. You can still inspect the redacted evaluation text.
-            </p>
-            {resume.redacted_text && previewTab !== "redacted" && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setPreviewTab("redacted")}
-                className="mt-4 text-xs font-semibold"
-              >
-                View Redacted Text
-              </Button>
-            )}
-          </div>
-        ) : previewTab === "redacted" ? (
-          /* REDACTED TEXT VIEWPORT */
-          <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-slate-300/80 [&::-webkit-scrollbar-thumb]:rounded-full">
-            <div className="max-w-[740px] mx-auto bg-white rounded-xl border border-slate-200/90 shadow-xs overflow-hidden">
-              <div className="px-4 py-3 bg-slate-50 border-b border-slate-200/80 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 text-xs font-semibold text-slate-800">
-                  <ShieldCheck className="w-4 h-4 text-[#1976D2] shrink-0" />
-                  <span>PII-Redacted Resume Text (Fed to AI Scorer)</span>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleCopyText}
-                  className="h-7 px-2.5 text-[11px] font-semibold gap-1.5"
-                >
-                  {copiedRedacted ? (
-                    <>
-                      <Check className="w-3 h-3 text-emerald-600" />
-                      <span className="text-emerald-700">Copied</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3 h-3 text-slate-500" />
-                      <span>Copy Text</span>
-                    </>
-                  )}
-                </Button>
-              </div>
-              <pre className="p-5 font-mono text-xs text-slate-700 whitespace-pre-wrap leading-relaxed overflow-x-auto">
-                {redactedText}
-              </pre>
-            </div>
-          </div>
-        ) : formatInfo.ext === "pdf" ? (
-          /* CSP-SAFE HIGH-DPI PDF PAGE SHEETS VIEWPORT */
-          loadingFile ? (
-            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center gap-2.5">
-              <Loader2 className="w-6 h-6 animate-spin text-[#2196F3]" />
-              <span className="text-xs font-medium text-slate-600">
-                Rendering actual PDF resume pages...
-              </span>
-            </div>
-          ) : pdfPages.length > 0 ? (
-            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-              {/* Sub-toolbar: Page Counter & Zoom Controls */}
-              <div className="px-4 py-1.5 bg-slate-200/75 border-b border-slate-300/80 flex items-center justify-between gap-2 text-xs shrink-0">
-                <span className="font-mono text-[11px] font-semibold text-slate-700 tabular-nums">
-                  {totalPageCount} {totalPageCount === 1 ? "Page" : "Pages"}
-                </span>
-
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => handleZoomChange(zoomPercent - 15)}
-                    disabled={zoomPercent <= 75}
-                    className="h-6 w-6 rounded-md bg-white border border-slate-300/90 text-slate-700 hover:bg-slate-50 disabled:opacity-40 flex items-center justify-center cursor-pointer"
-                    title="Zoom Out"
-                    aria-label="Zoom Out"
-                  >
-                    <ZoomOut className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleZoomChange(100)}
-                    className="h-6 px-2 rounded-md bg-white border border-slate-300/90 font-mono text-[11px] font-bold text-slate-800 hover:bg-slate-50 tabular-nums cursor-pointer"
-                    title="Reset Zoom to 100%"
-                  >
-                    {zoomPercent}%
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleZoomChange(zoomPercent + 15)}
-                    disabled={zoomPercent >= 175}
-                    className="h-6 w-6 rounded-md bg-white border border-slate-300/90 text-slate-700 hover:bg-slate-50 disabled:opacity-40 flex items-center justify-center cursor-pointer"
-                    title="Zoom In"
-                    aria-label="Zoom In"
-                  >
-                    <ZoomIn className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Scrollable Multi-Page Document Stage (Centered on Zoom In / Out) */}
-              <div
-                ref={pdfStageRef}
-                className="flex-1 min-h-0 overflow-auto p-3 sm:p-5 space-y-4 bg-slate-200/60 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar]:h-1.5 [&::-webkit-scrollbar-thumb]:bg-slate-300/90 [&::-webkit-scrollbar-thumb]:rounded-full"
-              >
-                {pdfPages.map((page) => (
-                  <div
-                    key={page.page_number}
-                    style={{
-                      width: `${zoomPercent}%`,
-                      maxWidth: `${Math.round(8.2 * zoomPercent)}px`,
-                    }}
-                    className="mx-auto bg-white rounded-lg border border-slate-300/80 shadow-sm overflow-hidden"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={page.data_url}
-                      width={page.width}
-                      height={page.height}
-                      alt={`Applicant resume page ${page.page_number} of ${totalPageCount}`}
-                      className="w-full h-auto block select-none"
-                    />
-                    {totalPageCount > 1 && (
-                      <div className="px-3 py-1 bg-slate-50 border-t border-slate-200/80 text-right font-mono text-[10px] font-semibold text-slate-500 tabular-nums">
-                        Page {page.page_number} of {totalPageCount}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            /* PDF Load Error -> Fallback to Formatted Document Sheet + Retry */
-            <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 space-y-4 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-slate-300/80 [&::-webkit-scrollbar-thumb]:rounded-full">
-              <div className="max-w-[740px] mx-auto p-3.5 rounded-xl bg-amber-50 border border-amber-200 flex flex-wrap items-center justify-between gap-3 text-xs text-amber-900">
-                <div className="flex items-center gap-2 min-w-0">
-                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span className="font-medium">
-                    {fileError || "Could not render PDF pages. Showing formatted resume text instead."}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => setRetryCount((c) => c + 1)}
-                    className="h-7 px-2.5 text-[11px] font-semibold bg-white border-amber-300 text-amber-900 hover:bg-amber-100/60 gap-1"
+                    onClick={() => applyAnchoredZoom(100)}
+                    title="Reset zoom to 100%"
+                    className="h-8 px-2.5 tabular-nums"
                   >
-                    <RotateCcw className="w-3 h-3" />
-                    <span>Retry PDF</span>
+                    {zoomPercent}%
                   </Button>
+
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <IconButton
+                        type="button"
+                        variant="outline"
+                        size="icon-sm"
+                        onClick={() => applyAnchoredZoom(zoomPercent + ZOOM_STEP)}
+                        disabled={zoomPercent >= MAX_ZOOM}
+                        label="Zoom in"
+                      >
+                        <ZoomIn />
+                      </IconButton>
+                    </TooltipTrigger>
+                    <TooltipContent>Zoom in</TooltipContent>
+                  </Tooltip>
+                </>
+              ) : null}
+
+              {canOpenNewTab ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <IconButton
+                      type="button"
+                      variant="outline"
+                      size="icon-sm"
+                      label="Open resume preview in new tab"
+                      onClick={handleOpenInNewTab}
+                    >
+                      <ExternalLink />
+                    </IconButton>
+                  </TooltipTrigger>
+                  <TooltipContent>Open in new tab</TooltipContent>
+                </Tooltip>
+              ) : null}
+
+              {onToggleExpand ? (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <IconButton
+                      type="button"
+                      variant="outline"
+                      size="icon-sm"
+                      onClick={onToggleExpand}
+                      label={
+                        isExpanded
+                          ? "Restore split view"
+                          : "Expand resume preview"
+                      }
+                      className="hidden lg:inline-flex"
+                    >
+                      {isExpanded ? <Minimize2 /> : <Maximize2 />}
+                    </IconButton>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {isExpanded ? "Restore split view" : "Expand resume pane"}
+                  </TooltipContent>
+                </Tooltip>
+              ) : null}
+            </ButtonGroup>
+          ) : null}
+        </div>
+      </div>
+
+      {/* Main Document Viewport */}
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+        {!resume ? (
+          <div className="flex flex-1 items-center justify-center p-6">
+            <EmptyState
+              title="No resume attached"
+              description="This application does not have an associated resume record."
+            />
+          </div>
+        ) : isPurged ? (
+          <div className="flex flex-1 items-center justify-center p-6">
+            <EmptyState
+              title="Original resume file removed per retention policy"
+              description="The physical resume file was removed in accordance with data privacy retention rules."
+            />
+          </div>
+        ) : formatInfo.ext === "pdf" ? (
+          loadingFile ? (
+            <div className="flex flex-1 items-center justify-center p-8">
+              <ContextualLoading label="Rendering resume pages" className="min-h-0" />
+            </div>
+          ) : pdfPages.length > 0 ? (
+            <div
+              ref={pdfStageRef}
+              tabIndex={0}
+              aria-label="Resume document viewer"
+              onPointerDown={handleStagePointerDown}
+              onPointerMove={handleStagePointerMove}
+              onPointerUp={handleStagePointerEnd}
+              onPointerCancel={handleStagePointerEnd}
+              onDoubleClick={handleStageDoubleClick}
+              className={`min-h-0 flex-1 space-y-4 overflow-auto overscroll-contain touch-pan-x touch-pan-y bg-muted/60 p-3 select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25 sm:p-5 ${isDragging ? "cursor-grabbing" : "cursor-grab"
+                }`}
+            >
+              {pdfPages.map((page) => (
+                <div
+                  key={page.page_number}
+                  style={{
+                    width:
+                      zoomPercent <= 100
+                        ? `${zoomPercent}%`
+                        : `${Math.round(9.2 * zoomPercent)}px`,
+                    maxWidth: zoomPercent <= 100 ? "820px" : "none",
+                  }}
+                  className="mx-auto overflow-hidden rounded-xl border border-border bg-card shadow-xs"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={page.data_url}
+                    width={page.width}
+                    height={page.height}
+                    draggable={false}
+                    alt={`Applicant resume page ${page.page_number} of ${totalPageCount}`}
+                    className="pointer-events-none block h-auto w-full select-none"
+                  />
+                  {totalPageCount > 1 ? (
+                    <div className="border-t border-border bg-muted/40 px-3 py-1.5 text-right text-sm font-medium tabular-nums text-muted-foreground">
+                      Page {page.page_number} of {totalPageCount}
+                    </div>
+                  ) : null}
                 </div>
+              ))}
+            </div>
+          ) : (
+            <div className="min-h-0 flex-1 space-y-4 overflow-auto overscroll-contain touch-pan-x touch-pan-y p-4 sm:p-6">
+              <div className="mx-auto max-w-[740px]">
+                <FormAlertNote
+                  variant="warning"
+                  title="PDF preview unavailable"
+                  description={
+                    fileError ||
+                    "Could not render PDF pages. Showing formatted resume text instead."
+                  }
+                  action={
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setRetryCount((c) => c + 1)}
+                    >
+                      <RotateCcw aria-hidden="true" />
+                      Retry PDF
+                    </Button>
+                  }
+                />
               </div>
 
               {documentText ? (
-                <div className="max-w-[740px] mx-auto bg-white rounded-xl border border-slate-200/90 shadow-sm p-6 sm:p-8">
+                <div className="mx-auto max-w-[740px] rounded-xl border border-border bg-card p-6 shadow-xs sm:p-8">
                   {renderFormattedDocumentLines(documentText)}
                 </div>
               ) : null}
             </div>
           )
         ) : (
-          /* DOCX / TXT FORMATTED A4 PAPER-SHEET VIEWPORT */
-          <div className="flex-1 min-h-0 overflow-y-auto p-4 sm:p-6 space-y-3 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-slate-300/80 [&::-webkit-scrollbar-thumb]:rounded-full">
-            {/* Top Format Helper Strip */}
-            <div className="max-w-[740px] mx-auto px-4 py-2.5 rounded-xl bg-white border border-slate-200/90 shadow-2xs flex flex-wrap items-center justify-between gap-2 text-xs">
-              <div className="flex items-center gap-2 text-slate-600">
-                <FileText className="w-3.5 h-3.5 text-[#2196F3] shrink-0" />
-                <span>
-                  Formatted document preview from uploaded{" "}
-                  <strong className="text-slate-900 font-semibold">
-                    .{formatInfo.ext.toUpperCase()}
-                  </strong>{" "}
-                  resume
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={handleDownload}
-                disabled={downloading}
-                className="text-xs font-semibold text-[#1976D2] hover:text-[#2196F3] underline underline-offset-2 cursor-pointer"
-              >
-                {downloading ? "Downloading..." : `Download Original .${formatInfo.ext.toUpperCase()}`}
-              </button>
+          <div className="min-h-0 flex-1 space-y-4 overflow-auto overscroll-contain touch-pan-x touch-pan-y p-4 sm:p-6">
+            <div className="mx-auto flex max-w-[740px] items-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-sm text-muted-foreground shadow-xs">
+              <FileText className="size-4 shrink-0 text-primary" aria-hidden="true" />
+              <span>
+                Formatted preview from uploaded{" "}
+                <strong className="font-semibold text-foreground">
+                  .{formatInfo.ext.toUpperCase()}
+                </strong>{" "}
+                resume
+              </span>
             </div>
 
             {loadingFile ? (
-              <div className="flex flex-col items-center justify-center py-16 text-center gap-2.5">
-                <Loader2 className="w-6 h-6 animate-spin text-[#2196F3]" />
-                <span className="text-xs font-medium text-slate-600">
-                  Rendering document preview...
-                </span>
-              </div>
+              <ContextualLoading label="Rendering document preview" className="min-h-64" />
             ) : documentText ? (
-              <div className="max-w-[740px] mx-auto bg-white rounded-xl border border-slate-200/90 shadow-sm p-6 sm:p-10 min-h-[640px]">
+              <div className="mx-auto min-h-[640px] max-w-[740px] rounded-xl border border-border bg-card p-6 shadow-xs sm:p-10">
                 {renderFormattedDocumentLines(documentText)}
               </div>
             ) : (
-              <div className="max-w-[740px] mx-auto bg-white rounded-xl border border-slate-200/90 p-12 text-center space-y-2">
-                <p className="text-sm font-bold text-slate-800">
-                  Document Preview Unavailable
-                </p>
-                <p className="text-xs text-slate-500 max-w-xs mx-auto">
-                  {resume.processing_status === "PENDING" ||
-                  resume.processing_status === "PROCESSING"
-                    ? "This resume is currently being parsed by the document pipeline."
-                    : "Download the original file above to view it in your desktop application."}
-                </p>
+              <div className="mx-auto max-w-[740px] rounded-xl border border-dashed border-border bg-card">
+                <EmptyState
+                  title="Document preview unavailable"
+                  description={
+                    resume.processing_status === "PENDING" ||
+                      resume.processing_status === "PROCESSING"
+                      ? "This resume is currently being parsed by the document pipeline."
+                      : "Use Download resume below to view the original file on your device."
+                  }
+                />
               </div>
             )}
           </div>
