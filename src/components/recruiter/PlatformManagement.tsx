@@ -154,9 +154,28 @@ export function PlatformManagement() {
           closeForm();
           return;
         }
+        const firstName = String(values.get("first_name") ?? "").trim();
+        const lastName = String(values.get("last_name") ?? "").trim();
+        const prevFirstName = (editingStaff.first_name ?? "").trim();
+        const prevLastName = (editingStaff.last_name ?? "").trim();
+        if (prevFirstName && !firstName) {
+          setError("First name cannot be empty.");
+          return;
+        }
+        if (prevLastName && !lastName) {
+          setError("Last name cannot be empty.");
+          return;
+        }
         const targetCompany = Number(values.get("company")) || null;
         const active = values.get("active") === "true";
-        const changes = {
+        const changes: {
+          first_name?: string;
+          last_name?: string;
+          company?: number | null;
+          active?: boolean;
+        } = {
+          ...(firstName !== prevFirstName && { first_name: firstName }),
+          ...(lastName !== prevLastName && { last_name: lastName }),
           ...(targetCompany !== editingStaff.company && { company: targetCompany }),
           ...(active !== editingStaff.active && { active }),
         };
@@ -198,7 +217,15 @@ export function PlatformManagement() {
               : items
           );
         }
-        setNotice("Staff access updated.");
+        const nameChanged = "first_name" in changes || "last_name" in changes;
+        const accessChanged = "company" in changes || "active" in changes;
+        setNotice(
+          nameChanged && accessChanged
+            ? "Recruiter details updated."
+            : nameChanged
+              ? "Recruiter name updated."
+              : "Staff access updated."
+        );
         closeForm();
         return;
       } else if (company) {
@@ -318,9 +345,28 @@ export function PlatformManagement() {
                   </>
                 ) : editingStaff ? (
                   <>
-                    <div>
-                      <p className="font-medium text-foreground">{[editingStaff.first_name, editingStaff.last_name].filter(Boolean).join(" ") || "Recruiter"}</p>
-                      <p className="text-sm text-muted-foreground">{editingStaff.email}</p>
+                    <p className="text-sm text-muted-foreground">{editingStaff.email}</p>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="staff-edit-first-name">First name</Label>
+                        <Input
+                          id="staff-edit-first-name"
+                          name="first_name"
+                          maxLength={150}
+                          autoComplete="given-name"
+                          defaultValue={editingStaff.first_name}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="staff-edit-last-name">Last name</Label>
+                        <Input
+                          id="staff-edit-last-name"
+                          name="last_name"
+                          maxLength={150}
+                          autoComplete="family-name"
+                          defaultValue={editingStaff.last_name}
+                        />
+                      </div>
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="staff-company">Company</Label>
