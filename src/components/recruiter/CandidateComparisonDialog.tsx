@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import { Award, CheckCircle2, Scale, Star, XCircle } from "lucide-react";
-import { fetchApi } from "@/lib/api";
+import { useRecruiter } from "@/context/RecruiterContext";
 import { getCandidateDisplayName } from "@/lib/candidate-identity";
 import { Application, ApplicationStatus } from "@/types/application";
 import { Badge } from "@/components/ui/badge";
@@ -90,7 +90,7 @@ export function CandidateComparisonDialog({
   onApplicationUpdated,
   onReviewCandidate,
 }: CandidateComparisonDialogProps) {
-  const [updatingId, setUpdatingId] = useState<number | null>(null);
+  const { updateApplicationStatus, pendingApplicationIds } = useRecruiter();
   const compared = candidates.slice(0, 4);
 
   const allRequiredSkills = Array.from(
@@ -103,22 +103,18 @@ export function CandidateComparisonDialog({
     )
   ).slice(0, 8);
 
-  const updateStage = async (app: Application, status: ApplicationStatus) => {
-    setUpdatingId(app.id);
-    try {
-      const updated = await fetchApi<Application>(`/applications/${app.id}/status/`, {
-        method: "PATCH",
-        body: JSON.stringify({ status }),
+  const updateStage = (app: Application, status: ApplicationStatus) => {
+    if (app.status === status) return;
+    onApplicationUpdated({ ...app, status });
+    toast.success(`${app.candidate_code} moved to ${status.replaceAll("_", " ").toLowerCase()}`);
+    void updateApplicationStatus(app, status)
+      .then((confirmed) => onApplicationUpdated(confirmed))
+      .catch((error) => {
+        onApplicationUpdated(app);
+        toast.error("Could not update status", {
+          description: error instanceof Error ? error.message : "Try again.",
+        });
       });
-      onApplicationUpdated(updated);
-      toast.success(`${app.candidate_code} moved to ${status.replaceAll("_", " ").toLowerCase()}`);
-    } catch (error) {
-      toast.error("Could not update status", {
-        description: error instanceof Error ? error.message : "Try again.",
-      });
-    } finally {
-      setUpdatingId(null);
-    }
   };
 
   return (
@@ -298,8 +294,8 @@ export function CandidateComparisonDialog({
                         <Button
                           type="button"
                           size="sm"
-                          disabled={updatingId === app.id || app.status === "SHORTLISTED"}
-                          onClick={() => void updateStage(app, "SHORTLISTED")}
+                          disabled={pendingApplicationIds.has(app.id) || app.status === "SHORTLISTED"}
+                          onClick={() => updateStage(app, "SHORTLISTED")}
                         >
                           Shortlist
                         </Button>
@@ -307,8 +303,8 @@ export function CandidateComparisonDialog({
                           type="button"
                           variant="outline"
                           size="sm"
-                          disabled={updatingId === app.id || app.status === "INTERVIEW"}
-                          onClick={() => void updateStage(app, "INTERVIEW")}
+                          disabled={pendingApplicationIds.has(app.id) || app.status === "INTERVIEW"}
+                          onClick={() => updateStage(app, "INTERVIEW")}
                         >
                           Interview
                         </Button>

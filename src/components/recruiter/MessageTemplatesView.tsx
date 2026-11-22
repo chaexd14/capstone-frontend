@@ -10,7 +10,11 @@ import {
   Copy,
   AlertCircle,
 } from "lucide-react";
-import { fetchApi } from "@/lib/api";
+import {
+  fetchApi,
+  fetchCommunicationTemplatesCached,
+  invalidateCommunicationTemplatesCache,
+} from "@/lib/api";
 import { CommunicationTemplate, TemplateStage } from "@/types/application";
 import { Button } from "@/components/ui/button";
 import {
@@ -74,20 +78,12 @@ export function MessageTemplatesView() {
   const loadTemplates = async () => {
     setLoading(true);
     try {
-      const data = await fetchApi<CommunicationTemplate[]>("/communication-templates/");
+      const data = await fetchCommunicationTemplatesCached();
       setTemplates(data);
-    } catch {
-      // Fallback to legacy path if needed
-      try {
-        const fallbackData = await fetchApi<CommunicationTemplate[]>(
-          "/applications/communication-templates/"
-        );
-        setTemplates(fallbackData);
-      } catch (err) {
-        toast.error("Failed to load message templates", {
-          description: err instanceof Error ? err.message : "Please check your network connection.",
-        });
-      }
+    } catch (err) {
+      toast.error("Failed to load message templates", {
+        description: err instanceof Error ? err.message : "Please check your network connection.",
+      });
     } finally {
       setLoading(false);
     }
@@ -132,6 +128,7 @@ export function MessageTemplatesView() {
   };
 
   const handleTemplateSaved = (saved: CommunicationTemplate, mode: "create" | "edit") => {
+    invalidateCommunicationTemplatesCache();
     if (mode === "edit") {
       setTemplates((prev) => prev.map((item) => (item.id === saved.id ? saved : item)));
     } else {
@@ -141,17 +138,21 @@ export function MessageTemplatesView() {
 
   const handleDelete = async () => {
     if (!templateToDelete) return;
+    const target = templateToDelete;
+    const prevTemplates = templates;
     setDeleting(true);
+    setIsDeleteOpen(false);
+    setTemplates((prev) => prev.filter((item) => item.id !== target.id));
+    invalidateCommunicationTemplatesCache();
     try {
-      await fetchApi(`/communication-templates/${templateToDelete.id}/`, {
+      await fetchApi(`/communication-templates/${target.id}/`, {
         method: "DELETE",
       });
-      setTemplates((prev) => prev.filter((item) => item.id !== templateToDelete.id));
       toast.success("Template deleted", {
-        description: `"${templateToDelete.name}" was removed.`,
+        description: `"${target.name}" was removed.`,
       });
-      setIsDeleteOpen(false);
     } catch (err) {
+      setTemplates(prevTemplates);
       toast.error("Failed to delete template", {
         description: err instanceof Error ? err.message : "Please try again later.",
       });
@@ -169,6 +170,7 @@ export function MessageTemplatesView() {
           method: "POST",
         }
       );
+      invalidateCommunicationTemplatesCache();
       setTemplates(restored);
       toast.success("Standard templates restored", {
         description: "Default templates have been verified and repopulated.",

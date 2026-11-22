@@ -1,6 +1,29 @@
 import { createClient } from "@/lib/supabase/client";
+import type { Application, CommunicationTemplate, Resume } from "@/types/application";
 
 export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api").replace(/\/+$/, "");
+
+let cachedAccessToken: string | null = null;
+let authListenerInitialized = false;
+let pendingSessionPromise: Promise<string | null> | null = null;
+
+function ensureAuthTokenListener() {
+  if (authListenerInitialized || typeof window === "undefined") return;
+  authListenerInitialized = true;
+  try {
+    const supabase = createClient();
+    supabase.auth.onAuthStateChange((_event, session) => {
+      cachedAccessToken = session?.access_token ?? null;
+    });
+  } catch {
+    authListenerInitialized = false;
+  }
+}
+
+export function clearAuthTokenCache() {
+  cachedAccessToken = null;
+  pendingSessionPromise = null;
+}
 
 export class ApiError extends Error {
   status: number;
@@ -60,13 +83,27 @@ export function parseApiErrorPayload(
 
 export async function getAuthToken(): Promise<string | null> {
   if (typeof window === "undefined") return null;
-  try {
-    const supabase = createClient();
-    const { data: { session } } = await supabase.auth.getSession();
-    return session?.access_token || null;
-  } catch {
-    return null;
+  ensureAuthTokenListener();
+  if (cachedAccessToken) {
+    return cachedAccessToken;
   }
+  if (!pendingSessionPromise) {
+    pendingSessionPromise = (async () => {
+      try {
+        const supabase = createClient();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        cachedAccessToken = session?.access_token || null;
+        return cachedAccessToken;
+      } catch {
+        return null;
+      } finally {
+        pendingSessionPromise = null;
+      }
+    })();
+  }
+  return pendingSessionPromise;
 }
 
 export async function getAuthHeaders(): Promise<Record<string, string>> {
@@ -134,10 +171,94 @@ export interface ResumePreviewResponse {
 
 const resumeBlobCache = new Map<string, Blob>();
 const resumePreviewCache = new Map<number, ResumePreviewResponse>();
+const resumeDetailCache = new Map<number, Resume>();
+const resumeDetailInFlight = new Map<number, Promise<Resume>>();
+let communicationTemplatesCache: CommunicationTemplate[] | null = null;
+let communicationTemplatesInFlight: Promise<CommunicationTemplate[]> | null = null;
 
 export function clearResumeBlobCache() {
   resumeBlobCache.clear();
   resumePreviewCache.clear();
+  resumeDetailCache.clear();
+  resumeDetailInFlight.clear();
+  communicationTemplatesCache = null;
+  communicationTemplatesInFlight = null;
+  clearAuthTokenCache();
+}
+
+export function invalidateCommunicationTemplatesCache() {
+  communicationTemplatesCache = null;
+  communicationTemplatesInFlight = null;
+}
+
+export async function fetchCommunicationTemplatesCached(
+  forceRefresh = false
+): Promise<CommunicationTemplate[]> {
+  if (!forceRefresh && communicationTemplatesCache !== null) {
+    return communicationTemplatesCache;
+  }
+  if (!forceRefresh && communicationTemplatesInFlight) {
+    return communicationTemplatesInFlight;
+  }
+  const request = (async () => {
+    try {
+      const data = await fetchApi<CommunicationTemplate[]>("/communication-templates/");
+      communicationTemplatesCache = data;
+      return data;
+    } catch {
+      const fallback = await fetchApi<CommunicationTemplate[]>("/applications/communication-templates/");
+      communicationTemplatesCache = fallback;
+      return fallback;
+    } finally {
+      communicationTemplatesInFlight = null;
+    }
+  })();
+  communicationTemplatesInFlight = request;
+  return request;
+}
+
+export async function fetchResumeDetail(resumeId: number, useCache = true): Promise<Resume> {
+  if (useCache && resumeDetailCache.has(resumeId)) {
+    return resumeDetailCache.get(resumeId)!;
+  }
+  if (useCache && resumeDetailInFlight.has(resumeId)) {
+    return resumeDetailInFlight.get(resumeId)!;
+  }
+
+  const request = fetchApi<Resume>(`/resumes/${resumeId}/`)
+    .then((data) => {
+      if (useCache) {
+        if (resumeDetailCache.size >= 40) {
+          const oldestKey = resumeDetailCache.keys().next().value;
+          if (oldestKey !== undefined) resumeDetailCache.delete(oldestKey);
+        }
+        resumeDetailCache.set(resumeId, data);
+      }
+      return data;
+    })
+    .finally(() => {
+      resumeDetailInFlight.delete(resumeId);
+    });
+
+  if (useCache) {
+    resumeDetailInFlight.set(resumeId, request);
+  }
+  return request;
+}
+
+export function prefetchResumeForApplication(app: Application | null | undefined, anonymize: boolean) {
+  const resume = app?.resume;
+  if (!app || !resume?.id || resume.is_purged) return;
+  if (!resume.extracted_text && !resume.redacted_text && !resumeDetailCache.has(resume.id)) {
+    void fetchResumeDetail(resume.id).catch(() => {});
+  }
+  const isRevealed = !anonymize || ["SHORTLISTED", "INTERVIEW", "HIRED"].includes(app.status);
+  const isPdf =
+    (resume.original_filename || "").toLowerCase().endsWith(".pdf") ||
+    (resume.file_type || "").toLowerCase() === "application/pdf";
+  if (isRevealed && isPdf && !resumePreviewCache.has(resume.id)) {
+    void fetchResumePreview(resume.id).catch(() => {});
+  }
 }
 
 export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise<T> {

@@ -26,8 +26,8 @@ type Form = "company-new" | "company-edit" | "staff-new" | Staff;
 export function PlatformManagement() {
   const [companies, setCompanies] = useState<Company[] | null>(null);
   const [selection, setSelection] = useState<number | "unassigned" | null>(null);
-  const [directory, setDirectory] = useState<{ key: number | "unassigned"; rows: Staff[] } | null>(null);
-  const [invitationsState, setInvitationsState] = useState<{ key: number; rows: StaffInvitationRow[] } | null>(null);
+  const [staffByKey, setStaffByKey] = useState<Record<string, Staff[]>>({});
+  const [invitationsByKey, setInvitationsByKey] = useState<Record<number, StaffInvitationRow[]>>({});
   const [form, setForm] = useState<Form | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -39,9 +39,10 @@ export function PlatformManagement() {
   const returnFocus = useRef<HTMLButtonElement | null>(null);
   const restoreFocus = useRef(false);
   const key = selection ?? companies?.[0]?.id ?? "unassigned";
+  const keyStr = String(key);
   const company = companies?.find((item) => item.id === key);
-  const staff = directory?.key === key ? directory.rows : null;
-  const invitations = typeof key === "number" && invitationsState?.key === key ? invitationsState.rows : [];
+  const staff = Object.prototype.hasOwnProperty.call(staffByKey, keyStr) ? staffByKey[keyStr] : null;
+  const invitations = typeof key === "number" ? (invitationsByKey[key] ?? []) : [];
   const companyForm = form === "company-new" || form === "company-edit";
   const editingStaff = form && typeof form === "object" ? form : null;
 
@@ -63,21 +64,35 @@ export function PlatformManagement() {
     return () => controller.abort();
   }, [revision]);
 
+  const companiesLoaded = companies !== null;
   useEffect(() => {
-    if (!companies) return;
+    if (!companiesLoaded) return;
     const controller = new AbortController();
     fetchApi<Staff[]>(`/platform/staff/?company=${key}`, { signal: controller.signal })
-      .then((rows) => { setDirectory({ key, rows }); setStaffError(null); })
+      .then((rows) => {
+        if (!controller.signal.aborted) {
+          setStaffByKey((prev) => ({ ...prev, [String(key)]: rows }));
+          setStaffError(null);
+        }
+      })
       .catch((err: Error) => {
         if (!controller.signal.aborted) setStaffError({ key, text: err.message });
       });
     if (typeof key === "number") {
       fetchApi<StaffInvitationRow[]>(`/platform/staff/invitations/?company=${key}`, { signal: controller.signal })
-        .then((rows) => { if (!controller.signal.aborted) setInvitationsState({ key, rows }); })
-        .catch(() => { if (!controller.signal.aborted) setInvitationsState({ key, rows: [] }); });
+        .then((rows) => {
+          if (!controller.signal.aborted) {
+            setInvitationsByKey((prev) => ({ ...prev, [key]: rows }));
+          }
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) {
+            setInvitationsByKey((prev) => ({ ...prev, [key]: [] }));
+          }
+        });
     }
     return () => controller.abort();
-  }, [companies, key, revision]);
+  }, [companiesLoaded, key, revision]);
 
   function openForm(value: Form | null, trigger?: HTMLButtonElement) {
     returnFocus.current = trigger ?? null;
@@ -120,6 +135,8 @@ export function PlatformManagement() {
           .sort((left, right) => left.name.localeCompare(right.name)));
         setSelection(saved.id);
         setNotice(existing ? "Company details updated." : "Company created.");
+        closeForm();
+        return;
       } else if (editingStaff) {
         const intent = (event.nativeEvent as SubmitEvent).submitter instanceof HTMLButtonElement
           ? ((event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement).value
@@ -135,7 +152,6 @@ export function PlatformManagement() {
           });
           setNotice(`Password changed for ${editingStaff.email}. Their existing sessions have been revoked.`);
           closeForm();
-          setRevision((value) => value + 1);
           return;
         }
         const targetCompany = Number(values.get("company")) || null;
@@ -152,13 +168,39 @@ export function PlatformManagement() {
           method: "PATCH",
           body: JSON.stringify(changes),
         });
-        setDirectory((current) => current?.key === key ? {
-          ...current,
-          rows: current.rows.flatMap((row) => (
-            row.id !== saved.id ? [row] : (saved.company ?? "unassigned") === key ? [saved] : []
-          )),
-        } : current);
+        const oldKey = String(editingStaff.company ?? "unassigned");
+        const newKey = String(saved.company ?? "unassigned");
+        setStaffByKey((prev) => {
+          const next = { ...prev };
+          if (next[oldKey]) {
+            next[oldKey] =
+              oldKey === newKey
+                ? next[oldKey].map((row) => (row.id === saved.id ? saved : row))
+                : next[oldKey].filter((row) => row.id !== saved.id);
+          }
+          if (oldKey !== newKey && next[newKey]) {
+            next[newKey] = [...next[newKey].filter((row) => row.id !== saved.id), saved];
+          }
+          return next;
+        });
+        if (editingStaff.company !== saved.company) {
+          setCompanies((items) =>
+            items
+              ? items.map((c) => {
+                  if (c.id === editingStaff.company) {
+                    return { ...c, recruiter_count: Math.max(0, (c.recruiter_count ?? 0) - 1) };
+                  }
+                  if (c.id === saved.company) {
+                    return { ...c, recruiter_count: (c.recruiter_count ?? 0) + 1 };
+                  }
+                  return c;
+                })
+              : items
+          );
+        }
         setNotice("Staff access updated.");
+        closeForm();
+        return;
       } else if (company) {
         const saved = await fetchApi<Staff>("/platform/staff/", {
           method: "POST",
@@ -168,10 +210,25 @@ export function PlatformManagement() {
             role: values.get("role"), company: company.id,
           }),
         });
+        const targetKey = String(company.id);
+        setStaffByKey((prev) => ({
+          ...prev,
+          [targetKey]: [...(prev[targetKey] ?? []), saved],
+        }));
+        setCompanies((items) =>
+          items
+            ? items.map((c) =>
+                c.id === company.id
+                  ? { ...c, recruiter_count: (c.recruiter_count ?? 0) + 1 }
+                  : c
+              )
+            : items
+        );
         setNotice(`${saved.first_name} ${saved.last_name} can now sign in as a recruiter.`);
+        closeForm();
+        return;
       }
       closeForm();
-      setRevision((value) => value + 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : "The change could not be saved. Try again.");
     } finally {

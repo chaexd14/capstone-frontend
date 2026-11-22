@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Activity, Clock3, Database, HardDrive, RefreshCw, RotateCcw, Server, ShieldCheck } from "lucide-react";
 import { fetchApi } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -136,17 +136,23 @@ export function SystemMonitoring() {
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
 
+  const eventFilterRef = useRef(eventFilter);
+  useEffect(() => {
+    eventFilterRef.current = eventFilter;
+  }, [eventFilter]);
+
   const load = useCallback(async (quiet = false) => {
     if (!quiet) setRefreshing(true);
     setError("");
     try {
       const hours = range === "7d" ? 168 : 24;
+      const filterNeedle = eventFilterRef.current.trim();
       const [nextOverview, series, failedRes, eventsRes] = await Promise.all([
         fetchApi<Overview>("/platform/monitoring/overview/"),
         fetchApi<{ points: Point[] }>(`/platform/monitoring/timeseries/?range=${range}`),
         fetchApi<{ items: FailedWorkItem[] }>("/platform/monitoring/failed-work/").catch(() => ({ items: [] })),
         fetchApi<{ events: SecurityEventRow[] }>(
-          `/platform/monitoring/security-events/?hours=${hours}${eventFilter.trim() ? `&action=${encodeURIComponent(eventFilter.trim())}` : ""}`
+          `/platform/monitoring/security-events/?hours=${hours}${filterNeedle ? `&action=${encodeURIComponent(filterNeedle)}` : ""}`
         ).catch(() => ({ events: [] })),
       ]);
       setOverview(nextOverview);
@@ -158,16 +164,52 @@ export function SystemMonitoring() {
     } finally {
       setRefreshing(false);
     }
+  }, [range]);
+
+  // Debounced security-events filter — fetches ONLY /security-events/ instead of all 4 monitoring endpoints
+  const initialFilterMountRef = useRef(true);
+  useEffect(() => {
+    if (initialFilterMountRef.current) {
+      initialFilterMountRef.current = false;
+      return;
+    }
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      const hours = range === "7d" ? 168 : 24;
+      const needle = eventFilter.trim();
+      void fetchApi<{ events: SecurityEventRow[] }>(
+        `/platform/monitoring/security-events/?hours=${hours}${needle ? `&action=${encodeURIComponent(needle)}` : ""}`,
+        { signal: controller.signal }
+      )
+        .then((res) => {
+          if (!controller.signal.aborted) {
+            setSecurityEvents(res.events || []);
+          }
+        })
+        .catch(() => {});
+    }, 300);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
   }, [eventFilter, range]);
 
   const retryFailedWork = async (workId: number) => {
+    const prevFailed = failedWork;
+    const prevOverview = overview;
     setRetryingWorkId(workId);
+    setFailedWork((prev) => prev.filter((item) => item.id !== workId));
+    setOverview((prev) =>
+      prev
+        ? { ...prev, queue: { ...prev.queue, failed: Math.max(0, prev.queue.failed - 1) } }
+        : prev
+    );
     try {
       await fetchApi(`/platform/monitoring/failed-work/${workId}/retry/`, { method: "POST" });
-      setFailedWork((prev) => prev.filter((item) => item.id !== workId));
       toast.success("Queued work item for retry");
-      void load(true);
     } catch (err) {
+      setFailedWork(prevFailed);
+      setOverview(prevOverview);
       toast.error("Could not retry work item", {
         description: err instanceof Error ? err.message : "Try again.",
       });

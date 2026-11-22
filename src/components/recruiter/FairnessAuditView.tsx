@@ -25,18 +25,27 @@ interface FairnessAuditViewProps {
   jobId: number;
 }
 
+const fairnessAuditCache = new Map<number, FairnessAuditData>();
+
 export function FairnessAuditView({ jobId }: FairnessAuditViewProps) {
-  const [data, setData] = useState<FairnessAuditData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const cached = fairnessAuditCache.get(jobId) ?? null;
+  const [data, setData] = useState<FairnessAuditData | null>(cached);
+  const [loading, setLoading] = useState(cached === null);
   const [error, setError] = useState("");
   const [runningCf, setRunningCf] = useState(false);
   const [cfResult, setCfResult] = useState<CounterfactualAuditResult | null>(null);
 
-  const loadAudit = useCallback(async () => {
+  const loadAudit = useCallback(async (force = false) => {
+    if (!force && fairnessAuditCache.has(jobId)) {
+      setData(fairnessAuditCache.get(jobId)!);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError("");
     try {
       const res = await fetchApi<FairnessAuditData>(`/jobs/${jobId}/fairness-audit/`);
+      fairnessAuditCache.set(jobId, res);
       setData(res);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load fairness audit data.");
@@ -47,7 +56,7 @@ export function FairnessAuditView({ jobId }: FairnessAuditViewProps) {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void loadAudit();
+      void loadAudit(false);
     }, 0);
     return () => window.clearTimeout(timer);
   }, [loadAudit]);
@@ -97,7 +106,7 @@ export function FairnessAuditView({ jobId }: FairnessAuditViewProps) {
               Audit PII redaction coverage, job description bias linting, rubric-to-shortlist alignment, and EEOC Four-Fifths adverse impact ratios.
             </SectionDescription>
           </div>
-          <Button type="button" variant="outline" size="sm" onClick={() => void loadAudit()}>
+          <Button type="button" variant="outline" size="sm" onClick={() => void loadAudit(true)}>
             <RefreshCw className="size-4" aria-hidden="true" />
             Refresh
           </Button>

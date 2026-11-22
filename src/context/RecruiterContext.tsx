@@ -1,9 +1,22 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
 import { useRouter } from "next/navigation";
 import { Job } from "@/types/job";
-import { Application, TeamMember } from "@/types/application";
+import {
+  Application,
+  ApplicationStatus,
+  RejectionReason,
+  TeamMember,
+} from "@/types/application";
 import { ApiError, clearResumeBlobCache, fetchApi } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
 
@@ -16,6 +29,26 @@ export interface RecruiterUserInfo {
   role: string;
   company?: string;
 }
+
+export interface CompactApplicationPatch {
+  id: number;
+  status?: ApplicationStatus;
+  rejection_reason?: RejectionReason | "";
+  rejection_note?: string;
+  tags?: string[];
+  updated_at?: string;
+  latest_activity_at?: string | null;
+}
+
+export interface StatusUpdateOptions {
+  reason?: RejectionReason | "";
+  note?: string;
+}
+
+export type JobLifecycleAction = "close" | "reopen" | "archive" | "delete-draft";
+
+const POLL_INTERVAL_MS = 30_000;
+const VISIBILITY_REFRESH_MIN_GAP_MS = 10_000;
 
 const UUID_LIKE_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -63,6 +96,7 @@ interface RecruiterContextValue {
   teamMembers: TeamMember[];
   openTasksCount: number;
   overdueTasksCount: number;
+  pendingApplicationIds: Set<number>;
   backendOnline: boolean;
   loading: boolean;
   loadData: () => Promise<void>;
@@ -70,6 +104,22 @@ interface RecruiterContextValue {
   onJobUpdated: (updatedJob: Job) => void;
   onJobArchived: (jobId: number) => void;
   onApplicationUpdated: (updatedApp: Application) => void;
+  mergeApplicationPatch: (appId: number, patch: Partial<Application>) => void;
+  updateApplicationStatus: (
+    app: Application,
+    newStatus: ApplicationStatus,
+    options?: StatusUpdateOptions
+  ) => Promise<Application>;
+  bulkUpdateApplicationStatus: (
+    applicationIds: number[],
+    newStatus: ApplicationStatus,
+    options?: StatusUpdateOptions
+  ) => Promise<number>;
+  updateJobStatusOptimistic: (
+    job: Job,
+    action: JobLifecycleAction
+  ) => Promise<Job | null>;
+  adjustTaskCounts: (openDelta: number, overdueDelta?: number) => void;
   handleLogout: () => Promise<void>;
   isCreateJobOpen: boolean;
   setIsCreateJobOpen: (open: boolean) => void;
@@ -92,6 +142,23 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
   const [backendOnline, setBackendOnline] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isCreateJobOpen, setIsCreateJobOpen] = useState(false);
+  const [pendingApplicationIds, setPendingApplicationIds] = useState<Set<number>>(new Set());
+
+  const applicationsRef = useRef<Application[]>([]);
+  const jobsRef = useRef<Job[]>([]);
+  const mutationEpochRef = useRef(0);
+  const loadSeqRef = useRef(0);
+  const loadAbortRef = useRef<AbortController | null>(null);
+  const lastLoadCompletedAtRef = useRef(0);
+  const teamLoadedForUserRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    applicationsRef.current = applications;
+  }, [applications]);
+
+  useEffect(() => {
+    jobsRef.current = jobs;
+  }, [jobs]);
 
   const clearRecruiterStorage = useCallback(() => {
     try {
@@ -207,24 +274,53 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
   }, [router, supabase, clearRecruiterStorage]);
 
   const isPlatformAdmin = currentUser?.role === "superadmin";
+  const currentUserId = currentUser?.id ?? null;
+
   const loadData = useCallback(async () => {
+    const seq = ++loadSeqRef.current;
+    const startEpoch = mutationEpochRef.current;
+    loadAbortRef.current?.abort();
+    const controller = new AbortController();
+    loadAbortRef.current = controller;
+
     try {
       if (isPlatformAdmin) {
-        await fetchApi("/auth/me/");
+        await fetchApi("/auth/me/", { signal: controller.signal });
+        if (controller.signal.aborted || seq !== loadSeqRef.current) return;
         setBackendOnline(true);
         setLoading(false);
+        lastLoadCompletedAtRef.current = Date.now();
         return;
       }
+
+      const shouldFetchTeam = Boolean(currentUserId && teamLoadedForUserRef.current !== currentUserId);
       const [jobsData, appsData, teamData, tasksSummary] = await Promise.all([
-        fetchApi<Job[]>("/jobs/"),
-        fetchApi<Application[]>("/applications/"),
-        fetchApi<TeamMember[]>("/companies/team/").catch(() => []),
-        fetchApi<{ summary: { open: number; overdue: number } }>("/applications/tasks/?status=open").catch(() => null),
+        fetchApi<Job[]>("/jobs/", { signal: controller.signal }),
+        fetchApi<Application[]>("/applications/", { signal: controller.signal }),
+        shouldFetchTeam
+          ? fetchApi<TeamMember[]>("/companies/team/", { signal: controller.signal }).catch(() => null)
+          : Promise.resolve(null),
+        fetchApi<{ summary: { open: number; overdue: number } }>(
+          "/applications/tasks/?status=open",
+          { signal: controller.signal }
+        ).catch(() => null),
       ]);
+
+      // Discard stale poll responses if a newer load started or a local optimistic mutation occurred mid-flight
+      if (
+        controller.signal.aborted ||
+        seq !== loadSeqRef.current ||
+        startEpoch !== mutationEpochRef.current
+      ) {
+        return;
+      }
 
       setJobs(jobsData);
       setApplications(appsData);
-      setTeamMembers(teamData);
+      if (shouldFetchTeam && teamData !== null) {
+        setTeamMembers(teamData);
+        teamLoadedForUserRef.current = currentUserId;
+      }
       if (tasksSummary?.summary) {
         setOpenTasksCount(tasksSummary.summary.open);
         setOverdueTasksCount(tasksSummary.summary.overdue);
@@ -233,11 +329,19 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
       }
       setBackendOnline(true);
       setLoading(false);
+      lastLoadCompletedAtRef.current = Date.now();
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        return;
+      }
+      if (controller.signal.aborted || seq !== loadSeqRef.current) {
+        return;
+      }
       if (err instanceof ApiError && err.status === 401) {
         setJobs([]);
         setApplications([]);
         setCurrentUser(null);
+        teamLoadedForUserRef.current = null;
         clearRecruiterStorage();
         await supabase.auth.signOut({ scope: "local" });
         router.replace("/recruiter/login");
@@ -246,22 +350,42 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
       setBackendOnline(false);
       setLoading(false);
     }
-  }, [clearRecruiterStorage, isPlatformAdmin, router, supabase]);
+  }, [clearRecruiterStorage, currentUserId, isPlatformAdmin, router, supabase]);
 
   useEffect(() => {
-    if (currentUser) {
-      const timer = setTimeout(() => {
-        void loadData();
-      }, 0);
-      const interval = setInterval(loadData, 15000);
-      return () => {
-        clearTimeout(timer);
-        clearInterval(interval);
-      };
-    }
+    if (!currentUser) return;
+    const timer = setTimeout(() => {
+      void loadData();
+    }, 0);
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+        return;
+      }
+      void loadData();
+    }, POLL_INTERVAL_MS);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        const elapsed = Date.now() - lastLoadCompletedAtRef.current;
+        if (elapsed >= VISIBILITY_REFRESH_MIN_GAP_MS) {
+          void loadData();
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      clearTimeout(timer);
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      loadAbortRef.current?.abort();
+    };
   }, [currentUser, loadData]);
 
   const handleLogout = useCallback(async () => {
+    loadAbortRef.current?.abort();
+    teamLoadedForUserRef.current = null;
+    clearRecruiterStorage();
     try {
       await supabase.auth.signOut();
     } catch {}
@@ -279,13 +403,15 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
     setCurrentUser(null);
     router.replace("/recruiter/login");
     router.refresh();
-  }, [router, supabase]);
+  }, [clearRecruiterStorage, router, supabase]);
 
   const onJobCreated = useCallback((newJob: Job) => {
+    mutationEpochRef.current += 1;
     setJobs((prev) => [newJob, ...prev]);
   }, []);
 
   const onJobUpdated = useCallback((updatedJob: Job) => {
+    mutationEpochRef.current += 1;
     setJobs((prev) => {
       const exists = prev.some((j) => j.id === updatedJob.id);
       return exists ? prev.map((j) => (j.id === updatedJob.id ? updatedJob : j)) : [updatedJob, ...prev];
@@ -293,15 +419,285 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const onJobArchived = useCallback((jobId: number) => {
+    mutationEpochRef.current += 1;
     setJobs((prev) => prev.filter((j) => j.id !== jobId));
     setApplications((prev) => prev.filter((a) => a.job !== jobId));
   }, []);
 
   const onApplicationUpdated = useCallback((updatedApp: Application) => {
+    mutationEpochRef.current += 1;
     setApplications((prev) =>
-      prev.map((app) => (app.id === updatedApp.id ? updatedApp : app))
+      prev.map((app) =>
+        app.id === updatedApp.id
+          ? {
+              ...app,
+              ...updatedApp,
+              resume: updatedApp.resume ?? app.resume,
+              match_result: updatedApp.match_result ?? app.match_result,
+            }
+          : app
+      )
     );
   }, []);
+
+  const mergeApplicationPatch = useCallback((appId: number, patch: Partial<Application>) => {
+    mutationEpochRef.current += 1;
+    setApplications((prev) =>
+      prev.map((app) => (app.id === appId ? { ...app, ...patch } : app))
+    );
+  }, []);
+
+  const adjustTaskCounts = useCallback((openDelta: number, overdueDelta = 0) => {
+    mutationEpochRef.current += 1;
+    if (openDelta !== 0) {
+      setOpenTasksCount((prev) => Math.max(0, prev + openDelta));
+    }
+    if (overdueDelta !== 0) {
+      setOverdueTasksCount((prev) => Math.max(0, prev + overdueDelta));
+    }
+  }, []);
+
+  const updateApplicationStatus = useCallback(
+    async (
+      app: Application,
+      newStatus: ApplicationStatus,
+      options?: StatusUpdateOptions
+    ): Promise<Application> => {
+      const currentSnapshot =
+        applicationsRef.current.find((item) => item.id === app.id) ?? app;
+      const nowIso = new Date().toISOString();
+      const optimisticPatch: Partial<Application> = {
+        status: newStatus,
+        rejection_reason:
+          newStatus === "REJECTED"
+            ? options?.reason ?? currentSnapshot.rejection_reason ?? ""
+            : "",
+        rejection_note:
+          newStatus === "REJECTED"
+            ? options?.note ?? currentSnapshot.rejection_note ?? ""
+            : "",
+        updated_at: nowIso,
+        latest_activity_at: nowIso,
+      };
+
+      const optimisticApp: Application = { ...currentSnapshot, ...optimisticPatch };
+
+      // 1. Apply optimistic update immediately & invalidate any in-flight poll
+      mutationEpochRef.current += 1;
+      loadAbortRef.current?.abort();
+      setApplications((prev) =>
+        prev.map((item) => (item.id === app.id ? { ...item, ...optimisticPatch } : item))
+      );
+      setPendingApplicationIds((prev) => {
+        const next = new Set(prev);
+        next.add(app.id);
+        return next;
+      });
+
+      try {
+        const serverPatch = await fetchApi<CompactApplicationPatch>(
+          `/applications/${app.id}/status/?compact=1`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({
+              status: newStatus,
+              ...(newStatus === "REJECTED" && options?.reason
+                ? { rejection_reason: options.reason }
+                : {}),
+              ...(newStatus === "REJECTED" && options?.note
+                ? { rejection_note: options.note }
+                : {}),
+            }),
+          }
+        );
+
+        const reconciled: Partial<Application> = {
+          status: serverPatch.status ?? newStatus,
+          rejection_reason: serverPatch.rejection_reason ?? optimisticPatch.rejection_reason,
+          rejection_note: serverPatch.rejection_note ?? optimisticPatch.rejection_note,
+          ...(serverPatch.updated_at ? { updated_at: serverPatch.updated_at } : {}),
+          ...(serverPatch.latest_activity_at !== undefined
+            ? { latest_activity_at: serverPatch.latest_activity_at }
+            : {}),
+        };
+
+        mutationEpochRef.current += 1;
+        setApplications((prev) =>
+          prev.map((item) => (item.id === app.id ? { ...item, ...reconciled } : item))
+        );
+        return { ...optimisticApp, ...reconciled };
+      } catch (err) {
+        // Roll back only if this application was not superseded by another optimistic change
+        mutationEpochRef.current += 1;
+        setApplications((prev) =>
+          prev.map((item) => (item.id === app.id ? currentSnapshot : item))
+        );
+        throw err;
+      } finally {
+        setPendingApplicationIds((prev) => {
+          const next = new Set(prev);
+          next.delete(app.id);
+          return next;
+        });
+      }
+    },
+    []
+  );
+
+  const bulkUpdateApplicationStatus = useCallback(
+    async (
+      applicationIds: number[],
+      newStatus: ApplicationStatus,
+      options?: StatusUpdateOptions
+    ): Promise<number> => {
+      const uniqueIds = Array.from(new Set(applicationIds));
+      if (uniqueIds.length === 0) return 0;
+
+      const idSet = new Set(uniqueIds);
+      const previousById = new Map<number, Application>();
+      for (const app of applicationsRef.current) {
+        if (idSet.has(app.id)) previousById.set(app.id, app);
+      }
+
+      const nowIso = new Date().toISOString();
+      mutationEpochRef.current += 1;
+      loadAbortRef.current?.abort();
+
+      setApplications((prev) =>
+        prev.map((item) =>
+          idSet.has(item.id)
+            ? {
+                ...item,
+                status: newStatus,
+                rejection_reason:
+                  newStatus === "REJECTED"
+                    ? options?.reason ?? item.rejection_reason ?? ""
+                    : "",
+                rejection_note:
+                  newStatus === "REJECTED"
+                    ? options?.note ?? item.rejection_note ?? ""
+                    : "",
+                updated_at: nowIso,
+                latest_activity_at: nowIso,
+              }
+            : item
+        )
+      );
+      setPendingApplicationIds((prev) => {
+        const next = new Set(prev);
+        uniqueIds.forEach((id) => next.add(id));
+        return next;
+      });
+
+      try {
+        const patches = await fetchApi<CompactApplicationPatch[]>(
+          "/applications/bulk/?compact=1",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              application_ids: uniqueIds,
+              status: newStatus,
+              ...(newStatus === "REJECTED" && options?.reason
+                ? { rejection_reason: options.reason }
+                : {}),
+              ...(newStatus === "REJECTED" && options?.note
+                ? { rejection_note: options.note }
+                : {}),
+            }),
+          }
+        );
+
+        const patchMap = new Map(patches.map((p) => [p.id, p]));
+        mutationEpochRef.current += 1;
+        setApplications((prev) =>
+          prev.map((item) => {
+            const p = patchMap.get(item.id);
+            if (!p) return item;
+            return {
+              ...item,
+              status: p.status ?? item.status,
+              rejection_reason: p.rejection_reason ?? item.rejection_reason,
+              rejection_note: p.rejection_note ?? item.rejection_note,
+              ...(p.updated_at ? { updated_at: p.updated_at } : {}),
+              ...(p.latest_activity_at !== undefined
+                ? { latest_activity_at: p.latest_activity_at }
+                : {}),
+            };
+          })
+        );
+        return patches.length;
+      } catch (err) {
+        mutationEpochRef.current += 1;
+        setApplications((prev) =>
+          prev.map((item) => previousById.get(item.id) ?? item)
+        );
+        throw err;
+      } finally {
+        setPendingApplicationIds((prev) => {
+          const next = new Set(prev);
+          uniqueIds.forEach((id) => next.delete(id));
+          return next;
+        });
+      }
+    },
+    []
+  );
+
+  const updateJobStatusOptimistic = useCallback(
+    async (job: Job, action: JobLifecycleAction): Promise<Job | null> => {
+      const prevJobs = jobsRef.current;
+      const prevApps = applicationsRef.current;
+
+      mutationEpochRef.current += 1;
+      loadAbortRef.current?.abort();
+
+      if (action === "close") {
+        setJobs((prev) =>
+          prev.map((j) =>
+            j.id === job.id ? { ...j, status: "CLOSED", updated_at: new Date().toISOString() } : j
+          )
+        );
+      } else if (action === "reopen") {
+        setJobs((prev) =>
+          prev.map((j) =>
+            j.id === job.id ? { ...j, status: "PUBLISHED", updated_at: new Date().toISOString() } : j
+          )
+        );
+      } else {
+        setJobs((prev) => prev.filter((j) => j.id !== job.id));
+        setApplications((prev) => prev.filter((a) => a.job !== job.id));
+      }
+
+      try {
+        if (action === "close") {
+          const updated = await fetchApi<Job>(`/jobs/${job.id}/close/`, { method: "POST" });
+          mutationEpochRef.current += 1;
+          setJobs((prev) => prev.map((j) => (j.id === updated.id ? updated : j)));
+          return updated;
+        }
+        if (action === "reopen") {
+          const updated = await fetchApi<Job>(`/jobs/${job.id}/reopen/`, { method: "POST" });
+          mutationEpochRef.current += 1;
+          setJobs((prev) => prev.map((j) => (j.id === updated.id ? updated : j)));
+          return updated;
+        }
+        if (action === "archive") {
+          await fetchApi(`/jobs/${job.id}/archive/`, { method: "POST" });
+          mutationEpochRef.current += 1;
+          return null;
+        }
+        await fetchApi(`/jobs/${job.id}/`, { method: "DELETE" });
+        mutationEpochRef.current += 1;
+        return null;
+      } catch (err) {
+        mutationEpochRef.current += 1;
+        setJobs(prevJobs);
+        setApplications(prevApps);
+        throw err;
+      }
+    },
+    []
+  );
 
   const value = useMemo(
     () => ({
@@ -314,6 +710,7 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
       teamMembers,
       openTasksCount,
       overdueTasksCount,
+      pendingApplicationIds,
       backendOnline,
       loading,
       loadData,
@@ -321,6 +718,11 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
       onJobUpdated,
       onJobArchived,
       onApplicationUpdated,
+      mergeApplicationPatch,
+      updateApplicationStatus,
+      bulkUpdateApplicationStatus,
+      updateJobStatusOptimistic,
+      adjustTaskCounts,
       handleLogout,
       isCreateJobOpen,
       setIsCreateJobOpen,
@@ -334,6 +736,7 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
       teamMembers,
       openTasksCount,
       overdueTasksCount,
+      pendingApplicationIds,
       backendOnline,
       loading,
       loadData,
@@ -341,6 +744,11 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
       onJobUpdated,
       onJobArchived,
       onApplicationUpdated,
+      mergeApplicationPatch,
+      updateApplicationStatus,
+      bulkUpdateApplicationStatus,
+      updateJobStatusOptimistic,
+      adjustTaskCounts,
       handleLogout,
       isCreateJobOpen,
     ]

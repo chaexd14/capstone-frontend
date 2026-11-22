@@ -60,17 +60,101 @@ function formatRelativeTime(dateString: string): string {
   }
 }
 
+const NOTIFICATION_POLL_MS = 30_000;
+const NOTIFICATION_VISIBILITY_GAP_MS = 10_000;
+
+interface SharedNotificationBucket {
+  notifications: NotificationItem[];
+  unreadCount: number;
+  knownIds: Set<number>;
+  initialLoaded: boolean;
+  lastFetchedAt: number;
+  inFlight: Promise<void> | null;
+  intervalId: ReturnType<typeof setInterval> | null;
+  visibilityHandler: (() => void) | null;
+  listeners: Set<() => void>;
+  onNewNotification: ((item: NotificationItem) => void) | null;
+}
+
+const sharedNotificationStores = new Map<string, SharedNotificationBucket>();
+
+function getOrCreateNotificationBucket(key: string): SharedNotificationBucket {
+  let bucket = sharedNotificationStores.get(key);
+  if (!bucket) {
+    bucket = {
+      notifications: [],
+      unreadCount: 0,
+      knownIds: new Set<number>(),
+      initialLoaded: false,
+      lastFetchedAt: 0,
+      inFlight: null,
+      intervalId: null,
+      visibilityHandler: null,
+      listeners: new Set(),
+      onNewNotification: null,
+    };
+    sharedNotificationStores.set(key, bucket);
+  }
+  return bucket;
+}
+
+function notifyBucketListeners(bucket: SharedNotificationBucket) {
+  bucket.listeners.forEach((listener) => listener());
+}
+
+async function fetchNotificationBucket(
+  key: string,
+  isRecruiter: boolean,
+  isApplicant: boolean,
+  userId: string | null
+) {
+  const bucket = getOrCreateNotificationBucket(key);
+  if (bucket.inFlight) return bucket.inFlight;
+
+  const task = (async () => {
+    try {
+      const recipientType = isRecruiter ? "RECRUITER" : "APPLICANT";
+      let url = `/notifications/?recipient_type=${recipientType}`;
+      if (isApplicant && userId) {
+        url += `&user_id=${userId}`;
+      }
+      const res = await fetchApi<NotificationsResponse>(url);
+      const list = res.notifications || [];
+
+      if (bucket.initialLoaded) {
+        const newUnread = list.find((n) => !n.is_read && !bucket.knownIds.has(n.id));
+        if (newUnread && bucket.onNewNotification) {
+          bucket.onNewNotification(newUnread);
+        }
+      }
+
+      bucket.notifications = list;
+      bucket.unreadCount = res.unread_count || 0;
+      bucket.knownIds = new Set(list.map((n) => n.id));
+      bucket.initialLoaded = true;
+      bucket.lastFetchedAt = Date.now();
+      notifyBucketListeners(bucket);
+    } catch {
+      // Quiet fail on transient network error
+    } finally {
+      bucket.inFlight = null;
+    }
+  })();
+
+  bucket.inFlight = task;
+  return task;
+}
+
 export function NotificationBell({ role, userId }: NotificationBellProps) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [activeFilter, setActiveFilter] = useState<"ALL" | "UNREAD">("ALL");
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const knownIdsRef = useRef<Set<number>>(new Set());
-  const initialLoadRef = useRef(true);
 
   const isRecruiter = role === "recruiter" || role === "superadmin";
   const isApplicant = role === "applicant";
+  const storeKey = role ? `${isRecruiter ? "RECRUITER" : "APPLICANT"}:${userId ?? "anon"}` : "";
 
   const navigateToNotification = useCallback(
     (item: NotificationItem) => {
@@ -87,90 +171,109 @@ export function NotificationBell({ role, userId }: NotificationBellProps) {
     [isRecruiter, router]
   );
 
-  const loadNotifications = useCallback(async () => {
-    if (!role) return;
-
-    try {
-      const recipientType = isRecruiter ? "RECRUITER" : "APPLICANT";
-      let url = `/notifications/?recipient_type=${recipientType}`;
-      if (isApplicant && userId) {
-        url += `&user_id=${userId}`;
-      }
-
-      const res = await fetchApi<NotificationsResponse>(url);
-      const list = res.notifications || [];
-      setNotifications(list);
-      setUnreadCount(res.unread_count || 0);
-
-      // Display a canonical global toast for newly arrived unread notifications
-      if (!initialLoadRef.current) {
-        const newUnread = list.find(
-          (n) => !n.is_read && !knownIdsRef.current.has(n.id)
-        );
-        if (newUnread) {
-          toast.info(newUnread.title, {
-            description: newUnread.message,
-            action: {
-              label: "View",
-              onClick: () => {
-                setNotifications((prev) =>
-                  prev.map((n) => (n.id === newUnread.id ? { ...n, is_read: true } : n))
-                );
-                setUnreadCount((c) => Math.max(0, c - 1));
-                void fetchApi(`/notifications/${newUnread.id}/read/`, {
-                  method: "PATCH",
-                }).catch(() => {});
-                setIsOpen(false);
-                navigateToNotification(newUnread);
-              },
-            },
-          });
-        }
-      }
-
-      const currentIds = new Set<number>();
-      list.forEach((n) => currentIds.add(n.id));
-      knownIdsRef.current = currentIds;
-      initialLoadRef.current = false;
-    } catch {
-      // Quiet fail on transient network error
-    }
-  }, [role, userId, isRecruiter, isApplicant, navigateToNotification]);
+  const navigateRef = useRef(navigateToNotification);
+  useEffect(() => {
+    navigateRef.current = navigateToNotification;
+  }, [navigateToNotification]);
 
   useEffect(() => {
-    if (!role) return;
-    const timer = setTimeout(() => {
-      void loadNotifications();
-    }, 0);
-    const interval = setInterval(() => {
-      void loadNotifications();
-    }, 12000);
-    return () => {
-      clearTimeout(timer);
-      clearInterval(interval);
+    if (!role || !storeKey) return;
+    const bucket = getOrCreateNotificationBucket(storeKey);
+
+    const syncFromBucket = () => {
+      setNotifications(bucket.notifications);
+      setUnreadCount(bucket.unreadCount);
     };
-  }, [role, loadNotifications]);
+
+    bucket.listeners.add(syncFromBucket);
+    syncFromBucket();
+
+    if (!bucket.onNewNotification) {
+      bucket.onNewNotification = (newUnread: NotificationItem) => {
+        toast.info(newUnread.title, {
+          description: newUnread.message,
+          action: {
+            label: "View",
+            onClick: () => {
+              bucket.notifications = bucket.notifications.map((n) =>
+                n.id === newUnread.id ? { ...n, is_read: true } : n
+              );
+              bucket.unreadCount = Math.max(0, bucket.unreadCount - 1);
+              notifyBucketListeners(bucket);
+              void fetchApi(`/notifications/${newUnread.id}/read/`, {
+                method: "PATCH",
+              }).catch(() => {});
+              navigateRef.current(newUnread);
+            },
+          },
+        });
+      };
+    }
+
+    // Start a single shared visibility-aware poller across all mounted NotificationBell instances
+    if (bucket.intervalId === null) {
+      if (!bucket.initialLoaded || Date.now() - bucket.lastFetchedAt >= NOTIFICATION_VISIBILITY_GAP_MS) {
+        void fetchNotificationBucket(storeKey, isRecruiter, isApplicant, userId);
+      }
+      bucket.intervalId = setInterval(() => {
+        if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+          return;
+        }
+        void fetchNotificationBucket(storeKey, isRecruiter, isApplicant, userId);
+      }, NOTIFICATION_POLL_MS);
+
+      const handleVisibility = () => {
+        if (
+          document.visibilityState === "visible" &&
+          Date.now() - bucket.lastFetchedAt >= NOTIFICATION_VISIBILITY_GAP_MS
+        ) {
+          void fetchNotificationBucket(storeKey, isRecruiter, isApplicant, userId);
+        }
+      };
+      bucket.visibilityHandler = handleVisibility;
+      document.addEventListener("visibilitychange", handleVisibility);
+    }
+
+    return () => {
+      bucket.listeners.delete(syncFromBucket);
+      if (bucket.listeners.size === 0) {
+        if (bucket.intervalId !== null) {
+          clearInterval(bucket.intervalId);
+          bucket.intervalId = null;
+        }
+        if (bucket.visibilityHandler) {
+          document.removeEventListener("visibilitychange", bucket.visibilityHandler);
+          bucket.visibilityHandler = null;
+        }
+        bucket.onNewNotification = null;
+      }
+    };
+  }, [role, storeKey, isRecruiter, isApplicant, userId]);
 
   const markAsRead = async (item: NotificationItem) => {
-    if (item.is_read) return;
+    if (item.is_read || !storeKey) return;
+    const bucket = getOrCreateNotificationBucket(storeKey);
 
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === item.id ? { ...n, is_read: true } : n))
+    bucket.notifications = bucket.notifications.map((n) =>
+      n.id === item.id ? { ...n, is_read: true } : n
     );
-    setUnreadCount((c) => Math.max(0, c - 1));
+    bucket.unreadCount = Math.max(0, bucket.unreadCount - 1);
+    notifyBucketListeners(bucket);
 
     try {
       await fetchApi(`/notifications/${item.id}/read/`, { method: "PATCH" });
     } catch {
-      void loadNotifications();
+      void fetchNotificationBucket(storeKey, isRecruiter, isApplicant, userId);
     }
   };
 
   const markAllAsRead = async () => {
-    if (unreadCount === 0) return;
+    if (unreadCount === 0 || !storeKey) return;
+    const bucket = getOrCreateNotificationBucket(storeKey);
 
-    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
-    setUnreadCount(0);
+    bucket.notifications = bucket.notifications.map((n) => ({ ...n, is_read: true }));
+    bucket.unreadCount = 0;
+    notifyBucketListeners(bucket);
 
     try {
       const recipientType = isRecruiter ? "RECRUITER" : "APPLICANT";
@@ -182,7 +285,7 @@ export function NotificationBell({ role, userId }: NotificationBellProps) {
         }),
       });
     } catch {
-      void loadNotifications();
+      void fetchNotificationBucket(storeKey, isRecruiter, isApplicant, userId);
     }
   };
 

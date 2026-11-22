@@ -20,6 +20,7 @@ import {
 import { Application } from "@/types/application";
 import {
   fetchApiBlob,
+  fetchResumeDetail,
   fetchResumePreview,
   ResumePreviewPage,
 } from "@/lib/api";
@@ -154,13 +155,62 @@ export function CandidateResumePreview({
   const resume = application.resume;
   const resumeId = resume?.id;
   const isPurged = Boolean(resume?.is_purged);
-  const extractedText = resume?.extracted_text;
-  const redactedText = resume?.redacted_text;
+  const inlineExtractedText = resume?.extracted_text;
+  const inlineRedactedText = resume?.redacted_text;
   const isBlindModeActive = Boolean(
     anonymize &&
     !isIdentityRevealed &&
     !["SHORTLISTED", "INTERVIEW", "HIRED"].includes(application.status)
   );
+
+  // Lazily fetch & cache full extracted/redacted text when omitted from the slim list payload
+  const [hydratedResume, setHydratedResume] = useState<{
+    id: number;
+    extracted_text?: string;
+    redacted_text?: string;
+  } | null>(null);
+  const needsResumeText = Boolean(
+    resumeId &&
+    !isPurged &&
+    inlineExtractedText === undefined &&
+    inlineRedactedText === undefined &&
+    hydratedResume?.id !== resumeId
+  );
+
+  useEffect(() => {
+    if (!needsResumeText || !resumeId) return;
+    let active = true;
+    void fetchResumeDetail(resumeId)
+      .then((detail) => {
+        if (!active) return;
+        setHydratedResume({
+          id: resumeId,
+          extracted_text: detail.extracted_text,
+          redacted_text: detail.redacted_text,
+        });
+      })
+      .catch(() => {
+        if (!active) return;
+        setHydratedResume({ id: resumeId, extracted_text: "", redacted_text: "" });
+      });
+    return () => {
+      active = false;
+    };
+  }, [needsResumeText, resumeId]);
+
+  const extractedText =
+    inlineExtractedText !== undefined
+      ? inlineExtractedText
+      : hydratedResume && hydratedResume.id === resumeId
+        ? hydratedResume.extracted_text
+        : undefined;
+  const redactedText =
+    inlineRedactedText !== undefined
+      ? inlineRedactedText
+      : hydratedResume && hydratedResume.id === resumeId
+        ? hydratedResume.redacted_text
+        : undefined;
+  const loadingResumeText = needsResumeText;
 
   const [retryCount, setRetryCount] = useState<number>(0);
   const [zoomPercent, setZoomPercent] = useState<number>(100);
@@ -505,7 +555,7 @@ export function CandidateResumePreview({
 
   const documentText = isBlindModeActive
     ? redactedText || ""
-    : resume?.extracted_text || fallbackText || "";
+    : extractedText || fallbackText || "";
   const displayFilename = isBlindModeActive
     ? `${application.candidate_code}_Redacted_Resume.${formatInfo.ext === "other" ? "txt" : formatInfo.ext}`
     : resume?.original_filename || `${application.candidate_code} Resume`;
@@ -685,7 +735,11 @@ export function CandidateResumePreview({
               </span>
             </div>
 
-            {documentText ? (
+            {loadingResumeText ? (
+              <div className="mx-auto max-w-[740px] rounded-xl border border-border bg-card p-6">
+                <ContextualLoading label="Loading redacted resume preview" className="min-h-64" />
+              </div>
+            ) : documentText ? (
               <div className="mx-auto min-h-[640px] max-w-[740px] rounded-xl border border-border bg-card p-6 shadow-xs sm:p-10">
                 {renderFormattedDocumentLines(documentText)}
               </div>
@@ -789,7 +843,7 @@ export function CandidateResumePreview({
               </span>
             </div>
 
-            {loadingFile ? (
+            {loadingFile || loadingResumeText ? (
               <ContextualLoading label="Rendering document preview" className="min-h-64" />
             ) : documentText ? (
               <div className="mx-auto min-h-[640px] max-w-[740px] rounded-xl border border-border bg-card p-6 shadow-xs sm:p-10">

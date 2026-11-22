@@ -25,6 +25,7 @@ import { FairnessAuditView } from "./FairnessAuditView";
 import { JobCandidatesReportDialog } from "./JobCandidatesReportDialog";
 import { ConfirmJobActionModal, JobActionType } from "./ConfirmJobActionModal";
 import { fetchApi } from "@/lib/api";
+import { useRecruiter } from "@/context/RecruiterContext";
 import { toast } from "@/components/ui/sonner";
 import {
   AlertDialog,
@@ -173,6 +174,12 @@ export function JobProfileView({
   onJobUpdated,
   onJobArchived,
 }: JobProfileViewProps) {
+  const {
+    updateApplicationStatus,
+    bulkUpdateApplicationStatus,
+    updateJobStatusOptimistic,
+    pendingApplicationIds,
+  } = useRecruiter();
   const [currentJob, setCurrentJob] = useState<Job>(job);
   const [prevJob, setPrevJob] = useState<Job>(job);
   const [actionModalType, setActionModalType] = useState<JobActionType | null>(null);
@@ -189,7 +196,6 @@ export function JobProfileView({
   const [bandFilter, setBandFilter] = useState<string>("ALL");
   const [selectedApplication, setSelectedApplication] = useState<Application | null>(null);
   const [isAnalysisOpen, setIsAnalysisOpen] = useState(false);
-  const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [workspaceSection, setWorkspaceSection] = useState<"candidates" | "details" | "fairness">("candidates");
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [reportSession, setReportSession] = useState(0);
@@ -217,32 +223,41 @@ export function JobProfileView({
   );
 
   const handleConfirmAction = async () => {
-    if (!actionModalType) return;
+    if (!actionModalType || actionModalType === "delete-draft") return;
+    const action = actionModalType;
+    const prevJobSnapshot = currentJob;
     setIsActionLoading(true);
+    setActionModalType(null);
+
+    if (action === "close") {
+      setCurrentJob((prev) => ({ ...prev, status: "CLOSED" }));
+    } else if (action === "reopen") {
+      setCurrentJob((prev) => ({ ...prev, status: "PUBLISHED" }));
+    }
+
     try {
-      if (actionModalType === "close") {
-        const updated = await fetchApi<Job>(`/jobs/${currentJob.id}/close/`, { method: "POST" });
+      const updated = await updateJobStatusOptimistic(prevJobSnapshot, action);
+      if (action === "close" && updated) {
         setCurrentJob(updated);
         if (onJobUpdated) onJobUpdated(updated);
         toast.success("Position Closed", {
-          description: `"${currentJob.title}" is now closed to new applications.`,
+          description: `"${prevJobSnapshot.title}" is now closed to new applications.`,
         });
-      } else if (actionModalType === "reopen") {
-        const updated = await fetchApi<Job>(`/jobs/${currentJob.id}/reopen/`, { method: "POST" });
+      } else if (action === "reopen" && updated) {
         setCurrentJob(updated);
         if (onJobUpdated) onJobUpdated(updated);
         toast.success("Position Reopened", {
-          description: `"${currentJob.title}" is published and accepting applications.`,
+          description: `"${prevJobSnapshot.title}" is published and accepting applications.`,
         });
-      } else if (actionModalType === "archive") {
-        await fetchApi(`/jobs/${currentJob.id}/archive/`, { method: "POST" });
-        if (onJobArchived) onJobArchived(currentJob.id);
+      } else if (action === "archive") {
+        if (onJobArchived) onJobArchived(prevJobSnapshot.id);
         toast.success("Job archived", {
-          description: `"${currentJob.title}" has been moved to archives.`,
+          description: `"${prevJobSnapshot.title}" has been moved to archives.`,
         });
         onBack();
       }
     } catch (err: unknown) {
+      setCurrentJob(prevJobSnapshot);
       console.error("Action error:", err);
       const message = err instanceof Error ? err.message : "An error occurred while executing this action.";
       toast.error("Action Failed", {
@@ -250,7 +265,6 @@ export function JobProfileView({
       });
     } finally {
       setIsActionLoading(false);
-      setActionModalType(null);
     }
   };
 
@@ -296,26 +310,8 @@ export function JobProfileView({
     return new Date(b.applied_at).getTime() - new Date(a.applied_at).getTime();
   }), [filteredApps]);
 
-  const persistApplicationStatus = useCallback(async (
-    app: Application,
-    status: ApplicationStatus,
-    reason?: RejectionReason,
-    note?: string
-  ) => {
-    const updated = await fetchApi<Application>(`/applications/${app.id}/status/`, {
-      method: "PATCH",
-      body: JSON.stringify({
-        status,
-        ...(status === "REJECTED" && reason ? { rejection_reason: reason } : {}),
-        ...(status === "REJECTED" && note ? { rejection_note: note } : {}),
-      }),
-    });
-    onApplicationUpdated(updated);
-    return updated;
-  }, [onApplicationUpdated]);
-
-  // Direct status update handler (works for button clicks or keyboard shortcuts)
-  const handleDirectStatusChange = useCallback(async (
+  // Direct status update handler (optimistic with Undo and automatic rollback)
+  const handleDirectStatusChange = useCallback((
     app: Application,
     newStatus: ApplicationStatus,
     confirmed = false,
@@ -328,32 +324,28 @@ export function JobProfileView({
       return;
     }
 
-    setUpdatingId(app.id);
-    try {
-      const previousStatus = app.status;
-      await persistApplicationStatus(app, newStatus, reason, note);
-      toast.success("Candidate status updated", {
-        description: `${app.candidate_code} is now ${newStatus.replaceAll("_", " ").toLowerCase()}.`,
-        action: {
-          label: "Undo",
-          onClick: () => {
-            void persistApplicationStatus(app, previousStatus).catch((error: unknown) => {
-              toast.error("Could not undo the status change", {
-                description: error instanceof Error ? error.message : "Retry from the candidate record.",
-              });
+    const previousStatus = app.status;
+    toast.success("Candidate status updated", {
+      description: `${app.candidate_code} is now ${newStatus.replaceAll("_", " ").toLowerCase()}.`,
+      action: {
+        label: "Undo",
+        onClick: () => {
+          void updateApplicationStatus(app, previousStatus).catch((error: unknown) => {
+            toast.error("Could not undo the status change", {
+              description: error instanceof Error ? error.message : "Retry from the candidate record.",
             });
-          },
+          });
         },
-      });
-    } catch (err) {
+      },
+    });
+
+    void updateApplicationStatus(app, newStatus, { reason, note }).catch((err) => {
       console.error("Error updating status:", err);
       toast.error("Failed to update status", {
         description: err instanceof Error ? err.message : "Network error updating candidate status.",
       });
-    } finally {
-      setUpdatingId(null);
-    }
-  }, [persistApplicationStatus]);
+    });
+  }, [updateApplicationStatus]);
 
   const toggleSelectCandidate = (id: number, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -391,22 +383,14 @@ export function JobProfileView({
       return;
     }
     setIsBulkUpdating(true);
+    setSelectedCandidateIds(new Set());
     try {
-      const updatedList = await fetchApi<Application[]>("/applications/bulk/", {
-        method: "POST",
-        body: JSON.stringify({
-          application_ids: requestedIds,
-          status: newStatus,
-          ...(newStatus === "REJECTED" && reason ? { rejection_reason: reason } : {}),
-          ...(newStatus === "REJECTED" && note ? { rejection_note: note } : {}),
-        }),
-      });
-      updatedList.forEach(onApplicationUpdated);
-      toast.success(`${updatedList.length} candidate${updatedList.length === 1 ? "" : "s"} updated`, {
+      const count = await bulkUpdateApplicationStatus(requestedIds, newStatus, { reason, note });
+      toast.success(`${count} candidate${count === 1 ? "" : "s"} updated`, {
         description: `Status changed to ${STATUS_META[newStatus]?.label || newStatus}.`,
       });
-      setSelectedCandidateIds(new Set());
     } catch (err) {
+      setSelectedCandidateIds(new Set(requestedIds));
       console.error("Bulk update error:", err);
       toast.error("Bulk status update failed", {
         description: err instanceof Error ? err.message : "Error executing bulk status change.",
@@ -515,7 +499,7 @@ export function JobProfileView({
             <SelectTrigger
               className="h-11 w-full"
               aria-label={`Update status for ${app.candidate_code}`}
-              disabled={updatingId === app.id}
+              disabled={pendingApplicationIds.has(app.id)}
             >
               <SelectValue />
             </SelectTrigger>

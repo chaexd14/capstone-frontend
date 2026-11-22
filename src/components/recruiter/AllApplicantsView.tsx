@@ -4,7 +4,6 @@ import React, { useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Download, Scale, ShieldCheck } from "lucide-react";
 import { Application, ApplicationStatus } from "@/types/application";
-import { fetchApi } from "@/lib/api";
 import { useRecruiter } from "@/context/RecruiterContext";
 import { AllApplicationsReportDialog } from "./AllApplicationsReportDialog";
 import { CandidateComparisonDialog } from "./CandidateComparisonDialog";
@@ -98,7 +97,7 @@ function ApplicationStatusBadge({ status }: { status: ApplicationStatus }) {
 }
 
 export function AllApplicantsView({ onSelectApplication }: AllApplicantsViewProps) {
-  const { applications, jobs, anonymize, onApplicationUpdated } = useRecruiter();
+  const { applications, jobs, anonymize, onApplicationUpdated, bulkUpdateApplicationStatus } = useRecruiter();
   const [displayMode, setDisplayMode] = useState<DisplayMode>("table");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
@@ -201,17 +200,16 @@ export function AllApplicantsView({ onSelectApplication }: AllApplicantsViewProp
   };
 
   const applyBulkMove = async () => {
-    if (selectedIds.length === 0) return;
+    if (selectedIds.length === 0 || bulkWorking) return;
+    const idsToMove = [...selectedIds];
+    const targetStatus = bulkStatus;
     setBulkWorking(true);
+    setSelectedIds([]);
     try {
-      const updated = await fetchApi<Application[]>("/applications/bulk/", {
-        method: "POST",
-        body: JSON.stringify({ application_ids: selectedIds, status: bulkStatus }),
-      });
-      updated.forEach(onApplicationUpdated);
-      toast.success(`${updated.length} candidate${updated.length === 1 ? "" : "s"} updated`);
-      setSelectedIds([]);
+      const count = await bulkUpdateApplicationStatus(idsToMove, targetStatus);
+      toast.success(`${count} candidate${count === 1 ? "" : "s"} updated`);
     } catch (err) {
+      setSelectedIds(idsToMove);
       toast.error("Bulk update failed", {
         description: err instanceof Error ? err.message : "Try again.",
       });

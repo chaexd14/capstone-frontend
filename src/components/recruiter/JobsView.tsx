@@ -119,15 +119,41 @@ function calculateDuration(startStr?: string | null, endStr?: string | null): st
   return `Active for ${diffDays} days`;
 }
 
-function getJobStats(jobId: number, applications: Application[]) {
-  const jobApps = applications.filter((a) => a.job === jobId);
-  const scores = jobApps
-    .map((a) => a.match_result?.match_score)
-    .filter((s): s is number => typeof s === "number" && s > 0);
-  const topScore = scores.length > 0 ? Math.max(...scores) : null;
-  const avgScore =
-    scores.length > 0 ? Math.round(scores.reduce((acc, s) => acc + s, 0) / scores.length) : null;
-  return { count: jobApps.length, topScore, avgScore };
+interface JobStats {
+  count: number;
+  topScore: number | null;
+  avgScore: number | null;
+}
+
+const EMPTY_JOB_STATS: JobStats = { count: 0, topScore: null, avgScore: null };
+
+function buildJobStatsMap(applications: Application[]): Map<number, JobStats> {
+  const accum = new Map<number, { count: number; scoreSum: number; scoreCount: number; topScore: number | null }>();
+  for (const app of applications) {
+    let entry = accum.get(app.job);
+    if (!entry) {
+      entry = { count: 0, scoreSum: 0, scoreCount: 0, topScore: null };
+      accum.set(app.job, entry);
+    }
+    entry.count += 1;
+    const score = app.match_result?.match_score;
+    if (typeof score === "number" && score > 0) {
+      entry.scoreSum += score;
+      entry.scoreCount += 1;
+      if (entry.topScore === null || score > entry.topScore) {
+        entry.topScore = score;
+      }
+    }
+  }
+  const result = new Map<number, JobStats>();
+  accum.forEach((entry, jobId) => {
+    result.set(jobId, {
+      count: entry.count,
+      topScore: entry.topScore,
+      avgScore: entry.scoreCount > 0 ? Math.round(entry.scoreSum / entry.scoreCount) : null,
+    });
+  });
+  return result;
 }
 
 function JobStatusBadge({ status }: { status?: Job["status"] }) {
@@ -249,7 +275,7 @@ export function JobsView() {
     applications,
     loadData,
     onJobUpdated,
-    onJobArchived,
+    updateJobStatusOptimistic,
     setIsCreateJobOpen,
   } = useRecruiter();
 
@@ -259,8 +285,11 @@ export function JobsView() {
   const [departmentFilter, setDepartmentFilter] = useState("ALL");
 
   const [archivedJobs, setArchivedJobs] = useState<ArchivedJob[]>([]);
+  const [archivedLoaded, setArchivedLoaded] = useState(false);
   const [archivedLoading, setArchivedLoading] = useState(false);
   const [archivedError, setArchivedError] = useState<string | null>(null);
+
+  const jobStatsById = useMemo(() => buildJobStatsMap(applications), [applications]);
 
   // Action Confirmation Modal State
   const [actionModalType, setActionModalType] = useState<JobActionType | null>(null);
@@ -312,6 +341,7 @@ export function JobsView() {
     try {
       const data = await fetchApi<ArchivedJob[]>("/archived-jobs/");
       setArchivedJobs(data);
+      setArchivedLoaded(true);
     } catch (err) {
       console.error("Failed to fetch archived jobs:", err);
       setArchivedError(
@@ -322,21 +352,15 @@ export function JobsView() {
     }
   }, []);
 
+  // Lazy-load archived jobs only when the Archived tab is opened
   useEffect(() => {
-    const timer = setTimeout(() => {
-      void loadArchivedJobs();
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [loadArchivedJobs]);
-
-  useEffect(() => {
-    if (jobTab === "ARCHIVED") {
+    if (jobTab === "ARCHIVED" && !archivedLoaded) {
       const timer = setTimeout(() => {
         void loadArchivedJobs();
       }, 0);
       return () => clearTimeout(timer);
     }
-  }, [jobTab, loadArchivedJobs]);
+  }, [jobTab, archivedLoaded, loadArchivedJobs]);
 
   const titleCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -382,26 +406,23 @@ export function JobsView() {
   };
 
   const handleConfirmAction = async () => {
-    if (!actionModalType) return;
+    if (!actionModalType || !actionJob) return;
+    const action = actionModalType;
+    const targetJob = actionJob;
     setIsActionLoading(true);
+    setActionModalType(null);
+    setActionJob(null);
     try {
-      if (actionModalType === "close" && actionJob) {
-        const updated = await fetchApi<Job>(`/jobs/${actionJob.id}/close/`, { method: "POST" });
-        onJobUpdated(updated);
-        toast.success("Position Closed", { description: `"${actionJob.title}" is now closed.` });
-      } else if (actionModalType === "reopen" && actionJob) {
-        const updated = await fetchApi<Job>(`/jobs/${actionJob.id}/reopen/`, { method: "POST" });
-        onJobUpdated(updated);
-        toast.success("Position Reopened", { description: `"${actionJob.title}" is published.` });
-      } else if (actionModalType === "archive" && actionJob) {
-        await fetchApi(`/jobs/${actionJob.id}/archive/`, { method: "POST" });
-        onJobArchived(actionJob.id);
-        toast.success("Position Archived", { description: `"${actionJob.title}" moved to archive.` });
-        void loadArchivedJobs();
-      } else if (actionModalType === "delete-draft" && actionJob) {
-        await fetchApi(`/jobs/${actionJob.id}/`, { method: "DELETE" });
-        onJobArchived(actionJob.id);
-        toast.success("Draft Permanently Deleted", { description: `"${actionJob.title}" was removed.` });
+      await updateJobStatusOptimistic(targetJob, action);
+      if (action === "close") {
+        toast.success("Position Closed", { description: `"${targetJob.title}" is now closed.` });
+      } else if (action === "reopen") {
+        toast.success("Position Reopened", { description: `"${targetJob.title}" is published.` });
+      } else if (action === "archive") {
+        toast.success("Position Archived", { description: `"${targetJob.title}" moved to archive.` });
+        setArchivedLoaded(false);
+      } else if (action === "delete-draft") {
+        toast.success("Draft Permanently Deleted", { description: `"${targetJob.title}" was removed.` });
       }
     } catch (err: unknown) {
       console.error("Job action failed:", err);
@@ -409,8 +430,6 @@ export function JobsView() {
       toast.error("Action Failed", { description: msg });
     } finally {
       setIsActionLoading(false);
-      setActionModalType(null);
-      setActionJob(null);
     }
   };
 
@@ -452,7 +471,7 @@ export function JobsView() {
   const renderActiveJobCards = () => (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
       {filteredJobs.map((job) => {
-        const stats = getJobStats(job.id, applications);
+        const stats = jobStatsById.get(job.id) ?? EMPTY_JOB_STATS;
         const isDuplicateTitle = (titleCounts.get((job.title || "").trim().toLowerCase()) || 0) > 1;
         const isDraft = job.status === "DRAFT";
 
@@ -685,7 +704,7 @@ export function JobsView() {
                   { id: "ACTIVE", label: "Active", count: activeJobs.length },
                   { id: "DRAFT", label: "Drafts", count: draftJobs.length },
                   { id: "CLOSED", label: "Closed", count: closedJobs.length },
-                  { id: "ARCHIVED", label: "Archived", count: archivedJobs.length },
+                  { id: "ARCHIVED", label: "Archived", count: archivedLoaded ? archivedJobs.length : undefined },
                 ]}
               />
             }
@@ -778,7 +797,7 @@ export function JobsView() {
                   </TableHeader>
                   <TableBody>
                     {filteredJobs.map((job) => {
-                      const stats = getJobStats(job.id, applications);
+                      const stats = jobStatsById.get(job.id) ?? EMPTY_JOB_STATS;
                       const isDuplicateTitle =
                         (titleCounts.get((job.title || "").trim().toLowerCase()) || 0) > 1;
                       const isDraft = job.status === "DRAFT";
@@ -919,7 +938,7 @@ export function JobsView() {
                     const isArchivedDuplicate =
                       (titleCounts.get((archived.title || "").trim().toLowerCase()) || 0) > 1;
                     const archivedStats = archived.active_job_id
-                      ? getJobStats(archived.active_job_id, applications)
+                      ? jobStatsById.get(archived.active_job_id) ?? null
                       : null;
                     const candidateCount = Math.max(
                       archived.applicant_count ?? 0,

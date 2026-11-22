@@ -8,7 +8,6 @@ import {
   Star,
 } from "lucide-react";
 import { useRecruiter } from "@/context/RecruiterContext";
-import { fetchApi } from "@/lib/api";
 import { getCandidateDisplayName } from "@/lib/candidate-identity";
 import { cn } from "@/lib/utils";
 import { Application, ApplicationStatus } from "@/types/application";
@@ -62,13 +61,21 @@ function getScoreBadgeVariant(score?: number | null): NonNullable<BadgeProps["va
 }
 
 export function RecruitmentPipelineView() {
-  const { applications, jobs, anonymize, onApplicationUpdated } = useRecruiter();
+  const {
+    applications,
+    jobs,
+    anonymize,
+    onApplicationUpdated,
+    updateApplicationStatus,
+    bulkUpdateApplicationStatus,
+    pendingApplicationIds,
+  } = useRecruiter();
   const [query, setQuery] = useState("");
   const [jobFilter, setJobFilter] = useState("all");
   const [sortMode, setSortMode] = useState<"score" | "newest">("score");
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [bulkStatus, setBulkStatus] = useState<ApplicationStatus>("UNDER_REVIEW");
-  const [working, setWorking] = useState(false);
+  const [bulkWorking, setBulkWorking] = useState(false);
   const [workspaceApplicationId, setWorkspaceApplicationId] = useState<number | null>(null);
   const [analysisApplication, setAnalysisApplication] = useState<Application | null>(null);
   const [draggedId, setDraggedId] = useState<number | null>(null);
@@ -103,6 +110,18 @@ export function RecruitmentPipelineView() {
     });
   }, [anonymize, applications, jobFilter, query, sortMode]);
 
+  const applicationsByStage = useMemo(() => {
+    const grouped = new Map<ApplicationStatus, Application[]>();
+    for (const stage of PIPELINE) {
+      grouped.set(stage.status, []);
+    }
+    for (const app of visibleApplications) {
+      const bucket = grouped.get(normalizeStage(app.status));
+      if (bucket) bucket.push(app);
+    }
+    return grouped;
+  }, [visibleApplications]);
+
   const hasFilters = Boolean(query.trim()) || jobFilter !== "all";
 
   const clearFilters = () => {
@@ -116,44 +135,48 @@ export function RecruitmentPipelineView() {
     setReportOpen(true);
   };
 
-  const moveApplication = async (application: Application, status: ApplicationStatus) => {
-    if (application.status === status) return;
-    setWorking(true);
-    try {
-      const updated = await fetchApi<Application>(`/applications/${application.id}/status/`, {
-        method: "PATCH",
-        body: JSON.stringify({ status }),
-      });
-      onApplicationUpdated(updated);
-      toast.success(`Moved ${application.candidate_code}`, {
-        description: `Candidate is now in ${PIPELINE.find((stage) => stage.status === status)?.label || status}.`,
-      });
-    } catch (error) {
+  const moveApplication = (application: Application, status: ApplicationStatus) => {
+    const previousStatus = application.status;
+    if (normalizeStage(previousStatus) === status && previousStatus === status) return;
+    const stageLabel = PIPELINE.find((stage) => stage.status === status)?.label || status;
+
+    toast.success(`Moved ${application.candidate_code}`, {
+      description: `Candidate is now in ${stageLabel}.`,
+      action: {
+        label: "Undo",
+        onClick: () => {
+          void updateApplicationStatus(application, previousStatus).catch((err) => {
+            toast.error("Could not undo move", {
+              description: err instanceof Error ? err.message : "Try again.",
+            });
+          });
+        },
+      },
+    });
+
+    void updateApplicationStatus(application, status).catch((error) => {
       toast.error("Candidate was not moved", {
-        description: error instanceof Error ? error.message : "Try again.",
+        description: error instanceof Error ? error.message : "Reverted to previous stage.",
       });
-    } finally {
-      setWorking(false);
-    }
+    });
   };
 
   const applyBulkMove = async () => {
-    if (selectedIds.length === 0) return;
-    setWorking(true);
+    if (selectedIds.length === 0 || bulkWorking) return;
+    const idsToMove = [...selectedIds];
+    const targetStage = bulkStatus;
+    setBulkWorking(true);
+    setSelectedIds([]);
     try {
-      const updated = await fetchApi<Application[]>("/applications/bulk/", {
-        method: "POST",
-        body: JSON.stringify({ application_ids: selectedIds, status: bulkStatus }),
-      });
-      updated.forEach(onApplicationUpdated);
-      toast.success(`${updated.length} candidate${updated.length === 1 ? "" : "s"} moved`);
-      setSelectedIds([]);
+      const count = await bulkUpdateApplicationStatus(idsToMove, targetStage);
+      toast.success(`${count} candidate${count === 1 ? "" : "s"} moved`);
     } catch (error) {
+      setSelectedIds(idsToMove);
       toast.error("Bulk action failed", {
         description: error instanceof Error ? error.message : "Try again.",
       });
     } finally {
-      setWorking(false);
+      setBulkWorking(false);
     }
   };
 
@@ -249,14 +272,14 @@ export function RecruitmentPipelineView() {
         label="Selected pipeline candidates actions"
         description="Choose a target stage to move the selected candidates together."
         clearLabel="Clear selection"
-        disabled={working}
+        disabled={bulkWorking}
         onClear={() => setSelectedIds([])}
         actions={
           <>
             <Select
               value={bulkStatus}
               onValueChange={(value) => setBulkStatus(value as ApplicationStatus)}
-              disabled={working}
+              disabled={bulkWorking}
             >
               <SelectTrigger className="h-9 w-full bg-card sm:w-44" aria-label="Bulk destination">
                 <SelectValue />
@@ -269,7 +292,7 @@ export function RecruitmentPipelineView() {
                 ))}
               </SelectContent>
             </Select>
-            <Button type="button" size="sm" onClick={() => void applyBulkMove()} disabled={working}>
+            <Button type="button" size="sm" onClick={() => void applyBulkMove()} disabled={bulkWorking}>
               Move selected
             </Button>
           </>
@@ -296,9 +319,7 @@ export function RecruitmentPipelineView() {
           <div className="overflow-x-auto pb-3" aria-label="Candidate pipeline board">
             <div className="grid min-w-[2100px] grid-cols-6 gap-3">
               {PIPELINE.map((stage) => {
-                const stageApplications = visibleApplications.filter(
-                  (application) => normalizeStage(application.status) === stage.status
-                );
+                const stageApplications = applicationsByStage.get(stage.status) ?? [];
                 const isDropTarget = dragOverStage === stage.status;
 
                 return (
@@ -321,9 +342,9 @@ export function RecruitmentPipelineView() {
                     }}
                     onDrop={() => {
                       const application = applications.find((item) => item.id === draggedId);
-                      if (application) void moveApplication(application, stage.status);
                       setDraggedId(null);
                       setDragOverStage(null);
+                      if (application) moveApplication(application, stage.status);
                     }}
                     aria-labelledby={`pipeline-${stage.status}`}
                   >
@@ -356,6 +377,8 @@ export function RecruitmentPipelineView() {
                           const score = hasScore ? Math.round(rawScore) : null;
                           const selected = selectedIds.includes(application.id);
                           const taskCount = application.open_task_count || 0;
+                          const isDraggingThis = draggedId === application.id;
+                          const isSyncingThis = pendingApplicationIds.has(application.id);
 
                           return (
                             <Card
@@ -368,8 +391,10 @@ export function RecruitmentPipelineView() {
                                 setDragOverStage(null);
                               }}
                               className={cn(
-                                "group cursor-pointer rounded-xl border bg-card shadow-xs transition-[border-color,box-shadow,transform] hover:border-primary/40 hover:shadow-sm",
-                                selected ? "border-primary ring-2 ring-primary/20" : "border-border"
+                                "group cursor-pointer rounded-xl border bg-card shadow-xs transition-[border-color,box-shadow,transform,opacity] hover:border-primary/40 hover:shadow-sm",
+                                selected ? "border-primary ring-2 ring-primary/20" : "border-border",
+                                isDraggingThis && "opacity-50",
+                                isSyncingThis && "border-primary/30"
                               )}
                             >
                               <CardContent className="space-y-3 p-3.5">
@@ -435,9 +460,8 @@ export function RecruitmentPipelineView() {
                                   <Select
                                     value={normalizeStage(application.status)}
                                     onValueChange={(value) =>
-                                      void moveApplication(application, value as ApplicationStatus)
+                                      moveApplication(application, value as ApplicationStatus)
                                     }
-                                    disabled={working}
                                   >
                                     <SelectTrigger
                                       className="h-8 w-full text-sm"

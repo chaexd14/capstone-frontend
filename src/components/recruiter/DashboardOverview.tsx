@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -97,7 +97,24 @@ export function DashboardOverview({
     (app) => app.status === "SHORTLISTED" || app.status === "INTERVIEW" || app.status === "HIRED"
   ).length;
   const activeSnapshot = activeJobs.slice(0, 4);
-  const recentApplications = [...applications].sort((a, b) => (b.id || 0) - (a.id || 0)).slice(0, 5);
+  const recentApplications = useMemo(
+    () => [...applications].sort((a, b) => (b.id || 0) - (a.id || 0)).slice(0, 5),
+    [applications]
+  );
+  const jobStatsById = useMemo(() => {
+    const map = new Map<number, { count: number; topScore: number }>();
+    for (const app of applications) {
+      const existing = map.get(app.job);
+      const score = Math.round(app.match_result?.match_score || 0);
+      if (existing) {
+        existing.count += 1;
+        if (score > existing.topScore) existing.topScore = score;
+      } else {
+        map.set(app.job, { count: 1, topScore: score });
+      }
+    }
+    return map;
+  }, [applications]);
 
   const attention = analytics?.needs_attention;
   const hasAttentionItems = Boolean(
@@ -353,11 +370,8 @@ export function DashboardOverview({
           {activeSnapshot.length ? (
             <div className="divide-y divide-border/70">
               {activeSnapshot.map((job) => {
-                const jobApps = applications.filter((app) => app.job === job.id);
-                const topScore = jobApps.reduce(
-                  (maximum, app) => Math.max(maximum, Math.round(app.match_result?.match_score || 0)),
-                  0
-                );
+                const stats = jobStatsById.get(job.id) ?? { count: 0, topScore: 0 };
+                const topScore = stats.topScore;
                 return (
                   <Button
                     key={job.id}
@@ -377,7 +391,7 @@ export function DashboardOverview({
                     </span>
                     <span className="col-start-2 flex min-w-0 items-center gap-3 text-left sm:block sm:shrink-0 sm:text-right">
                       <span className="text-sm font-bold tabular-nums text-foreground sm:block">
-                        {jobApps.length} candidates
+                        {stats.count} candidates
                       </span>
                       <span className="text-sm text-emerald-700 sm:mt-0.5 sm:block">
                         Top {topScore ? `${topScore}%` : "—"}

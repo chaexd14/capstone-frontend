@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Scale, ShieldCheck, Sparkles, Tag } from "lucide-react";
 import { useRecruiter } from "@/context/RecruiterContext";
@@ -115,7 +115,7 @@ function formatExperienceYears(years?: number | null): string {
 }
 
 export function TalentPoolView({ onSelectApplication }: TalentPoolViewProps) {
-  const { applications, anonymize, onApplicationUpdated } = useRecruiter();
+  const { applications, anonymize, onApplicationUpdated, bulkUpdateApplicationStatus } = useRecruiter();
   const [displayMode, setDisplayMode] = useState<DisplayMode>("table");
   const [results, setResults] = useState<Application[]>([]);
   const [loading, setLoading] = useState(true);
@@ -131,8 +131,13 @@ export function TalentPoolView({ onSelectApplication }: TalentPoolViewProps) {
   const [compareOpen, setCompareOpen] = useState(false);
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [bulkRejectionReason, setBulkRejectionReason] = useState<RejectionReason>("SKILLS_GAP");
+  const searchAbortRef = useRef<AbortController | null>(null);
 
   const searchPool = useCallback(async () => {
+    searchAbortRef.current?.abort();
+    const controller = new AbortController();
+    searchAbortRef.current = controller;
+
     setLoading(true);
     setError("");
     try {
@@ -141,18 +146,32 @@ export function TalentPoolView({ onSelectApplication }: TalentPoolViewProps) {
       if (minScore !== "any") params.set("min_score", minScore);
       if (minExp !== "any") params.set("min_exp", minExp);
       if (tagFilter !== "ALL") params.set("tag", tagFilter);
-      const data = await fetchApi<Application[]>(`/applications/talent-pool/?${params.toString()}`);
-      setResults(data || []);
+      const data = await fetchApi<Application[]>(`/applications/talent-pool/?${params.toString()}`, {
+        signal: controller.signal,
+      });
+      if (!controller.signal.aborted) {
+        setResults(data || []);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not search the talent pool.");
+      if (err instanceof DOMException && err.name === "AbortError") {
+        return;
+      }
+      if (!controller.signal.aborted) {
+        setError(err instanceof Error ? err.message : "Could not search the talent pool.");
+      }
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) {
+        setLoading(false);
+      }
     }
   }, [minExp, minScore, query, tagFilter]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void searchPool(), 250);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      searchAbortRef.current?.abort();
+    };
   }, [searchPool]);
 
   const applicationsById = useMemo(() => {
@@ -238,27 +257,36 @@ export function TalentPoolView({ onSelectApplication }: TalentPoolViewProps) {
   );
 
   const executeBulkMove = async (targetStatus: ApplicationStatus, rejectionReason?: RejectionReason) => {
-    if (activeSelectedIds.length === 0) return;
+    if (activeSelectedIds.length === 0 || bulkWorking) return;
+    const idsToMove = [...activeSelectedIds];
+    const idSet = new Set(idsToMove);
+    const prevResults = results;
+
     setBulkWorking(true);
+    setRejectDialogOpen(false);
+    setSelectedIds([]);
+    setResults((prev) =>
+      prev.map((item) =>
+        idSet.has(item.id)
+          ? {
+              ...item,
+              status: targetStatus,
+              rejection_reason: targetStatus === "REJECTED" ? rejectionReason ?? "" : "",
+            }
+          : item
+      )
+    );
+
     try {
-      const payload: Record<string, unknown> = {
-        application_ids: activeSelectedIds,
-        status: targetStatus,
-      };
-      if (targetStatus === "REJECTED" && rejectionReason) {
-        payload.rejection_reason = rejectionReason;
-      }
-      const updated = await fetchApi<Application[]>("/applications/bulk/", {
-        method: "POST",
-        body: JSON.stringify(payload),
+      const count = await bulkUpdateApplicationStatus(idsToMove, targetStatus, {
+        reason: rejectionReason,
       });
-      updated.forEach(syncUpdatedApplication);
       toast.success(
-        `${updated.length} candidate${updated.length === 1 ? "" : "s"} moved to ${STATUS_META[targetStatus].label}`
+        `${count} candidate${count === 1 ? "" : "s"} moved to ${STATUS_META[targetStatus].label}`
       );
-      setSelectedIds([]);
-      setRejectDialogOpen(false);
     } catch (err) {
+      setResults(prevResults);
+      setSelectedIds(idsToMove);
       toast.error("Bulk update failed", {
         description: err instanceof Error ? err.message : "Could not update selected candidates. Try again.",
       });

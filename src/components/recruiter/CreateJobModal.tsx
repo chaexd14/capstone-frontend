@@ -518,6 +518,8 @@ export function CreateJobModal({
   const [lintFlags, setLintFlags] = useState<LintFlag[]>([]);
   const [isLinting, setIsLinting] = useState(false);
   const [cleanReplacementsAvailable, setCleanReplacementsAvailable] = useState(false);
+  const [cachedCleanedDescription, setCachedCleanedDescription] = useState<string>("");
+  const [cachedCleanedOverview, setCachedCleanedOverview] = useState<string>("");
   const lintAbortControllerRef = useRef<AbortController | null>(null);
 
   const [loading, setLoading] = useState(false);
@@ -708,6 +710,8 @@ export function CreateJobModal({
 
         setLintFlags(res.flags || []);
         setCleanReplacementsAvailable(res.has_replacements || false);
+        setCachedCleanedDescription(res.cleaned_description || "");
+        setCachedCleanedOverview(res.cleaned_job_overview || "");
       } catch (e: unknown) {
         if (e instanceof DOMException && e.name === "AbortError") {
           return;
@@ -721,6 +725,7 @@ export function CreateJobModal({
   );
 
   useEffect(() => {
+    if (!isOpen) return;
     const timer = setTimeout(() => {
       runLintCheck(description, jobOverview, requiredSkills, education, title);
     }, 600);
@@ -730,9 +735,22 @@ export function CreateJobModal({
         lintAbortControllerRef.current.abort();
       }
     };
-  }, [description, jobOverview, requiredSkills, education, title, runLintCheck]);
+  }, [isOpen, description, jobOverview, requiredSkills, education, title, runLintCheck]);
 
   const handleAutoCleanBias = async () => {
+    // Apply immediately from the latest lint response when already available (0ms, no duplicate network call)
+    if (cachedCleanedDescription || cachedCleanedOverview) {
+      if (cachedCleanedDescription) setDescription(cachedCleanedDescription);
+      if (cachedCleanedOverview) setJobOverview(cachedCleanedOverview);
+      setLintFlags((prev) => prev.filter((f) => f.category === "missing_regulatory_license"));
+      setCleanReplacementsAvailable(false);
+      setCachedCleanedDescription("");
+      setCachedCleanedOverview("");
+      toast.success("Biased terms cleaned", {
+        description: "Replaced gendered or non-operational terms with objective language.",
+      });
+      return;
+    }
     try {
       const res = await fetchApi<{
         cleaned_description: string;

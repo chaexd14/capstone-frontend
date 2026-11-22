@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import { ClipboardCheck } from "lucide-react";
-import { fetchApi } from "@/lib/api";
+import { useRecruiter } from "@/context/RecruiterContext";
 import { getCandidateDisplayName } from "@/lib/candidate-identity";
 import { Application, ApplicationStatus } from "@/types/application";
 import { Job } from "@/types/job";
@@ -46,7 +46,8 @@ export function CandidateWorkflowPanel({
   onApplicationUpdated,
   onOpenAnalysis,
 }: CandidateWorkflowPanelProps) {
-  const [updatingStage, setUpdatingStage] = useState(false);
+  const { updateApplicationStatus, pendingApplicationIds } = useRecruiter();
+  const updatingStage = Boolean(application && pendingApplicationIds.has(application.id));
 
   const candidateName = application ? getCandidateDisplayName(application, anonymize) : "Candidate";
   const applicantNumber = application ? application.candidate_code || `#${application.id}` : "";
@@ -66,23 +67,20 @@ export function CandidateWorkflowPanel({
             ? "processing"
             : "neutral";
 
-  const handleStageChange = async (nextStatus: ApplicationStatus) => {
+  const handleStageChange = (nextStatus: ApplicationStatus) => {
     if (!application || nextStatus === application.status) return;
-    setUpdatingStage(true);
-    try {
-      const updated = await fetchApi<Application>(`/applications/${application.id}/status/`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: nextStatus }),
+    const prevSnapshot = application;
+    onApplicationUpdated?.({ ...prevSnapshot, status: nextStatus });
+    toast.success(`Stage updated to ${nextStatus.replaceAll("_", " ").toLowerCase()}`);
+
+    void updateApplicationStatus(prevSnapshot, nextStatus)
+      .then((confirmed) => onApplicationUpdated?.(confirmed))
+      .catch((error) => {
+        onApplicationUpdated?.(prevSnapshot);
+        toast.error("Stage not updated", {
+          description: error instanceof Error ? error.message : "Try again.",
+        });
       });
-      onApplicationUpdated?.(updated);
-      toast.success(`Stage updated to ${nextStatus.replaceAll("_", " ").toLowerCase()}`);
-    } catch (error) {
-      toast.error("Stage not updated", {
-        description: error instanceof Error ? error.message : "Try again.",
-      });
-    } finally {
-      setUpdatingStage(false);
-    }
   };
 
   return (

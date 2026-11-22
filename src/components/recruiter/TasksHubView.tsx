@@ -36,6 +36,19 @@ interface TasksHubViewProps {
 
 type TaskStatusFilter = "open" | "overdue" | "completed" | "all";
 
+function classifyTaskDue(dueAt?: string | null): { isOverdue: boolean; isDueToday: boolean } {
+  if (!dueAt) return { isOverdue: false, isDueToday: false };
+  const nowDate = new Date();
+  const nowMs = nowDate.getTime();
+  const dueMs = new Date(dueAt).getTime();
+  const todayEnd = new Date(nowDate);
+  todayEnd.setHours(23, 59, 59, 999);
+  return {
+    isOverdue: dueMs < nowMs,
+    isDueToday: dueMs >= nowMs && dueMs <= todayEnd.getTime(),
+  };
+}
+
 function formatDue(value?: string | null) {
   if (!value) return "No due date";
   return new Intl.DateTimeFormat(undefined, {
@@ -47,7 +60,7 @@ function formatDue(value?: string | null) {
 }
 
 export function TasksHubView({ onSelectApplication }: TasksHubViewProps) {
-  const { applications, jobs, anonymize, loadData } = useRecruiter();
+  const { applications, jobs, anonymize, adjustTaskCounts, mergeApplicationPatch } = useRecruiter();
   const [tasks, setTasks] = useState<GlobalRecruiterTask[]>([]);
   const [summary, setSummary] = useState({ open: 0, overdue: 0, due_today: 0 });
   const [fetchedAtMs, setFetchedAtMs] = useState(0);
@@ -88,16 +101,58 @@ export function TasksHubView({ onSelectApplication }: TasksHubViewProps) {
   }, [fetchTasks]);
 
   const toggleTask = async (task: GlobalRecruiterTask) => {
-    try {
-      const updated = await fetchApi<GlobalRecruiterTask>(
-        `/applications/${task.application}/tasks/${task.id}/`,
-        { method: "PATCH", body: JSON.stringify({ is_complete: !task.is_complete }) }
+    const nextComplete = !task.is_complete;
+    const prevTasks = tasks;
+    const prevSummary = summary;
+    const { isOverdue, isDueToday } = classifyTaskDue(task.due_at);
+
+    const openDelta = nextComplete ? -1 : 1;
+    const overdueDelta = isOverdue ? openDelta : 0;
+    const dueTodayDelta = isDueToday ? openDelta : 0;
+
+    // Optimistic update for task row, summary counters, and sidebar badge
+    setTasks((prev) => {
+      const updatedList = prev.map((item) =>
+        item.id === task.id
+          ? { ...item, is_complete: nextComplete, completed_at: nextComplete ? new Date().toISOString() : null }
+          : item
       );
-      setTasks((prev) => prev.map((item) => (item.id === updated.id ? { ...item, ...updated } : item)));
-      toast.success(updated.is_complete ? "Task completed" : "Task reopened");
-      void fetchTasks();
-      void loadData();
+      if (statusTab === "open" || statusTab === "overdue") {
+        return updatedList.filter((item) => !item.is_complete);
+      }
+      if (statusTab === "completed") {
+        return updatedList.filter((item) => item.is_complete);
+      }
+      return updatedList;
+    });
+    setSummary((prev) => ({
+      open: Math.max(0, prev.open + openDelta),
+      overdue: Math.max(0, prev.overdue + overdueDelta),
+      due_today: Math.max(0, prev.due_today + dueTodayDelta),
+    }));
+    adjustTaskCounts(openDelta, overdueDelta);
+    const linkedApp = applications.find((a) => a.id === task.application);
+    if (linkedApp) {
+      mergeApplicationPatch(linkedApp.id, {
+        open_task_count: Math.max(0, (linkedApp.open_task_count || 0) + openDelta),
+      });
+    }
+    toast.success(nextComplete ? "Task completed" : "Task reopened");
+
+    try {
+      await fetchApi<GlobalRecruiterTask>(
+        `/applications/${task.application}/tasks/${task.id}/`,
+        { method: "PATCH", body: JSON.stringify({ is_complete: nextComplete }) }
+      );
     } catch (err) {
+      setTasks(prevTasks);
+      setSummary(prevSummary);
+      adjustTaskCounts(-openDelta, -overdueDelta);
+      if (linkedApp) {
+        mergeApplicationPatch(linkedApp.id, {
+          open_task_count: linkedApp.open_task_count || 0,
+        });
+      }
       toast.error("Task not updated", {
         description: err instanceof Error ? err.message : "Try again.",
       });
@@ -267,9 +322,8 @@ export function TasksHubView({ onSelectApplication }: TasksHubViewProps) {
                   <div className="min-w-0 flex-1 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span
-                        className={`text-sm font-semibold ${
-                          task.is_complete ? "text-muted-foreground line-through" : "text-foreground"
-                        }`}
+                        className={`text-sm font-semibold ${task.is_complete ? "text-muted-foreground line-through" : "text-foreground"
+                          }`}
                       >
                         {task.title}
                       </span>

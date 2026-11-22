@@ -23,7 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { useRecruiter } from "@/context/RecruiterContext";
-import { downloadApiFile, fetchApi } from "@/lib/api";
+import { downloadApiFile, fetchApi, fetchCommunicationTemplatesCached } from "@/lib/api";
 import { getCandidateDisplayName } from "@/lib/candidate-identity";
 import {
   Application,
@@ -73,23 +73,29 @@ interface CandidateWorkflowContentProps {
   initialTab?: string;
 }
 
-async function fetchTemplates(): Promise<CommunicationTemplate[]> {
-  try {
-    return await fetchApi<CommunicationTemplate[]>("/communication-templates/");
-  } catch {
-    return await fetchApi<CommunicationTemplate[]>("/applications/communication-templates/");
-  }
+interface ApplicationWorkspaceResponse {
+  notes: CandidateNote[];
+  tasks: RecruiterTask[];
+  activity: ApplicationActivity[];
+  interviews: InterviewSchedule[];
+  scorecards: InterviewScorecard[];
 }
 
 function fetchWorkspace(applicationId: number) {
   return Promise.all([
-    fetchApi<CandidateNote[]>(`/applications/${applicationId}/notes/`),
-    fetchApi<RecruiterTask[]>(`/applications/${applicationId}/tasks/`),
-    fetchApi<ApplicationActivity[]>(`/applications/${applicationId}/activity/`),
-    fetchTemplates(),
-    fetchApi<InterviewSchedule[]>(`/applications/${applicationId}/interviews/`).catch(() => []),
-    fetchApi<InterviewScorecard[]>(`/applications/${applicationId}/scorecards/`).catch(() => []),
+    fetchApi<ApplicationWorkspaceResponse>(`/applications/${applicationId}/workspace/`),
+    fetchCommunicationTemplatesCached().catch(() => [] as CommunicationTemplate[]),
   ]);
+}
+
+let localActivitySeq = -1;
+function nextLocalActivityId() {
+  return localActivitySeq--;
+}
+
+function isDueInPast(dueAt?: string | null): boolean {
+  if (!dueAt) return false;
+  return new Date(dueAt).getTime() < new Date().getTime();
 }
 
 function formatWhen(value?: string | null) {
@@ -116,7 +122,7 @@ export function CandidateWorkflowContent({
   onApplicationUpdated,
   initialTab = "tasks",
 }: CandidateWorkflowContentProps) {
-  const { currentUser, teamMembers } = useRecruiter();
+  const { currentUser, teamMembers, mergeApplicationPatch, adjustTaskCounts } = useRecruiter();
 
   const [notes, setNotes] = useState<CandidateNote[]>([]);
   const [tasks, setTasks] = useState<RecruiterTask[]>([]);
@@ -198,14 +204,14 @@ export function CandidateWorkflowContent({
   useEffect(() => {
     let active = true;
     void fetchWorkspace(application.id)
-      .then(([notesData, tasksData, activityData, templateData, interviewsData, scorecardsData]) => {
+      .then(([workspace, templateData]) => {
         if (!active) return;
-        setNotes(notesData);
-        setTasks(tasksData);
-        setActivity(activityData);
-        setTemplates(templateData);
-        setInterviews(interviewsData);
-        setScorecards(scorecardsData);
+        setNotes(workspace.notes || []);
+        setTasks(workspace.tasks || []);
+        setActivity(workspace.activity || []);
+        setTemplates(templateData || []);
+        setInterviews(workspace.interviews || []);
+        setScorecards(workspace.scorecards || []);
       })
       .catch((error: unknown) => {
         if (!active) return;
@@ -235,41 +241,50 @@ export function CandidateWorkflowContent({
     }
   }, [templates, application.status, selectedTemplate, hydrateTemplate]);
 
-  const reloadWorkspace = async () => {
-    try {
-      const [notesData, tasksData, activityData, templateData, interviewsData, scorecardsData] =
-        await fetchWorkspace(application.id);
-      setNotes(notesData);
-      setTasks(tasksData);
-      setActivity(activityData);
-      setTemplates(templateData);
-      setInterviews(interviewsData);
-      setScorecards(scorecardsData);
-      const nextOpenCount = tasksData.filter((t) => !t.is_complete).length;
-      const avgRating =
-        scorecardsData.length > 0
-          ? Number(
-              (
-                scorecardsData.reduce((sum, item) => sum + item.overall_rating, 0) /
-                scorecardsData.length
-              ).toFixed(2)
-            )
-          : null;
-      onApplicationUpdated?.({
-        ...application,
-        open_task_count: nextOpenCount,
-        interview_count: interviewsData.filter((i) => i.status !== "CANCELLED").length,
-        scorecard_count: scorecardsData.length,
-        scorecard_avg_rating: avgRating,
-      });
-    } catch {
-      // Non-fatal background sync
-    }
+  const appendLocalActivity = (kind: ApplicationActivity["kind"], summary: string) => {
+    const entry: ApplicationActivity = {
+      id: nextLocalActivityId(),
+      application: application.id,
+      kind,
+      actor_id: currentUser?.id || "recruiter",
+      actor_name: currentUser?.email || recruiterName,
+      summary,
+      details: {},
+      created_at: new Date().toISOString(),
+    };
+    setActivity((current) => [entry, ...current]);
+  };
+
+  const syncApplicationCounts = (
+    nextTasks: RecruiterTask[],
+    nextInterviews: InterviewSchedule[],
+    nextScorecards: InterviewScorecard[]
+  ) => {
+    const nextOpenCount = nextTasks.filter((t) => !t.is_complete).length;
+    const avgRating =
+      nextScorecards.length > 0
+        ? Number(
+          (
+            nextScorecards.reduce((sum, item) => sum + item.overall_rating, 0) /
+            nextScorecards.length
+          ).toFixed(2)
+        )
+        : null;
+    const patch: Partial<Application> = {
+      open_task_count: nextOpenCount,
+      interview_count: nextInterviews.filter((i) => i.status !== "CANCELLED").length,
+      scorecard_count: nextScorecards.length,
+      scorecard_avg_rating: avgRating,
+      latest_activity_at: new Date().toISOString(),
+    };
+    mergeApplicationPatch(application.id, patch);
+    onApplicationUpdated?.({ ...application, ...patch });
   };
 
   const addNote = async () => {
     if (!noteBody.trim()) return;
     setSaving(true);
+    const wasEditing = Boolean(editingNote);
     try {
       const note = await fetchApi<CandidateNote>(
         editingNote ? `/applications/${application.id}/notes/${editingNote.id}/` : `/applications/${application.id}/notes/`,
@@ -284,8 +299,8 @@ export function CandidateWorkflowContent({
       setNoteBody("");
       setEditingNote(null);
       setNoteDialogOpen(false);
-      void reloadWorkspace();
-      toast.success(editingNote ? "Private note updated" : "Private note added");
+      appendLocalActivity("NOTE", wasEditing ? "Updated a private recruiter note" : "Added a private recruiter note");
+      toast.success(wasEditing ? "Private note updated" : "Private note added");
     } catch (error) {
       toast.error("Note not saved", { description: error instanceof Error ? error.message : "Try again." });
     } finally {
@@ -294,11 +309,13 @@ export function CandidateWorkflowContent({
   };
 
   const deleteNote = async (noteId: number) => {
+    const prevNotes = notes;
+    setNotes((current) => current.filter((note) => note.id !== noteId));
     try {
       await fetchApi(`/applications/${application.id}/notes/${noteId}/`, { method: "DELETE" });
-      setNotes((current) => current.filter((note) => note.id !== noteId));
       toast.success("Note removed");
     } catch (error) {
+      setNotes(prevNotes);
       toast.error("Note not removed", { description: error instanceof Error ? error.message : "Try again." });
     }
   };
@@ -307,6 +324,7 @@ export function CandidateWorkflowContent({
     if (!taskTitle.trim()) return;
     setSaving(true);
     const chosenMember = teamMembers.find((m) => m.id === taskAssigneeId);
+    const wasEditing = Boolean(editingTask);
     try {
       const task = await fetchApi<RecruiterTask>(
         editingTask ? `/applications/${application.id}/tasks/${editingTask.id}/` : `/applications/${application.id}/tasks/`,
@@ -322,17 +340,22 @@ export function CandidateWorkflowContent({
           }),
         }
       );
-      setTasks((current) =>
-        editingTask ? current.map((item) => (item.id === task.id ? task : item)) : [task, ...current]
-      );
+      const nextTasks = editingTask
+        ? tasks.map((item) => (item.id === task.id ? task : item))
+        : [task, ...tasks];
+      setTasks(nextTasks);
       setTaskTitle("");
       setTaskDueAt("");
       setTaskPriority("MEDIUM");
       setTaskAssigneeId("");
       setEditingTask(null);
       setTaskDialogOpen(false);
-      void reloadWorkspace();
-      toast.success(editingTask ? "Follow-up task updated" : "Follow-up task created");
+      if (!wasEditing) {
+        adjustTaskCounts(1);
+      }
+      syncApplicationCounts(nextTasks, interviews, scorecards);
+      appendLocalActivity("TASK", `${wasEditing ? "Updated" : "Created"} task: ${task.title}`);
+      toast.success(wasEditing ? "Follow-up task updated" : "Follow-up task created");
     } catch (error) {
       toast.error("Task not saved", { description: error instanceof Error ? error.message : "Try again." });
     } finally {
@@ -341,25 +364,54 @@ export function CandidateWorkflowContent({
   };
 
   const toggleTask = async (task: RecruiterTask) => {
+    const nextComplete = !task.is_complete;
+    const prevTasks = tasks;
+    const nextTasks = tasks.map((item) =>
+      item.id === task.id
+        ? { ...item, is_complete: nextComplete, completed_at: nextComplete ? new Date().toISOString() : null }
+        : item
+    );
+    const openDelta = nextComplete ? -1 : 1;
+    const isOverdue = isDueInPast(task.due_at);
+    const overdueDelta = isOverdue ? openDelta : 0;
+
+    setTasks(nextTasks);
+    adjustTaskCounts(openDelta, overdueDelta);
+    syncApplicationCounts(nextTasks, interviews, scorecards);
+
     try {
       const updated = await fetchApi<RecruiterTask>(
         `/applications/${application.id}/tasks/${task.id}/`,
-        { method: "PATCH", body: JSON.stringify({ is_complete: !task.is_complete }) }
+        { method: "PATCH", body: JSON.stringify({ is_complete: nextComplete }) }
       );
       setTasks((current) => current.map((item) => (item.id === updated.id ? updated : item)));
-      void reloadWorkspace();
+      appendLocalActivity("TASK", `${updated.is_complete ? "Completed" : "Updated"} task: ${updated.title}`);
     } catch (error) {
+      setTasks(prevTasks);
+      adjustTaskCounts(-openDelta, -overdueDelta);
+      syncApplicationCounts(prevTasks, interviews, scorecards);
       toast.error("Task not updated", { description: error instanceof Error ? error.message : "Try again." });
     }
   };
 
   const deleteTask = async (task: RecruiterTask) => {
+    const prevTasks = tasks;
+    const nextTasks = tasks.filter((item) => item.id !== task.id);
+    const wasOpen = !task.is_complete;
+    const wasOverdue = wasOpen && isDueInPast(task.due_at);
+
+    setTasks(nextTasks);
+    if (wasOpen) adjustTaskCounts(-1, wasOverdue ? -1 : 0);
+    syncApplicationCounts(nextTasks, interviews, scorecards);
+
     try {
       await fetchApi(`/applications/${application.id}/tasks/${task.id}/`, { method: "DELETE" });
-      setTasks((current) => current.filter((item) => item.id !== task.id));
-      void reloadWorkspace();
+      appendLocalActivity("TASK", `Deleted task: ${task.title}`);
       toast.success("Task removed");
     } catch (error) {
+      setTasks(prevTasks);
+      if (wasOpen) adjustTaskCounts(1, wasOverdue ? 1 : 0);
+      syncApplicationCounts(prevTasks, interviews, scorecards);
       toast.error("Task not removed", { description: error instanceof Error ? error.message : "Try again." });
     }
   };
@@ -380,13 +432,15 @@ export function CandidateWorkflowContent({
           interviewer_names: [recruiterName],
         }),
       });
-      setInterviews((prev) => [created, ...prev]);
+      const nextInterviews = [created, ...interviews];
+      setInterviews(nextInterviews);
       setInterviewDialogOpen(false);
       setInterviewTitle("Initial Screening Interview");
       setInterviewScheduledAt("");
       setInterviewLink("");
       setInterviewNotes("");
-      void reloadWorkspace();
+      syncApplicationCounts(tasks, nextInterviews, scorecards);
+      appendLocalActivity("INTERVIEW", `Scheduled interview: ${created.title}`);
       toast.success("Interview scheduled");
     } catch (error) {
       toast.error("Interview not scheduled", { description: error instanceof Error ? error.message : "Try again." });
@@ -396,15 +450,24 @@ export function CandidateWorkflowContent({
   };
 
   const updateInterviewStatus = async (interview: InterviewSchedule, status: InterviewSchedule["status"]) => {
+    const prevInterviews = interviews;
+    const nextInterviews = interviews.map((item) =>
+      item.id === interview.id ? { ...item, status } : item
+    );
+    setInterviews(nextInterviews);
+    syncApplicationCounts(tasks, nextInterviews, scorecards);
+
     try {
       const updated = await fetchApi<InterviewSchedule>(
         `/applications/${application.id}/interviews/${interview.id}/`,
         { method: "PATCH", body: JSON.stringify({ status }) }
       );
       setInterviews((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
-      void reloadWorkspace();
+      appendLocalActivity("INTERVIEW", `Updated interview (${status.toLowerCase()}): ${updated.title}`);
       toast.success(`Interview marked ${status.toLowerCase()}`);
     } catch (error) {
+      setInterviews(prevInterviews);
+      syncApplicationCounts(tasks, prevInterviews, scorecards);
       toast.error("Could not update interview", { description: error instanceof Error ? error.message : "Try again." });
     }
   };
@@ -450,9 +513,11 @@ export function CandidateWorkflowContent({
           concerns: scConcerns.trim(),
         }),
       });
-      setScorecards((prev) => [created, ...prev]);
+      const nextScorecards = [created, ...scorecards];
+      setScorecards(nextScorecards);
       setScorecardDialogOpen(false);
-      void reloadWorkspace();
+      syncApplicationCounts(tasks, interviews, nextScorecards);
+      appendLocalActivity("SCORECARD", `Submitted scorecard (${created.overall_rating}/5)`);
       toast.success("Interview scorecard saved");
     } catch (error) {
       toast.error("Scorecard not saved", { description: error instanceof Error ? error.message : "Try again." });
@@ -462,16 +527,30 @@ export function CandidateWorkflowContent({
   };
 
   const persistTags = async (nextTags: string[]) => {
+    const prevTags = application.tags || [];
     setSavingTags(true);
+    mergeApplicationPatch(application.id, { tags: nextTags });
+    onApplicationUpdated?.({ ...application, tags: nextTags });
     try {
-      const updated = await fetchApi<Application>(`/applications/${application.id}/tags/`, {
-        method: "PATCH",
-        body: JSON.stringify({ tags: nextTags }),
+      const patch = await fetchApi<{ tags?: string[]; updated_at?: string; latest_activity_at?: string | null }>(
+        `/applications/${application.id}/tags/?compact=1`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ tags: nextTags }),
+        }
+      );
+      const confirmedTags = patch.tags ?? nextTags;
+      mergeApplicationPatch(application.id, {
+        tags: confirmedTags,
+        ...(patch.updated_at ? { updated_at: patch.updated_at } : {}),
+        ...(patch.latest_activity_at ? { latest_activity_at: patch.latest_activity_at } : {}),
       });
-      onApplicationUpdated?.(updated);
-      void reloadWorkspace();
+      onApplicationUpdated?.({ ...application, tags: confirmedTags });
+      appendLocalActivity("TAG", `Updated tags: ${confirmedTags.length ? confirmedTags.join(", ") : "cleared"}`);
       toast.success("Candidate tags updated");
     } catch (error) {
+      mergeApplicationPatch(application.id, { tags: prevTags });
+      onApplicationUpdated?.({ ...application, tags: prevTags });
       toast.error("Tags not updated", { description: error instanceof Error ? error.message : "Try again." });
     } finally {
       setSavingTags(false);

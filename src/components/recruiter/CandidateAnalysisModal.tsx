@@ -21,7 +21,8 @@ import {
   REJECTION_REASON_OPTIONS,
   RejectionReason,
 } from "@/types/application";
-import { downloadApiFile, fetchApi } from "@/lib/api";
+import { downloadApiFile, fetchApi, prefetchResumeForApplication } from "@/lib/api";
+import { useRecruiter } from "@/context/RecruiterContext";
 import { getCandidateDisplayName } from "@/lib/candidate-identity";
 import { cn } from "@/lib/utils";
 import {
@@ -93,7 +94,7 @@ export function CandidateAnalysisModal({
   anonymize,
   onStatusUpdated,
 }: CandidateAnalysisModalProps) {
-  const [updating, setUpdating] = useState(false);
+  const { updateApplicationStatus, pendingApplicationIds } = useRecruiter();
   const [refreshing, setRefreshing] = useState(false);
   const [downloadingResume, setDownloadingResume] = useState(false);
   const [viewMode, setViewMode] = useState<"split" | "resume" | "evaluation" | "workflow">("split");
@@ -103,6 +104,8 @@ export function CandidateAnalysisModal({
   const [rejectionReason, setRejectionReason] = useState<RejectionReason | "">("SKILLS_GAP");
   const [rejectionNote, setRejectionNote] = useState("");
   const [revealedAppId, setRevealedAppId] = useState<number | null>(null);
+
+  const updating = Boolean(application && pendingApplicationIds.has(application.id));
 
   useEffect(() => {
     const query = window.matchMedia("(min-width: 1024px)");
@@ -137,60 +140,64 @@ export function CandidateAnalysisModal({
     [applicationsQueue, onSelectApplication, queueIndex]
   );
 
-  const persistStatus = useCallback(
-    async (
-      targetId: number,
-      newStatus: ApplicationStatus,
-      options?: { reason?: RejectionReason | ""; note?: string }
-    ) => {
-      const updated = await fetchApi<Application>(`/applications/${targetId}/status/`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          status: newStatus,
-          ...(newStatus === "REJECTED" && options?.reason ? { rejection_reason: options.reason } : {}),
-          ...(newStatus === "REJECTED" && options?.note ? { rejection_note: options.note } : {}),
-        }),
-      });
-      onStatusUpdated(updated);
-      return updated;
-    },
-    [onStatusUpdated]
-  );
+  // Prefetch the next candidate's resume details & preview while reviewing the current candidate
+  useEffect(() => {
+    if (!isOpen || !applicationsQueue || queueIndex < 0) return;
+    const nextCandidate = applicationsQueue[queueIndex + 1];
+    if (nextCandidate) {
+      prefetchResumeForApplication(nextCandidate, anonymize);
+    }
+  }, [anonymize, applicationsQueue, isOpen, queueIndex]);
 
   const handleStatusChange = useCallback(
-    async (
+    (
       newStatus: ApplicationStatus,
       options?: { reason?: RejectionReason | ""; note?: string }
     ) => {
-      if (!application) return;
-      setUpdating(true);
+      if (!application || application.status === newStatus) return;
       const previousStatus = application.status;
-      const appId = application.id;
+      const appSnapshot = application;
       const appCode = application.candidate_code;
-      try {
-        await persistStatus(appId, newStatus, options);
 
-        toast.success(`Candidate moved to ${STATUS_LABEL[newStatus]?.label || newStatus}`, {
-          description: `${appCode} updated.`,
-          action: {
-            label: "Undo",
-            onClick: () => {
-              void persistStatus(appId, previousStatus).catch(() => {
+      // Immediately update modal & global state optimistically
+      const optimisticApp: Application = {
+        ...appSnapshot,
+        status: newStatus,
+        rejection_reason:
+          newStatus === "REJECTED" ? options?.reason ?? appSnapshot.rejection_reason ?? "" : "",
+        rejection_note:
+          newStatus === "REJECTED" ? options?.note ?? appSnapshot.rejection_note ?? "" : "",
+      };
+      onStatusUpdated(optimisticApp);
+
+      toast.success(`Candidate moved to ${STATUS_LABEL[newStatus]?.label || newStatus}`, {
+        description: `${appCode} updated.`,
+        action: {
+          label: "Undo",
+          onClick: () => {
+            onStatusUpdated({ ...appSnapshot, status: previousStatus });
+            void updateApplicationStatus(appSnapshot, previousStatus)
+              .then((reverted) => onStatusUpdated(reverted))
+              .catch(() => {
                 toast.error("Could not undo status change");
               });
-            },
           },
+        },
+      });
+
+      void updateApplicationStatus(appSnapshot, newStatus, options)
+        .then((confirmed) => {
+          onStatusUpdated(confirmed);
+        })
+        .catch((error) => {
+          console.error("Error updating status:", error);
+          onStatusUpdated(appSnapshot);
+          toast.error("Update failed", {
+            description: "We could not update the candidate. Status was reverted.",
+          });
         });
-      } catch (error) {
-        console.error("Error updating status:", error);
-        toast.error("Update failed", {
-          description: "We could not update the candidate. Please try again.",
-        });
-      } finally {
-        setUpdating(false);
-      }
     },
-    [application, persistStatus]
+    [application, onStatusUpdated, updateApplicationStatus]
   );
 
   // Fast-screen keyboard shortcuts: J/Down next, K/Up previous, S shortlist, R reject
