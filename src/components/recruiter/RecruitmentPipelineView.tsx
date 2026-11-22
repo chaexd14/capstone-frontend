@@ -2,10 +2,10 @@
 
 import React, { useMemo, useState } from "react";
 import {
-  CheckSquare2,
-  Clock3,
+  ClipboardCheck,
   Download,
   ShieldCheck,
+  Star,
 } from "lucide-react";
 import { useRecruiter } from "@/context/RecruiterContext";
 import { fetchApi } from "@/lib/api";
@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { EmptyState } from "@/components/ui/feedback";
+import { IconButton } from "@/components/ui/icon-button";
 import {
   PageHeader,
   PageHeaderActions,
@@ -31,9 +32,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SelectionActionBar } from "@/components/ui/selection-action-bar";
 import { toast } from "@/components/ui/sonner";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { CollectionToolbar } from "@/components/ui/toolbar";
+import { CandidateAnalysisModal } from "./CandidateAnalysisModal";
 import { CandidateWorkflowPanel } from "./CandidateWorkflowPanel";
 import { PipelineReportDialog } from "./PipelineReportDialog";
 
@@ -62,30 +65,43 @@ export function RecruitmentPipelineView() {
   const { applications, jobs, anonymize, onApplicationUpdated } = useRecruiter();
   const [query, setQuery] = useState("");
   const [jobFilter, setJobFilter] = useState("all");
+  const [sortMode, setSortMode] = useState<"score" | "newest">("score");
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [bulkStatus, setBulkStatus] = useState<ApplicationStatus>("UNDER_REVIEW");
   const [working, setWorking] = useState(false);
-  const [workspaceApplication, setWorkspaceApplication] = useState<Application | null>(null);
+  const [workspaceApplicationId, setWorkspaceApplicationId] = useState<number | null>(null);
+  const [analysisApplication, setAnalysisApplication] = useState<Application | null>(null);
   const [draggedId, setDraggedId] = useState<number | null>(null);
   const [dragOverStage, setDragOverStage] = useState<ApplicationStatus | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
   const [reportSession, setReportSession] = useState(0);
 
+  const workspaceApplication = useMemo(
+    () => applications.find((item) => item.id === workspaceApplicationId) || null,
+    [applications, workspaceApplicationId]
+  );
+
   const visibleApplications = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return applications.filter((application) => {
+    const filtered = applications.filter((application) => {
       const matchesJob = jobFilter === "all" || String(application.job) === jobFilter;
       const matchesQuery =
         !needle ||
         [
           application.candidate_code,
-          application.applicant_name,
-          application.email,
           application.job_title,
+          ...(application.tags || []),
+          ...(anonymize ? [] : [application.applicant_name, application.email]),
         ].some((value) => value?.toLowerCase().includes(needle));
       return matchesJob && matchesQuery;
     });
-  }, [applications, jobFilter, query]);
+    return [...filtered].sort((a, b) => {
+      if (sortMode === "score") {
+        return (b.match_result?.match_score ?? -1) - (a.match_result?.match_score ?? -1);
+      }
+      return new Date(b.applied_at).getTime() - new Date(a.applied_at).getTime();
+    });
+  }, [anonymize, applications, jobFilter, query, sortMode]);
 
   const hasFilters = Boolean(query.trim()) || jobFilter !== "all";
 
@@ -155,7 +171,7 @@ export function RecruitmentPipelineView() {
         <div>
           <PageHeaderTitle>Recruitment pipeline</PageHeaderTitle>
           <PageHeaderDescription>
-            Keep ownership and next actions visible from first review through the final decision.
+            Move candidates by drag-and-drop or stage selector, open AI evidence directly, and manage follow-ups from one board.
           </PageHeaderDescription>
         </div>
         <PageHeaderActions>
@@ -176,30 +192,42 @@ export function RecruitmentPipelineView() {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             onClear={() => setQuery("")}
-            placeholder="Search candidate, role, or email…"
+            placeholder={anonymize ? "Search candidate code, role, or tag…" : "Search candidate, role, or tag…"}
             containerClassName="w-full sm:w-72 lg:w-80"
           />
         }
         filters={
-          <Select
-            value={jobFilter}
-            onValueChange={(value) => {
-              setJobFilter(value);
-              setSelectedIds([]);
-            }}
-          >
-            <SelectTrigger className="w-full sm:w-64" aria-label="Filter by job">
-              <SelectValue placeholder="All job requisitions" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All job requisitions</SelectItem>
-              {jobs.map((job) => (
-                <SelectItem key={job.id} value={String(job.id)}>
-                  {job.title}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <>
+            <Select
+              value={jobFilter}
+              onValueChange={(value) => {
+                setJobFilter(value);
+                setSelectedIds([]);
+              }}
+            >
+              <SelectTrigger className="w-full sm:w-56" aria-label="Filter by job">
+                <SelectValue placeholder="All job requisitions" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All job requisitions</SelectItem>
+                {jobs.map((job) => (
+                  <SelectItem key={job.id} value={String(job.id)}>
+                    {job.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={sortMode} onValueChange={(v) => setSortMode(v as "score" | "newest")}>
+              <SelectTrigger className="w-full sm:w-44" aria-label="Sort pipeline cards">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="score">Highest AI match</SelectItem>
+                <SelectItem value="newest">Newest applied</SelectItem>
+              </SelectContent>
+            </Select>
+          </>
         }
         hasActiveFilters={hasFilters}
         onClearFilters={clearFilters}
@@ -216,50 +244,37 @@ export function RecruitmentPipelineView() {
         }
       />
 
-      {selectedIds.length > 0 ? (
-        <Card className="border border-primary/25 bg-secondary/40 shadow-xs">
-          <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <StatusBadge status="info" dot>
-                <CheckSquare2 className="size-3.5" aria-hidden="true" />
-                {selectedIds.length} selected
-              </StatusBadge>
-              <p className="text-sm text-muted-foreground">
-                Choose a target stage to move the selected candidates together.
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Select
-                value={bulkStatus}
-                onValueChange={(value) => setBulkStatus(value as ApplicationStatus)}
-              >
-                <SelectTrigger className="h-9 w-full bg-card sm:w-44" aria-label="Bulk destination">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PIPELINE.map((stage) => (
-                    <SelectItem key={stage.status} value={stage.status}>
-                      {stage.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button type="button" size="sm" onClick={applyBulkMove} disabled={working}>
-                Move selected
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setSelectedIds([])}
-                disabled={working}
-              >
-                Clear selection
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
+      <SelectionActionBar
+        count={selectedIds.length}
+        label="Selected pipeline candidates actions"
+        description="Choose a target stage to move the selected candidates together."
+        clearLabel="Clear selection"
+        disabled={working}
+        onClear={() => setSelectedIds([])}
+        actions={
+          <>
+            <Select
+              value={bulkStatus}
+              onValueChange={(value) => setBulkStatus(value as ApplicationStatus)}
+              disabled={working}
+            >
+              <SelectTrigger className="h-9 w-full bg-card sm:w-44" aria-label="Bulk destination">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PIPELINE.map((stage) => (
+                  <SelectItem key={stage.status} value={stage.status}>
+                    {stage.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button type="button" size="sm" onClick={() => void applyBulkMove()} disabled={working}>
+              Move selected
+            </Button>
+          </>
+        }
+      />
 
       {visibleApplications.length === 0 ? (
         <EmptyState
@@ -346,27 +361,25 @@ export function RecruitmentPipelineView() {
                             <Card
                               key={application.id}
                               draggable
-                              onClick={() => setWorkspaceApplication(application)}
+                              onClick={() => setWorkspaceApplicationId(application.id)}
                               onDragStart={() => setDraggedId(application.id)}
                               onDragEnd={() => {
                                 setDraggedId(null);
                                 setDragOverStage(null);
                               }}
                               className={cn(
-                                "group cursor-pointer rounded-xl border bg-card shadow-xs transition-[border-color,box-shadow,transform] hover:border-primary/40 hover:shadow-sm active:scale-[0.99]",
-                                selected
-                                  ? "border-primary ring-2 ring-primary/20"
-                                  : "border-border"
+                                "group cursor-pointer rounded-xl border bg-card shadow-xs transition-[border-color,box-shadow,transform] hover:border-primary/40 hover:shadow-sm",
+                                selected ? "border-primary ring-2 ring-primary/20" : "border-border"
                               )}
                             >
-                              <CardContent className="p-3.5">
+                              <CardContent className="space-y-3 p-3.5">
                                 <div className="flex items-start justify-between gap-2">
                                   <Button
                                     variant="ghost"
                                     type="button"
                                     onClick={(event) => {
                                       event.stopPropagation();
-                                      setWorkspaceApplication(application);
+                                      setWorkspaceApplicationId(application.id);
                                     }}
                                     className="h-auto min-w-0 flex-1 flex-col items-start justify-start rounded-md p-0 text-left hover:bg-transparent"
                                   >
@@ -379,8 +392,17 @@ export function RecruitmentPipelineView() {
                                   </Button>
                                   <div
                                     onClick={(event) => event.stopPropagation()}
-                                    className="pt-0.5"
+                                    className="flex items-center gap-1 pt-0.5"
                                   >
+                                    <IconButton
+                                      type="button"
+                                      variant="ghost"
+                                      size="icon-sm"
+                                      label={`Inspect AI analysis for ${application.candidate_code}`}
+                                      onClick={() => setAnalysisApplication(application)}
+                                    >
+                                      <ClipboardCheck className="size-4 text-primary" />
+                                    </IconButton>
                                     <Checkbox
                                       checked={selected}
                                       onCheckedChange={() => toggleSelected(application.id)}
@@ -389,20 +411,48 @@ export function RecruitmentPipelineView() {
                                   </div>
                                 </div>
 
-                                <div className="mt-3 flex flex-col gap-2">
-                                  <div>
-                                    <span className="text-sm text-muted-foreground">Match Score: </span>
-                                    <Badge
-                                      variant={getScoreBadgeVariant(score)}
-                                      className="px-2 py-0.5 text-sm font-bold tabular-nums"
-                                    >
-                                      {score !== null ? `${score}%` : "—"}
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <Badge
+                                    variant={getScoreBadgeVariant(score)}
+                                    className="px-2 py-0.5 text-sm font-bold tabular-nums"
+                                  >
+                                    {score !== null ? `${score}% match` : "Pending"}
+                                  </Badge>
+                                  {application.scorecard_avg_rating ? (
+                                    <Badge variant="outline" className="gap-1 tabular-nums">
+                                      <Star className="size-3 text-amber-500" aria-hidden="true" />
+                                      {application.scorecard_avg_rating}/5
                                     </Badge>
-                                  </div>
-                                  <span className="flex items-center gap-1 text-sm text-muted-foreground tabular-nums">
-                                    Remaining Tasks: {" "}
-                                    {taskCount}
-                                  </span>
+                                  ) : null}
+                                  {taskCount > 0 ? (
+                                    <Badge variant="secondary" className="tabular-nums">
+                                      {taskCount} task{taskCount === 1 ? "" : "s"}
+                                    </Badge>
+                                  ) : null}
+                                </div>
+
+                                <div onClick={(event) => event.stopPropagation()}>
+                                  <Select
+                                    value={normalizeStage(application.status)}
+                                    onValueChange={(value) =>
+                                      void moveApplication(application, value as ApplicationStatus)
+                                    }
+                                    disabled={working}
+                                  >
+                                    <SelectTrigger
+                                      className="h-8 w-full text-sm"
+                                      aria-label={`Move ${application.candidate_code} stage`}
+                                    >
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {PIPELINE.map((dest) => (
+                                        <SelectItem key={dest.status} value={dest.status}>
+                                          Move to: {dest.label}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
                                 </div>
                               </CardContent>
                             </Card>
@@ -421,10 +471,31 @@ export function RecruitmentPipelineView() {
       <CandidateWorkflowPanel
         key={workspaceApplication?.id ?? "empty"}
         application={workspaceApplication}
+        job={jobs.find((j) => j.id === workspaceApplication?.job) || null}
         anonymize={anonymize}
-        onClose={() => setWorkspaceApplication(null)}
+        onClose={() => setWorkspaceApplicationId(null)}
         onApplicationUpdated={onApplicationUpdated}
+        onOpenAnalysis={(app) => {
+          setWorkspaceApplicationId(null);
+          setAnalysisApplication(app);
+        }}
       />
+
+      <CandidateAnalysisModal
+        isOpen={analysisApplication !== null}
+        application={
+          analysisApplication
+            ? applications.find((a) => a.id === analysisApplication.id) || analysisApplication
+            : null
+        }
+        applicationsQueue={visibleApplications}
+        onSelectApplication={setAnalysisApplication}
+        job={jobs.find((j) => j.id === analysisApplication?.job) || null}
+        onClose={() => setAnalysisApplication(null)}
+        anonymize={anonymize}
+        onStatusUpdated={onApplicationUpdated}
+      />
+
       <PipelineReportDialog
         key={reportSession}
         open={reportOpen}

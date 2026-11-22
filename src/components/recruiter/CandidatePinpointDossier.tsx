@@ -1,20 +1,24 @@
 "use client";
 
 import React, { useState } from "react";
-import { CheckCircle2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Copy, MapPin, Briefcase, Clock3, Wallet } from "lucide-react";
 import {
   Application,
   ApplicationStatus,
+  InterviewProbe,
   SkillEvidenceItem,
 } from "@/types/application";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FormAlertNote } from "@/components/ui/form-error";
+import { Progress } from "@/components/ui/progress";
+import { toast } from "@/components/ui/sonner";
 import { StatusBadge, type StatusBadgeProps } from "@/components/ui/status-badge";
 
 interface CandidatePinpointDossierProps {
   application: Application;
   anonymize: boolean;
+  onIdentityRevealChange?: (revealed: boolean) => void;
   className?: string;
   compact?: boolean;
 }
@@ -45,6 +49,7 @@ function getEvidenceBadge(status: string): {
 export function CandidatePinpointDossier({
   application,
   anonymize,
+  onIdentityRevealChange,
   className = "",
 }: CandidatePinpointDossierProps) {
   const [peekName, setPeekName] = useState(false);
@@ -52,7 +57,7 @@ export function CandidatePinpointDossier({
   const match = application.match_result;
   const insights = match?.ai_insights;
 
-  const score = match?.match_score ?? 0;
+  const score = Math.round(match?.match_score ?? 0);
   const band =
     insights?.band ||
     (score >= 85 ? "Strong" : score >= 70 ? "Good" : score >= 50 ? "Partial" : "Weak");
@@ -100,25 +105,78 @@ export function CandidatePinpointDossier({
           evidence: s.evidence || `Demonstrated background in ${s.skill}.`,
         })) || [];
 
-  const screeningQuestions: string[] =
-    insights?.screening_questions && insights.screening_questions.length > 0
-      ? insights.screening_questions
-      : insights?.interview_guide && insights.interview_guide.length > 0
-      ? insights.interview_guide.map((g) => g.question)
+  const rubricItems = (() => {
+    if (insights?.reference_calculation?.items?.length) {
+      return insights.reference_calculation.items.map((item) => ({
+        label: item.component,
+        score: Math.round(item.score),
+        weight: Math.round(item.weight),
+        contribution: Math.round(item.contribution),
+      }));
+    }
+    const sb = insights?.score_breakdown;
+    const raw = [
+      { label: "Required skills", score: sb?.required_skills ?? match?.skill_match_score, weight: 40 },
+      { label: "Experience tenure", score: sb?.experience ?? match?.experience_match_score, weight: 25 },
+      { label: "Education & license", score: sb?.education ?? match?.education_match_score, weight: 15 },
+      { label: "Preferred skills", score: sb?.preferred_skills ?? match?.preferred_skill_match_score, weight: 10 },
+      { label: "Projects & duties", score: sb?.projects ?? match?.project_match_score ?? match?.semantic_match_score, weight: 10 },
+    ].filter((item) => typeof item.score === "number" && !Number.isNaN(item.score));
+    return raw.map((item) => {
+      const rounded = Math.round(item.score as number);
+      return {
+        label: item.label,
+        score: rounded,
+        weight: item.weight,
+        contribution: Math.round((rounded * item.weight) / 100),
+      };
+    });
+  })();
+
+  const flags = (insights?.flags || []).filter(Boolean);
+  const logistics = insights?.logistics;
+  const hasLogistics = Boolean(
+    logistics &&
+      (logistics.location ||
+        logistics.work_arrangement ||
+        logistics.notice_period ||
+        logistics.expected_salary ||
+        logistics.shift_availability)
+  );
+
+  const interviewProbes: InterviewProbe[] =
+    insights?.interview_guide && insights.interview_guide.length > 0
+      ? insights.interview_guide
+      : insights?.screening_questions && insights.screening_questions.length > 0
+      ? insights.screening_questions.map((question) => ({ question }))
       : insights?.interview_focus && insights.interview_focus.length > 0
-      ? insights.interview_focus.map(
-          (f) => `Can you share an example of your hands-on experience with ${f}?`
-        )
+      ? insights.interview_focus.map((f) => ({
+          question: `Can you share an example of your hands-on experience with ${f}?`,
+          probe_reason: `Verify depth in ${f}.`,
+        }))
       : [
-          `Can you walk us through your most relevant experience for ${application.job_title}?`,
-          "Which parts of this role align closest with what you have handled recently?",
-          "Tell us about a time you had to step up quickly to learn something new on the job.",
+          { question: `Can you walk us through your most relevant experience for ${application.job_title}?` },
+          { question: "Which parts of this role align closest with what you have handled recently?" },
+          { question: "Tell us about a time you had to step up quickly to learn something new on the job." },
         ];
 
   const metCount = mustHaveBreakdown.filter((item) => item.status === "met").length;
   const totalReqCount =
     mustHaveBreakdown.filter((item) => item.status !== "verify_in_screening").length ||
     mustHaveBreakdown.length;
+
+  const handleCopyQuestions = async () => {
+    const text = interviewProbes
+      .slice(0, 4)
+      .map((probe, idx) => `${idx + 1}. ${probe.question}${probe.probe_reason ? ` (${probe.probe_reason})` : ""}`)
+      .join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success("Screening questions copied");
+    } catch {
+      toast.error("Could not copy questions");
+    }
+  };
 
   return (
     <div className={`space-y-6 font-sans text-foreground ${className}`}>
@@ -133,6 +191,11 @@ export function CandidatePinpointDossier({
               <StatusBadge status={getBandStatus(band)} dot>
                 {band} match
               </StatusBadge>
+              {application.tags?.map((tag) => (
+                <Badge key={tag} variant="outline">
+                  {tag}
+                </Badge>
+              ))}
             </div>
 
             {isNameRevealed ? (
@@ -165,7 +228,10 @@ export function CandidatePinpointDossier({
                   type="button"
                   variant="link"
                   size="sm"
-                  onClick={() => setPeekName(true)}
+                  onClick={() => {
+                    setPeekName(true);
+                    onIdentityRevealChange?.(true);
+                  }}
                   className="h-auto p-0"
                 >
                   View identity
@@ -191,7 +257,89 @@ export function CandidatePinpointDossier({
             description={actionNeeded || penaltyNote}
           />
         ) : null}
+
+        {flags.length > 0 ? (
+          <div className="space-y-2 rounded-xl border border-amber-200 bg-amber-50/70 p-3.5">
+            <div className="flex items-center gap-2 text-sm font-semibold text-amber-900">
+              <AlertTriangle className="size-4 shrink-0 text-amber-700" aria-hidden="true" />
+              <span>Verification &amp; bluff detection flags</span>
+            </div>
+            <ul className="space-y-1 text-sm text-amber-950">
+              {flags.map((flag, idx) => (
+                <li key={idx} className="leading-5">
+                  · {flag}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        {hasLogistics && logistics ? (
+          <div className="flex flex-wrap gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm">
+            {logistics.location && !anonymize ? (
+              <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                <MapPin className="size-3.5 text-primary" aria-hidden="true" />
+                <strong className="font-medium text-foreground">{logistics.location}</strong>
+              </span>
+            ) : null}
+            {logistics.work_arrangement ? (
+              <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                <Briefcase className="size-3.5 text-primary" aria-hidden="true" />
+                <strong className="font-medium text-foreground">{logistics.work_arrangement}</strong>
+              </span>
+            ) : null}
+            {logistics.notice_period ? (
+              <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                <Clock3 className="size-3.5 text-primary" aria-hidden="true" />
+                <strong className="font-medium text-foreground">Notice: {logistics.notice_period}</strong>
+              </span>
+            ) : null}
+            {logistics.expected_salary ? (
+              <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                <Wallet className="size-3.5 text-primary" aria-hidden="true" />
+                <strong className="font-medium text-foreground">{logistics.expected_salary}</strong>
+              </span>
+            ) : null}
+          </div>
+        ) : null}
       </section>
+
+      {/* 1.5 Explainable 5-Component Rubric Breakdown */}
+      {rubricItems.length > 0 ? (
+        <section aria-labelledby="dossier-rubric-heading" className="space-y-3 border-t border-border pt-6">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 id="dossier-rubric-heading" className="text-base font-bold text-foreground">
+              5-Component rubric breakdown
+            </h3>
+            {insights?.reference_calculation?.penalty_multiplier &&
+            insights.reference_calculation.penalty_multiplier < 1 ? (
+              <StatusBadge status="warning">
+                Penalty ×{insights.reference_calculation.penalty_multiplier.toFixed(2)}
+              </StatusBadge>
+            ) : (
+              <Badge variant="outline" className="tabular-nums">
+                Weighted score
+              </Badge>
+            )}
+          </div>
+          <div className="space-y-3 rounded-xl border border-border bg-card p-4">
+            {rubricItems.map((item) => (
+              <div key={item.label} className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2 text-sm">
+                  <span className="font-medium text-foreground">
+                    {item.label}{" "}
+                    <span className="font-normal text-muted-foreground">({item.weight}% weight)</span>
+                  </span>
+                  <span className="font-bold tabular-nums text-foreground">
+                    {item.score}%
+                  </span>
+                </div>
+                <Progress value={Math.min(100, Math.max(0, item.score))} aria-label={`${item.label} score ${item.score}%`} />
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {/* 2. Required Qualifications */}
       <section aria-labelledby="dossier-evidence-heading" className="space-y-3 border-t border-border pt-6">
@@ -279,19 +427,34 @@ export function CandidatePinpointDossier({
           <h3 id="dossier-questions-heading" className="text-base font-bold text-foreground">
             Questions to ask
           </h3>
-          <Badge variant="outline" className="tabular-nums">
-            {Math.min(screeningQuestions.length, 3)} suggested
-          </Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="tabular-nums">
+              {Math.min(interviewProbes.length, 4)} suggested
+            </Badge>
+            <Button type="button" variant="ghost" size="sm" onClick={() => void handleCopyQuestions()}>
+              <Copy className="size-3.5" aria-hidden="true" />
+              Copy
+            </Button>
+          </div>
         </div>
 
         <ol className="space-y-2.5">
-          {screeningQuestions.slice(0, 3).map((question, index) => (
+          {interviewProbes.slice(0, 4).map((probe, index) => (
             <li
               key={index}
-              className="flex gap-3 rounded-xl border border-border bg-card px-4 py-3 text-sm leading-6 text-foreground"
+              className="space-y-1 rounded-xl border border-border bg-card px-4 py-3 text-sm leading-6 text-foreground"
             >
-              <span className="shrink-0 font-bold tabular-nums text-primary">{index + 1}.</span>
-              <span>{question}</span>
+              <div className="flex gap-3">
+                <span className="shrink-0 font-bold tabular-nums text-primary">{index + 1}.</span>
+                <span className="font-medium">{probe.question}</span>
+              </div>
+              {probe.probe_reason || probe.target_signal ? (
+                <p className="pl-6 text-sm text-muted-foreground">
+                  {probe.probe_reason ? <span>Why ask: {probe.probe_reason}</span> : null}
+                  {probe.probe_reason && probe.target_signal ? " · " : null}
+                  {probe.target_signal ? <span>Look for: {probe.target_signal}</span> : null}
+                </p>
+              ) : null}
             </li>
           ))}
         </ol>

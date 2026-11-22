@@ -28,6 +28,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import {
   Tooltip,
   TooltipContent,
+  TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { fetchApi } from "@/lib/api";
@@ -225,7 +226,8 @@ export function NotificationBell({ role, userId }: NotificationBellProps) {
           side="right"
           className="flex w-full flex-col gap-0 overflow-hidden bg-card p-0 sm:max-w-lg"
         >
-          {/* Sheet Header matching CandidateWorkflowPanel */}
+          <TooltipProvider delayDuration={250}>
+            {/* Sheet Header matching CandidateWorkflowPanel */}
           <div className="shrink-0 bg-card">
             <SheetHeader className="px-5 pb-3 pt-5 text-left sm:px-6 sm:pt-6">
               <div className="flex min-w-0 items-start gap-3.5 pr-12">
@@ -400,6 +402,7 @@ export function NotificationBell({ role, userId }: NotificationBellProps) {
               </Card>
             )}
           </div>
+          </TooltipProvider>
         </SheetContent>
       </Sheet>
     </>

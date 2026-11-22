@@ -7,6 +7,25 @@ export type ApplicationStatus =
   | "REJECTED"
   | "HIRED";
 
+export type RejectionReason =
+  | "MISSING_LICENSE"
+  | "SKILLS_GAP"
+  | "EXPERIENCE_GAP"
+  | "COMPENSATION_MISMATCH"
+  | "ROLE_FILLED"
+  | "WITHDREW"
+  | "OTHER";
+
+export const REJECTION_REASON_OPTIONS: Array<{ value: RejectionReason; label: string }> = [
+  { value: "SKILLS_GAP", label: "Required skills gap" },
+  { value: "EXPERIENCE_GAP", label: "Insufficient relevant experience" },
+  { value: "MISSING_LICENSE", label: "Missing mandatory license/credential" },
+  { value: "COMPENSATION_MISMATCH", label: "Compensation expectations mismatch" },
+  { value: "ROLE_FILLED", label: "Position filled by another candidate" },
+  { value: "WITHDREW", label: "Candidate withdrew" },
+  { value: "OTHER", label: "Other" },
+];
+
 export type ResumeProcessingStatus = "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";
 
 export type MatchBand = "Strong" | "Good" | "Partial" | "Weak";
@@ -167,10 +186,16 @@ export interface Application {
   phone: string;
   notes?: string;
   status: ApplicationStatus;
+  rejection_reason?: RejectionReason | "";
+  rejection_note?: string;
+  tags?: string[];
   resume?: Resume;
   match_result?: MatchResult;
   open_task_count?: number;
   latest_activity_at?: string | null;
+  interview_count?: number;
+  scorecard_count?: number;
+  scorecard_avg_rating?: number | null;
   applied_at: string;
   updated_at: string;
 }
@@ -203,12 +228,148 @@ export interface RecruiterTask {
 export interface ApplicationActivity {
   id: number;
   application: number;
-  kind: "STATUS" | "NOTE" | "TASK" | "COMMUNICATION";
+  kind: "STATUS" | "NOTE" | "TASK" | "COMMUNICATION" | "INTERVIEW" | "SCORECARD" | "TAG";
   actor_id: string;
   actor_name: string;
   summary: string;
   details: Record<string, unknown>;
   created_at: string;
+}
+
+export interface GlobalRecruiterTask extends RecruiterTask {
+  candidate_code: string;
+  applicant_name: string;
+  application_status: ApplicationStatus;
+  job_id: number;
+  job_title: string;
+}
+
+export interface InterviewSchedule {
+  id: number;
+  application: number;
+  title: string;
+  scheduled_at: string;
+  duration_minutes: number;
+  mode: "VIDEO" | "PHONE" | "ONSITE";
+  meeting_link: string;
+  notes: string;
+  interviewer_names: string[];
+  status: "SCHEDULED" | "COMPLETED" | "CANCELLED";
+  created_by: string;
+  created_by_name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ScorecardRecommendation = "STRONG_YES" | "YES" | "NEUTRAL" | "NO" | "STRONG_NO";
+
+export interface CompetencyRating {
+  label: string;
+  rating: number;
+  note?: string;
+}
+
+export interface InterviewScorecard {
+  id: number;
+  application: number;
+  interview?: number | null;
+  evaluator_id: string;
+  evaluator_name: string;
+  overall_rating: number;
+  recommendation: ScorecardRecommendation;
+  competency_ratings: CompetencyRating[];
+  strengths: string;
+  concerns: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TeamMember {
+  id: string;
+  name: string;
+  email: string;
+}
+
+export interface RecruiterAnalytics {
+  total_applications: number;
+  stage_counts: Record<string, number>;
+  funnel: Array<{
+    stage: string;
+    label: string;
+    count: number;
+    conversion_percent: number;
+  }>;
+  score_distribution: Record<string, number>;
+  median_review_hours: number | null;
+  rejection_reasons: Array<{
+    reason: string;
+    label: string;
+    count: number;
+  }>;
+  needs_attention: {
+    high_match_unreviewed: Array<{
+      id: number;
+      candidate_code: string;
+      job_id: number;
+      job_title: string;
+      match_score: number;
+      applied_at: string;
+    }>;
+    stale_in_review: Array<{
+      id: number;
+      candidate_code: string;
+      job_id: number;
+      job_title: string;
+      days_waiting: number;
+    }>;
+    failed_parses: Array<{
+      id: number;
+      candidate_code: string;
+      job_id: number;
+      job_title: string;
+    }>;
+    overdue_tasks_count: number;
+  };
+}
+
+export interface FairnessAuditData {
+  job_id: number;
+  job_title: string;
+  total_applicants: number;
+  evaluated_count: number;
+  redaction_coverage_percent: number;
+  jd_lint: {
+    is_clean: boolean;
+    is_regulated: boolean;
+    flag_count: number;
+    flags: Array<{ category: string; message: string; severity: string }>;
+  };
+  band_alignment: Array<{
+    band: string;
+    total: number;
+    shortlisted: number;
+    shortlist_rate: number;
+  }>;
+  adverse_impact: {
+    rates: Record<string, number>;
+    benchmark_group: string | null;
+    benchmark_rate: number;
+    impact_ratios: Record<string, number>;
+    adverse_impact_detected: boolean;
+    violating_groups: string[];
+  };
+}
+
+export interface CounterfactualAuditResult {
+  sample_source?: string;
+  base_score: number;
+  max_counterfactual_gap: number;
+  is_invariant: boolean;
+  variants: Array<{
+    variant_label: string;
+    score: number;
+    score_gap: number;
+  }>;
 }
 
 export type TemplateStage =

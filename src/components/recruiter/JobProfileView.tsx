@@ -6,18 +6,37 @@ import { Application, ApplicationStatus } from "@/types/application";
 import {
   ChevronDown,
   ArrowLeft,
+  Copy,
   Download,
   FileText,
   Lock,
+  Pencil,
+  RefreshCcw,
+  Scale,
+  ShieldCheck,
   Unlock,
   Archive,
   Users,
 } from "lucide-react";
 import { CandidateAnalysisModal } from "./CandidateAnalysisModal";
+import { CandidateComparisonDialog } from "./CandidateComparisonDialog";
+import { CreateJobModal } from "./CreateJobModal";
+import { FairnessAuditView } from "./FairnessAuditView";
 import { JobCandidatesReportDialog } from "./JobCandidatesReportDialog";
 import { ConfirmJobActionModal, JobActionType } from "./ConfirmJobActionModal";
 import { fetchApi } from "@/lib/api";
 import { toast } from "@/components/ui/sonner";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -26,6 +45,7 @@ import {
   CardHeader,
 } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import { FormField } from "@/components/ui/form-field";
 import {
   Select,
   SelectContent,
@@ -33,6 +53,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SelectionActionBar } from "@/components/ui/selection-action-bar";
+import { Section, SectionDescription, SectionHeader, SectionTitle } from "@/components/ui/section";
 import {
   Table,
   TableBody,
@@ -41,14 +63,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -69,7 +83,9 @@ import {
 } from "@/components/ui/page-header";
 import { SearchInput } from "@/components/ui/search-input";
 import { StatusBadge, type StatusBadgeProps } from "@/components/ui/status-badge";
+import { Textarea } from "@/components/ui/textarea";
 import { CollectionToolbar } from "@/components/ui/toolbar";
+import { REJECTION_REASON_OPTIONS, RejectionReason } from "@/types/application";
 
 const STATUS_META: Record<
   ApplicationStatus,
@@ -174,11 +190,18 @@ export function JobProfileView({
   const [selectedApplication, setSelectedApplication] = useState<Application | null>(null);
   const [isAnalysisOpen, setIsAnalysisOpen] = useState(false);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
-  const [workspaceSection, setWorkspaceSection] = useState<"candidates" | "details">("candidates");
+  const [workspaceSection, setWorkspaceSection] = useState<"candidates" | "details" | "fairness">("candidates");
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [reportSession, setReportSession] = useState(0);
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<Set<number>>(new Set());
+  const [bulkStatus, setBulkStatus] = useState<ApplicationStatus>("SHORTLISTED");
   const [isBulkUpdating, setIsBulkUpdating] = useState(false);
+  const [isEditJobOpen, setIsEditJobOpen] = useState(false);
+  const [duplicateTemplate, setDuplicateTemplate] = useState<Partial<Job> | null>(null);
+  const [isCompareOpen, setIsCompareOpen] = useState(false);
+  const [rescoringAll, setRescoringAll] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState<RejectionReason>("SKILLS_GAP");
+  const [rejectionNote, setRejectionNote] = useState("");
   const [pendingRejection, setPendingRejection] = useState<
     | { type: "single"; application: Application }
     | { type: "bulk"; applicationIds: number[] }
@@ -241,13 +264,17 @@ export function JobProfileView({
   const avgScore = validScores.length > 0 ? Math.round(validScores.reduce((a, b) => a + b, 0) / validScores.length) : 0;
   const topScore = validScores.length > 0 ? Math.max(...validScores) : 0;
 
-  // Filtered and Sorted Applicants
+  // Filtered and Sorted Applicants (blind-screening safe search)
   const filteredApps = useMemo(() => jobApplications.filter((app) => {
+    const q = searchQuery.trim().toLowerCase();
     const matchesSearch =
-      (app.applicant_name && app.applicant_name.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (app.candidate_code && app.candidate_code.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (app.email && app.email.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (app.phone && app.phone.includes(searchQuery));
+      !q ||
+      [
+        app.candidate_code,
+        `#${app.id}`,
+        ...(app.tags || []),
+        ...(anonymize ? [] : [app.applicant_name, app.email, app.phone]),
+      ].some((val) => val?.toLowerCase().includes(q));
     const matchesStatus = statusFilter === "ALL" || app.status === statusFilter;
 
     const score = app.match_result?.match_score ?? 0;
@@ -255,7 +282,7 @@ export function JobProfileView({
     const matchesBand = bandFilter === "ALL" || band === bandFilter;
 
     return matchesSearch && matchesStatus && matchesBand;
-  }), [jobApplications, searchQuery, statusFilter, bandFilter]);
+  }), [anonymize, jobApplications, searchQuery, statusFilter, bandFilter]);
 
   // AI Leaderboard: sorted strictly descending by match score
   const rankedApplicants = useMemo(() => [...filteredApps].sort((a, b) => {
@@ -269,10 +296,19 @@ export function JobProfileView({
     return new Date(b.applied_at).getTime() - new Date(a.applied_at).getTime();
   }), [filteredApps]);
 
-  const persistApplicationStatus = useCallback(async (app: Application, status: ApplicationStatus) => {
+  const persistApplicationStatus = useCallback(async (
+    app: Application,
+    status: ApplicationStatus,
+    reason?: RejectionReason,
+    note?: string
+  ) => {
     const updated = await fetchApi<Application>(`/applications/${app.id}/status/`, {
       method: "PATCH",
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({
+        status,
+        ...(status === "REJECTED" && reason ? { rejection_reason: reason } : {}),
+        ...(status === "REJECTED" && note ? { rejection_note: note } : {}),
+      }),
     });
     onApplicationUpdated(updated);
     return updated;
@@ -282,7 +318,9 @@ export function JobProfileView({
   const handleDirectStatusChange = useCallback(async (
     app: Application,
     newStatus: ApplicationStatus,
-    confirmed = false
+    confirmed = false,
+    reason?: RejectionReason,
+    note?: string
   ) => {
     if (newStatus === app.status) return;
     if (newStatus === "REJECTED" && !confirmed) {
@@ -293,7 +331,7 @@ export function JobProfileView({
     setUpdatingId(app.id);
     try {
       const previousStatus = app.status;
-      await persistApplicationStatus(app, newStatus);
+      await persistApplicationStatus(app, newStatus, reason, note);
       toast.success("Candidate status updated", {
         description: `${app.candidate_code} is now ${newStatus.replaceAll("_", " ").toLowerCase()}.`,
         action: {
@@ -327,10 +365,24 @@ export function JobProfileView({
     });
   };
 
+  const activeList = activeTab === "rankings" ? rankedApplicants : rosterApplicants;
+  const allVisibleSelected =
+    activeList.length > 0 && activeList.every((app) => selectedCandidateIds.has(app.id));
+
+  const toggleSelectAllVisible = () => {
+    if (allVisibleSelected) {
+      setSelectedCandidateIds(new Set());
+    } else {
+      setSelectedCandidateIds(new Set(activeList.slice(0, 100).map((app) => app.id)));
+    }
+  };
+
   const handleBulkStatusChange = async (
     newStatus: ApplicationStatus,
     confirmed = false,
-    explicitIds?: number[]
+    explicitIds?: number[],
+    reason?: RejectionReason,
+    note?: string
   ) => {
     const requestedIds = explicitIds ?? Array.from(selectedCandidateIds);
     if (requestedIds.length === 0 || isBulkUpdating) return;
@@ -339,48 +391,46 @@ export function JobProfileView({
       return;
     }
     setIsBulkUpdating(true);
-    const targetIds = requestedIds;
-    let successCount = 0;
-    const failedIds: number[] = [];
     try {
-      const updates = targetIds.map(async (id) => {
-        try {
-          const updated = await fetchApi<Application>(`/applications/${id}/status/`, {
-            method: "PATCH",
-            body: JSON.stringify({ status: newStatus }),
-          });
-          onApplicationUpdated(updated);
-          successCount++;
-        } catch (err) {
-          console.error(`Failed to update candidate #${id}:`, err);
-          failedIds.push(id);
-        }
+      const updatedList = await fetchApi<Application[]>("/applications/bulk/", {
+        method: "POST",
+        body: JSON.stringify({
+          application_ids: requestedIds,
+          status: newStatus,
+          ...(newStatus === "REJECTED" && reason ? { rejection_reason: reason } : {}),
+          ...(newStatus === "REJECTED" && note ? { rejection_note: note } : {}),
+        }),
       });
-      await Promise.all(updates);
-      const formattedStatus =
-        newStatus === "SHORTLISTED"
-          ? "Shortlisted"
-          : newStatus === "UNDER_REVIEW"
-            ? "Moved to Review"
-            : "Rejected";
-      if (failedIds.length > 0) {
-        toast.error(`${failedIds.length} candidate${failedIds.length === 1 ? "" : "s"} could not be updated`, {
-          description: `${successCount} succeeded. The failed candidates remain selected so you can retry.`,
-        });
-        setSelectedCandidateIds(new Set(failedIds));
-      } else {
-        toast.success(`${successCount} candidate${successCount === 1 ? "" : "s"} updated`, {
-          description: `Status changed to ${formattedStatus}.`,
-        });
-        setSelectedCandidateIds(new Set());
-      }
+      updatedList.forEach(onApplicationUpdated);
+      toast.success(`${updatedList.length} candidate${updatedList.length === 1 ? "" : "s"} updated`, {
+        description: `Status changed to ${STATUS_META[newStatus]?.label || newStatus}.`,
+      });
+      setSelectedCandidateIds(new Set());
     } catch (err) {
       console.error("Bulk update error:", err);
-      toast.error("Bulk Status Update Failed", {
+      toast.error("Bulk status update failed", {
         description: err instanceof Error ? err.message : "Error executing bulk status change.",
       });
     } finally {
       setIsBulkUpdating(false);
+    }
+  };
+
+  const handleRescoreAll = async () => {
+    setRescoringAll(true);
+    try {
+      const res = await fetchApi<{ queued: number }>(`/jobs/${currentJob.id}/reprocess-all/`, {
+        method: "POST",
+      });
+      toast.success("Re-evaluation queued", {
+        description: `${res.queued} candidate resume${res.queued === 1 ? "" : "s"} queued against the latest rubric.`,
+      });
+    } catch (err) {
+      toast.error("Could not queue re-evaluation", {
+        description: err instanceof Error ? err.message : "Try again.",
+      });
+    } finally {
+      setRescoringAll(false);
     }
   };
 
@@ -521,7 +571,39 @@ export function JobProfileView({
               <Button variant="outline">Job actions <ChevronDown aria-hidden="true" /></Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-72">
-              <DropdownMenuLabel>Job #{currentJob.id} · publishing controls</DropdownMenuLabel>
+              <DropdownMenuLabel>Job #{currentJob.id} · requisition controls</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => setIsEditJobOpen(true)}>
+                <Pencil aria-hidden="true" className="text-primary" />
+                <span><span className="block font-semibold">Edit requisition</span><span className="text-sm text-muted-foreground">Update skills, salary, or rubric weights</span></span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() =>
+                  setDuplicateTemplate({
+                    title: `${currentJob.title} (Copy)`,
+                    department: currentJob.department,
+                    employment_type: currentJob.employment_type,
+                    location: currentJob.location,
+                    description: currentJob.description,
+                    job_overview: currentJob.job_overview,
+                    salary_min: currentJob.salary_min,
+                    salary_max: currentJob.salary_max,
+                    minimum_experience: currentJob.minimum_experience,
+                    education_requirement: currentJob.education_requirement,
+                    required_skills: currentJob.required_skills,
+                    preferred_skills: currentJob.preferred_skills,
+                    rubric_weights: currentJob.rubric_weights,
+                    status: "PUBLISHED",
+                  })
+                }
+              >
+                <Copy aria-hidden="true" />
+                <span><span className="block font-semibold">Duplicate requisition</span><span className="text-sm text-muted-foreground">Clone settings into a new opening</span></span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => void handleRescoreAll()} disabled={rescoringAll}>
+                <RefreshCcw aria-hidden="true" className={rescoringAll ? "animate-spin" : ""} />
+                <span><span className="block font-semibold">Re-score all applicants</span><span className="text-sm text-muted-foreground">Re-run AI matching with current rubric</span></span>
+              </DropdownMenuItem>
               <DropdownMenuSeparator />
               {currentJob.status === "CLOSED" ? (
                 <DropdownMenuItem onSelect={() => setActionModalType("reopen")}>
@@ -553,7 +635,7 @@ export function JobProfileView({
       <NavTabs
         label="Job workspace sections"
         value={workspaceSection}
-        onValueChange={(value) => setWorkspaceSection(value as "candidates" | "details")}
+        onValueChange={(value) => setWorkspaceSection(value as "candidates" | "details" | "fairness")}
         tabs={[
           {
             id: "candidates",
@@ -566,146 +648,130 @@ export function JobProfileView({
             label: "Job details",
             icon: <FileText />,
           },
+          {
+            id: "fairness",
+            label: "Fairness & audit",
+            icon: <ShieldCheck />,
+          },
         ]}
       />
 
       <div className="space-y-4">
+        {workspaceSection === "fairness" && <FairnessAuditView jobId={currentJob.id} />}
 
         {workspaceSection === "details" && (
-          <div className="space-y-4 rounded-2xl border border-slate-200/90 bg-white p-5 sm:p-6">
-            <div>
-              <span className="font-bold text-slate-900 uppercase tracking-wider text-sm block">
-                Role overview
-              </span>
-              <p className="text-slate-600 leading-relaxed mt-1 whitespace-pre-line text-sm max-w-4xl">
+          <Section className="space-y-6">
+            <div className="space-y-2">
+              <h2 className="text-base font-bold text-foreground">Role overview</h2>
+              <p className="max-w-4xl whitespace-pre-line text-sm leading-6 text-muted-foreground">
                 {currentJob.description}
               </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-slate-100">
-              <div>
-                <span className="font-bold text-slate-900 uppercase tracking-wider text-sm block">
-                  Must-Have Qualifications &amp; Licensure
-                </span>
+            <div className="grid grid-cols-1 gap-6 border-t border-border pt-5 sm:grid-cols-2">
+              <div className="space-y-2.5">
+                <h3 className="text-base font-bold text-foreground">
+                  Must-have qualifications &amp; licensure
+                </h3>
                 {currentJob.required_skills && currentJob.required_skills.length > 0 ? (
                   currentJob.required_skills.some((s) => s.length > 32 || s.trim().split(/\s+/).length > 4) ? (
-                    <ul className="space-y-1.5 mt-2">
+                    <ul className="space-y-2">
                       {currentJob.required_skills.map((skill, idx) => (
                         <li
                           key={idx}
-                          className="flex items-start gap-2 text-sm font-medium px-3 py-2 rounded-lg bg-blue-50/70 text-slate-800 border border-blue-100 leading-relaxed"
+                          className="flex items-start gap-2.5 rounded-xl border border-primary/15 bg-secondary/60 px-3.5 py-2.5 text-sm font-medium leading-6 text-foreground"
                         >
-                          <span className="text-primary font-bold text-sm mt-0.5 shrink-0">
-                            {String(idx + 1).padStart(2, "0")}
-                          </span>
+                          <Badge variant="secondary" className="mt-0.5 shrink-0 tabular-nums">
+                            {idx + 1}
+                          </Badge>
                           <span className="break-words">{skill}</span>
                         </li>
                       ))}
                     </ul>
                   ) : (
-                    <div className="flex flex-wrap gap-1.5 mt-2">
+                    <div className="flex flex-wrap gap-2">
                       {currentJob.required_skills.map((skill, idx) => (
-                        <span
-                          key={idx}
-                          className="text-sm font-medium px-2.5 py-0.5 rounded-lg bg-blue-50 text-primary border border-blue-100"
-                        >
+                        <Badge key={idx} variant="secondary">
                           {skill}
-                        </span>
+                        </Badge>
                       ))}
                     </div>
                   )
                 ) : (
-                  <span className="text-slate-400 text-sm mt-2 block">None specified</span>
+                  <p className="text-sm text-muted-foreground">None specified</p>
                 )}
               </div>
 
-              <div>
-                <span className="font-bold text-slate-500 uppercase tracking-wider text-sm block">
-                  Preferred Qualifications &amp; Bonus Assets
-                </span>
+              <div className="space-y-2.5">
+                <h3 className="text-base font-bold text-foreground">
+                  Preferred qualifications &amp; bonus assets
+                </h3>
                 {currentJob.preferred_skills && currentJob.preferred_skills.length > 0 ? (
                   currentJob.preferred_skills.some((s) => s.length > 32 || s.trim().split(/\s+/).length > 4) ? (
-                    <ul className="space-y-1.5 mt-2">
+                    <ul className="space-y-2">
                       {currentJob.preferred_skills.map((skill, idx) => (
                         <li
                           key={idx}
-                          className="flex items-start gap-2 text-sm font-normal px-3 py-2 rounded-lg bg-slate-50 text-slate-700 border border-slate-200/80 leading-relaxed"
+                          className="flex items-start gap-2.5 rounded-xl border border-border bg-muted/40 px-3.5 py-2.5 text-sm leading-6 text-foreground"
                         >
-                          <span className="text-slate-400 font-bold text-sm mt-0.5 shrink-0">
+                          <Badge variant="outline" className="mt-0.5 shrink-0 tabular-nums">
                             +{idx + 1}
-                          </span>
+                          </Badge>
                           <span className="break-words">{skill}</span>
                         </li>
                       ))}
                     </ul>
                   ) : (
-                    <div className="flex flex-wrap gap-1.5 mt-2">
+                    <div className="flex flex-wrap gap-2">
                       {currentJob.preferred_skills.map((skill, idx) => (
-                        <span
-                          key={idx}
-                          className="text-sm font-normal px-2.5 py-0.5 rounded-lg bg-slate-50 text-slate-600 border border-slate-200"
-                        >
+                        <Badge key={idx} variant="outline">
                           {skill}
-                        </span>
+                        </Badge>
                       ))}
                     </div>
                   )
                 ) : (
-                  <span className="text-slate-400 text-sm mt-2 block">None specified</span>
+                  <p className="text-sm text-muted-foreground">None specified</p>
                 )}
               </div>
             </div>
 
-            {/* Calibrated Scoring Rubric Breakdown */}
-            <div className="pt-3 border-t border-slate-100 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-slate-900 uppercase tracking-wider text-sm">
-                  How candidates are scored
-                </span>
-                <span className="text-sm text-slate-400 ">
-                  {currentJob.rubric_weights ? "Custom scoring priorities" : "Standard scoring priorities"}
-                </span>
-              </div>
+            <div className="space-y-3 border-t border-border pt-5">
+              <SectionHeader className="mb-0">
+                <div>
+                  <SectionTitle>How candidates are scored</SectionTitle>
+                  <SectionDescription>
+                    {currentJob.rubric_weights ? "Custom scoring priorities" : "Standard scoring priorities"}
+                  </SectionDescription>
+                </div>
+              </SectionHeader>
 
-              <div className="grid grid-cols-2 sm:grid-cols-5 divide-x divide-y sm:divide-y-0 divide-slate-100 rounded-xl border border-slate-200/90 bg-slate-50/50 overflow-hidden text-center text-sm">
-                <div className="p-2.5 space-y-0.5">
-                  <div className="text-sm text-slate-500 font-bold uppercase tracking-wider">Required Skills</div>
-                  <div className="font-bold text-primary text-sm tabular-nums">
-                    {currentJob.rubric_weights?.required_skills ?? 40}%
+              <div className="grid grid-cols-2 divide-x divide-y divide-border overflow-hidden rounded-xl border border-border bg-muted/40 text-center text-sm sm:grid-cols-5 sm:divide-y-0">
+                {[
+                  { label: "Required skills", value: currentJob.rubric_weights?.required_skills ?? 40, detail: "Must-have fit", accent: true },
+                  { label: "Experience", value: currentJob.rubric_weights?.experience ?? 25, detail: "Tenure fit", accent: false },
+                  { label: "Education", value: currentJob.rubric_weights?.education ?? 15, detail: "Degree + license", accent: false },
+                  { label: "Bonus tools", value: currentJob.rubric_weights?.preferred_skills ?? 10, detail: "Preferred assets", accent: false },
+                  { label: "Projects & duties", value: currentJob.rubric_weights?.projects ?? 10, detail: "Hands-on tasks", accent: false },
+                ].map((item, idx) => (
+                  <div
+                    key={item.label}
+                    className={`space-y-1 p-3.5 ${idx === 4 ? "col-span-2 sm:col-span-1" : ""}`}
+                  >
+                    <p className="font-semibold text-foreground">{item.label}</p>
+                    <p
+                      className={`text-base font-bold tabular-nums ${
+                        item.accent ? "text-primary" : "text-foreground"
+                      }`}
+                    >
+                      {item.value}%
+                    </p>
+                    <p className="text-sm text-muted-foreground">{item.detail}</p>
                   </div>
-                  <div className="text-sm text-slate-400">Must-have fit</div>
-                </div>
-                <div className="p-2.5 space-y-0.5">
-                  <div className="text-sm text-slate-500 font-bold uppercase tracking-wider">Experience</div>
-                  <div className="font-bold text-slate-900 text-sm tabular-nums">
-                    {currentJob.rubric_weights?.experience ?? 25}%
-                  </div>
-                  <div className="text-sm text-slate-400">Tenure fit</div>
-                </div>
-                <div className="p-2.5 space-y-0.5">
-                  <div className="text-sm text-slate-500 font-bold uppercase tracking-wider">Education</div>
-                  <div className="font-bold text-slate-900 text-sm tabular-nums">
-                    {currentJob.rubric_weights?.education ?? 15}%
-                  </div>
-                  <div className="text-sm text-slate-400">Degree + license</div>
-                </div>
-                <div className="p-2.5 space-y-0.5">
-                  <div className="text-sm text-slate-400 font-bold uppercase tracking-wider">Bonus Tools</div>
-                  <div className="font-bold text-slate-900 text-sm tabular-nums">
-                    {currentJob.rubric_weights?.preferred_skills ?? 10}%
-                  </div>
-                  <div className="text-sm text-slate-400">Preferred assets</div>
-                </div>
-                <div className="p-2.5 space-y-0.5 col-span-2 sm:col-span-1">
-                  <div className="text-sm text-slate-500 font-bold uppercase tracking-wider">Projects / Duties</div>
-                  <div className="font-bold text-slate-900 text-sm tabular-nums">
-                    {currentJob.rubric_weights?.projects ?? 10}%
-                  </div>
-                  <div className="text-sm text-slate-400">Hands-on tasks</div>
-                </div>
+                ))}
               </div>
             </div>
-          </div>
+          </Section>
         )}
       </div>
 
@@ -787,6 +853,54 @@ export function JobProfileView({
             }
           />
 
+          <SelectionActionBar
+            count={selectedCandidateIds.size}
+            label="Selected job candidates actions"
+            disabled={isBulkUpdating}
+            onClear={() => setSelectedCandidateIds(new Set())}
+            secondaryActions={
+              selectedCandidateIds.size >= 2 && selectedCandidateIds.size <= 4 ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => setIsCompareOpen(true)}
+                >
+                  <Scale className="size-4" aria-hidden="true" />
+                  Compare ({selectedCandidateIds.size})
+                </Button>
+              ) : null
+            }
+            actions={
+              <>
+                <Select
+                  value={bulkStatus}
+                  onValueChange={(value) => setBulkStatus(value as ApplicationStatus)}
+                  disabled={isBulkUpdating}
+                >
+                  <SelectTrigger className="h-9 w-full bg-card sm:w-44" aria-label="Bulk target stage">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STATUS_OPTIONS.filter((s) => s !== "PROCESSING").map((status) => (
+                      <SelectItem key={status} value={status}>
+                        {STATUS_META[status].label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={isBulkUpdating}
+                  onClick={() => void handleBulkStatusChange(bulkStatus)}
+                >
+                  Move selected
+                </Button>
+              </>
+            }
+          />
+
           {(activeTab === "rankings" ? rankedApplicants : rosterApplicants).length === 0 ? (
             <EmptyState
               title={hasActiveFilters ? "No candidates match these filters" : "No applicants yet"}
@@ -812,6 +926,13 @@ export function JobProfileView({
                 <Table density="compact">
                   <TableHeader>
                     <TableRow>
+                      <TableHead size="fit">
+                        <Checkbox
+                          checked={allVisibleSelected}
+                          onCheckedChange={toggleSelectAllVisible}
+                          aria-label="Select all ranked candidates"
+                        />
+                      </TableHead>
                       <TableHead className="text-center">Rank</TableHead>
                       <TableHead>Candidate ID</TableHead>
                       <TableHead>Applicant name</TableHead>
@@ -859,6 +980,13 @@ export function JobProfileView({
                             }
                           }}
                         >
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            <Checkbox
+                              checked={selectedCandidateIds.has(app.id)}
+                              onCheckedChange={() => toggleSelectCandidate(app.id)}
+                              aria-label={`Select ${app.candidate_code}`}
+                            />
+                          </TableCell>
                           <TableCell overflow="nowrap" className="text-center tabular-nums">
                             {index < 3 && score > 0 ? (
                               <StatusBadge status={index === 0 ? "warning" : "neutral"}>
@@ -952,6 +1080,13 @@ export function JobProfileView({
                 <Table density="compact">
                   <TableHeader>
                     <TableRow>
+                      <TableHead size="fit">
+                        <Checkbox
+                          checked={allVisibleSelected}
+                          onCheckedChange={toggleSelectAllVisible}
+                          aria-label="Select all applicants"
+                        />
+                      </TableHead>
                       <TableHead>Candidate ID</TableHead>
                       <TableHead>Applicant name</TableHead>
                       <TableHead>Email address</TableHead>
@@ -982,6 +1117,13 @@ export function JobProfileView({
                             }
                           }}
                         >
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            <Checkbox
+                              checked={selectedCandidateIds.has(app.id)}
+                              onCheckedChange={() => toggleSelectCandidate(app.id)}
+                              aria-label={`Select ${app.candidate_code}`}
+                            />
+                          </TableCell>
                           <TableCell overflow="nowrap">
                             <Button
                               type="button"
@@ -1070,107 +1212,74 @@ export function JobProfileView({
         </div>
       )}
 
-      {/* Floating Bulk Action Bar */}
-      {workspaceSection === "candidates" && selectedCandidateIds.size > 0 && (
-        <div className="fixed bottom-[max(1.5rem,env(safe-area-inset-bottom))] left-1/2 z-50 flex w-[calc(100%_-_2rem)] max-w-xl -translate-x-1/2 flex-col gap-3 rounded-2xl bg-slate-900 px-4 py-3 text-white shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-200 motion-reduce:animate-none sm:w-[92%] sm:flex-row sm:items-center sm:justify-between sm:px-5">
-          <div className="flex items-center gap-2.5">
-            <span className="h-6 min-w-6 px-1.5 rounded-full bg-primary text-white text-sm font-bold flex items-center justify-center">
-              {selectedCandidateIds.size}
-            </span>
-            <span className="text-sm font-medium text-slate-200">
-              Selected
-            </span>
-            <Button
-              type="button"
-              onClick={() => setSelectedCandidateIds(new Set())}
-              className="text-sm text-slate-400 hover:text-white underline cursor-pointer ml-1"
-            >
-              Clear
-            </Button>
-          </div>
-
-          <div className="grid w-full grid-cols-3 gap-2 sm:w-auto">
-            <Button
-              size="sm"
-              disabled={isBulkUpdating}
-              onClick={() => handleBulkStatusChange("SHORTLISTED")}
-              className="h-11 px-3 text-sm font-semibold bg-emerald-600 hover:bg-emerald-500 text-white border-none cursor-pointer"
-            >
-              Shortlist ({selectedCandidateIds.size})
-            </Button>
-            <Button
-              size="sm"
-              disabled={isBulkUpdating}
-              onClick={() => handleBulkStatusChange("UNDER_REVIEW")}
-              className="h-11 px-3 text-sm font-semibold bg-primary hover:bg-primary/90 text-white border-none cursor-pointer"
-            >
-              Review ({selectedCandidateIds.size})
-            </Button>
-            <Button
-              size="sm"
-              variant="destructive"
-              disabled={isBulkUpdating}
-              onClick={() => handleBulkStatusChange("REJECTED")}
-              className="h-11 px-3 text-sm font-semibold cursor-pointer"
-            >
-              Reject ({selectedCandidateIds.size})
-            </Button>
-          </div>
-        </div>
-      )}
-
-      <Dialog
+      <AlertDialog
         open={pendingRejection !== null}
         onOpenChange={(open) => !open && !isBulkUpdating && setPendingRejection(null)}
       >
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Confirm rejection</DialogTitle>
-            <DialogDescription className="leading-6">
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirm rejection</AlertDialogTitle>
+            <AlertDialogDescription>
               {pendingRejection?.type === "bulk"
-                ? `Reject ${pendingRejection.applicationIds.length} selected candidates? They will move out of active review.`
-                : `Reject ${pendingRejection?.application.candidate_code ?? "this candidate"}? They will move out of active review.`}
-            </DialogDescription>
-          </DialogHeader>
-          <p className="rounded-xl bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">
-            {pendingRejection?.type === "bulk"
-              ? "Only the selected candidates will be affected. Any failed updates will remain selected so you can retry."
-              : "You can undo this change from the confirmation message immediately afterward."}
-          </p>
-          <DialogFooter className="gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              className="h-11"
-              disabled={isBulkUpdating}
-              onClick={() => setPendingRejection(null)}
-            >
-              Keep in review
-            </Button>
-            <Button
-              type="button"
+                ? `Reject ${pendingRejection.applicationIds.length} selected candidates? Record an objective reason for audit tracking.`
+                : `Reject ${pendingRejection?.application.candidate_code ?? "this candidate"}? Record an objective reason for audit tracking.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-3 py-1">
+            <FormField label="Rejection reason" htmlFor="job-reject-reason">
+              <Select value={rejectionReason} onValueChange={(v) => setRejectionReason(v as RejectionReason)}>
+                <SelectTrigger id="job-reject-reason"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {REJECTION_REASON_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </FormField>
+            <FormField label="Optional internal note" htmlFor="job-reject-note">
+              <Textarea
+                id="job-reject-note"
+                rows={2}
+                maxLength={500}
+                value={rejectionNote}
+                onChange={(e) => setRejectionNote(e.target.value)}
+                placeholder="Brief merit-based note…"
+              />
+            </FormField>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isBulkUpdating}>Keep in review</AlertDialogCancel>
+            <AlertDialogAction
               variant="destructive"
-              className="h-11"
               disabled={isBulkUpdating}
               onClick={() => {
                 const pending = pendingRejection;
+                const chosenReason = rejectionReason;
+                const chosenNote = rejectionNote;
                 setPendingRejection(null);
+                setRejectionNote("");
                 if (pending?.type === "single") {
-                  void handleDirectStatusChange(pending.application, "REJECTED", true);
+                  void handleDirectStatusChange(pending.application, "REJECTED", true, chosenReason, chosenNote);
                 } else if (pending?.type === "bulk") {
-                  void handleBulkStatusChange("REJECTED", true, pending.applicationIds);
+                  void handleBulkStatusChange("REJECTED", true, pending.applicationIds, chosenReason, chosenNote);
                 }
               }}
             >
               Reject {pendingRejection?.type === "bulk" ? `${pendingRejection.applicationIds.length} candidates` : "candidate"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Candidate Analysis Modal */}
       <CandidateAnalysisModal
-        application={selectedApplication}
+        application={
+          selectedApplication
+            ? jobApplications.find((a) => a.id === selectedApplication.id) || selectedApplication
+            : null
+        }
+        applicationsQueue={activeList}
+        onSelectApplication={setSelectedApplication}
         job={currentJob}
         isOpen={isAnalysisOpen}
         onClose={() => setIsAnalysisOpen(false)}
@@ -1178,6 +1287,33 @@ export function JobProfileView({
         onStatusUpdated={(updatedApp) => {
           setSelectedApplication(updatedApp);
           onApplicationUpdated(updatedApp);
+        }}
+      />
+
+      <CandidateComparisonDialog
+        open={isCompareOpen}
+        onOpenChange={setIsCompareOpen}
+        candidates={jobApplications.filter((a) => selectedCandidateIds.has(a.id))}
+        anonymize={anonymize}
+        onApplicationUpdated={onApplicationUpdated}
+        onReviewCandidate={openAnalysis}
+      />
+
+      <CreateJobModal
+        isOpen={isEditJobOpen || duplicateTemplate !== null}
+        jobToEdit={isEditJobOpen ? currentJob : null}
+        initialTemplate={duplicateTemplate}
+        onClose={() => {
+          setIsEditJobOpen(false);
+          setDuplicateTemplate(null);
+        }}
+        onJobCreated={(savedJob) => {
+          if (isEditJobOpen) {
+            setCurrentJob(savedJob);
+          }
+          if (onJobUpdated) onJobUpdated(savedJob);
+          setIsEditJobOpen(false);
+          setDuplicateTemplate(null);
         }}
       />
 

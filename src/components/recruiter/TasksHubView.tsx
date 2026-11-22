@@ -1,0 +1,324 @@
+"use client";
+
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { ArrowRight, CheckCircle2, Circle, Clock3, RefreshCw } from "lucide-react";
+import { useRecruiter } from "@/context/RecruiterContext";
+import { fetchApi } from "@/lib/api";
+import { Application, GlobalRecruiterTask } from "@/types/application";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { ContextualLoading } from "@/components/ui/contextual-loading";
+import { EmptyState, ErrorState } from "@/components/ui/feedback";
+import { FilterTabs } from "@/components/ui/filter-tabs";
+import { IconButton } from "@/components/ui/icon-button";
+import { MetricSummary } from "@/components/ui/metric-summary";
+import {
+  PageHeader,
+  PageHeaderActions,
+  PageHeaderDescription,
+  PageHeaderTitle,
+} from "@/components/ui/page-header";
+import { SearchInput } from "@/components/ui/search-input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { toast } from "@/components/ui/sonner";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { CollectionToolbar } from "@/components/ui/toolbar";
+
+interface TasksHubViewProps {
+  onSelectApplication: (app: Application) => void;
+}
+
+type TaskStatusFilter = "open" | "overdue" | "completed" | "all";
+
+function formatDue(value?: string | null) {
+  if (!value) return "No due date";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+export function TasksHubView({ onSelectApplication }: TasksHubViewProps) {
+  const { applications, jobs, anonymize, loadData } = useRecruiter();
+  const [tasks, setTasks] = useState<GlobalRecruiterTask[]>([]);
+  const [summary, setSummary] = useState({ open: 0, overdue: 0, due_today: 0 });
+  const [fetchedAtMs, setFetchedAtMs] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [statusTab, setStatusTab] = useState<TaskStatusFilter>("open");
+  const [priorityFilter, setPriorityFilter] = useState("ALL");
+  const [assigneeFilter, setAssigneeFilter] = useState("all");
+  const [jobFilter, setJobFilter] = useState("all");
+  const [query, setQuery] = useState("");
+
+  const fetchTasks = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const params = new URLSearchParams({ status: statusTab, assigned_to: assigneeFilter });
+      if (priorityFilter !== "ALL") params.set("priority", priorityFilter);
+      if (jobFilter !== "all") params.set("job_id", jobFilter);
+      const data = await fetchApi<{
+        summary: { open: number; overdue: number; due_today: number };
+        tasks: GlobalRecruiterTask[];
+      }>(`/applications/tasks/?${params.toString()}`);
+      setTasks(data.tasks || []);
+      setSummary(data.summary || { open: 0, overdue: 0, due_today: 0 });
+      setFetchedAtMs(Date.now());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load follow-up tasks.");
+    } finally {
+      setLoading(false);
+    }
+  }, [assigneeFilter, jobFilter, priorityFilter, statusTab]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void fetchTasks();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [fetchTasks]);
+
+  const toggleTask = async (task: GlobalRecruiterTask) => {
+    try {
+      const updated = await fetchApi<GlobalRecruiterTask>(
+        `/applications/${task.application}/tasks/${task.id}/`,
+        { method: "PATCH", body: JSON.stringify({ is_complete: !task.is_complete }) }
+      );
+      setTasks((prev) => prev.map((item) => (item.id === updated.id ? { ...item, ...updated } : item)));
+      toast.success(updated.is_complete ? "Task completed" : "Task reopened");
+      void fetchTasks();
+      void loadData();
+    } catch (err) {
+      toast.error("Task not updated", {
+        description: err instanceof Error ? err.message : "Try again.",
+      });
+    }
+  };
+
+  const filteredTasks = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return tasks;
+    return tasks.filter((task) =>
+      [
+        task.title,
+        task.candidate_code,
+        task.job_title,
+        task.assigned_to_name,
+        ...(anonymize ? [] : [task.applicant_name]),
+      ].some((val) => val?.toLowerCase().includes(needle))
+    );
+  }, [anonymize, query, tasks]);
+
+  const hasFilters = Boolean(query.trim() || priorityFilter !== "ALL" || assigneeFilter !== "all" || jobFilter !== "all");
+  const clearFilters = () => {
+    setQuery("");
+    setPriorityFilter("ALL");
+    setAssigneeFilter("all");
+    setJobFilter("all");
+  };
+
+  const nowMs = fetchedAtMs;
+
+  return (
+    <div className="space-y-6">
+      <PageHeader className="border-b border-border pb-6">
+        <div>
+          <PageHeaderTitle>Follow-up tasks</PageHeaderTitle>
+          <PageHeaderDescription>
+            Track every candidate follow-up across active requisitions so strong applicants never slip through the cracks.
+          </PageHeaderDescription>
+        </div>
+        <PageHeaderActions>
+          <Button type="button" variant="outline" onClick={() => void fetchTasks()} disabled={loading}>
+            <RefreshCw className={loading ? "animate-spin" : ""} aria-hidden="true" />
+            Refresh
+          </Button>
+        </PageHeaderActions>
+      </PageHeader>
+
+      <section aria-label="Task summary" className="grid grid-cols-3 gap-x-6 gap-y-4 border-b border-border pb-6">
+        <MetricSummary label="Open tasks" value={summary.open} description="Active follow-ups" tone="brand" />
+        <MetricSummary label="Overdue" value={summary.overdue} description="Past due date" />
+        <MetricSummary label="Due today" value={summary.due_today} description="Needs action today" tone="success" />
+      </section>
+
+      <CollectionToolbar
+        label="Task inbox controls"
+        tabs={
+          <FilterTabs
+            label="Task status"
+            value={statusTab}
+            onValueChange={(value) => setStatusTab(value as TaskStatusFilter)}
+            tabs={[
+              { id: "open", label: "Open", count: summary.open },
+              { id: "overdue", label: "Overdue", count: summary.overdue },
+              { id: "completed", label: "Completed" },
+              { id: "all", label: "All" },
+            ]}
+          />
+        }
+        search={
+          <SearchInput
+            aria-label="Search tasks"
+            placeholder="Search task, candidate code, or job…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onClear={() => setQuery("")}
+            containerClassName="w-full sm:w-64"
+          />
+        }
+        filters={
+          <>
+            <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
+              <SelectTrigger aria-label="Filter by assignee" className="w-full sm:w-36">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All owners</SelectItem>
+                <SelectItem value="me">Assigned to me</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+              <SelectTrigger aria-label="Filter by priority" className="w-full sm:w-36">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All priorities</SelectItem>
+                <SelectItem value="HIGH">High priority</SelectItem>
+                <SelectItem value="MEDIUM">Medium</SelectItem>
+                <SelectItem value="LOW">Low</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={jobFilter} onValueChange={setJobFilter}>
+              <SelectTrigger aria-label="Filter by job" className="w-full sm:w-48">
+                <SelectValue placeholder="All requisitions" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All requisitions</SelectItem>
+                {jobs.map((job) => (
+                  <SelectItem key={job.id} value={String(job.id)}>
+                    {job.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </>
+        }
+        hasActiveFilters={hasFilters}
+        onClearFilters={clearFilters}
+      />
+
+      {loading ? (
+        <ContextualLoading label="Loading recruiter tasks" />
+      ) : error ? (
+        <ErrorState title="Could not load tasks" description={error} onAction={() => void fetchTasks()} />
+      ) : filteredTasks.length === 0 ? (
+        <EmptyState
+          title={hasFilters ? "No tasks match these filters" : "No tasks in this queue"}
+          description={
+            hasFilters
+              ? "Clear filters to view your full follow-up backlog."
+              : "Tasks created inside any candidate review modal or pipeline card will appear here."
+          }
+          actionLabel={hasFilters ? "Clear filters" : undefined}
+          onAction={hasFilters ? clearFilters : undefined}
+          className="rounded-2xl border border-dashed border-border bg-muted/30"
+        />
+      ) : (
+        <section aria-label="Task list" className="divide-y divide-border overflow-hidden rounded-2xl border border-border bg-card shadow-xs">
+          {filteredTasks.map((task) => {
+            const isOverdue = !task.is_complete && Boolean(task.due_at && new Date(task.due_at).getTime() < nowMs);
+            const linkedApp = applications.find((a) => a.id === task.application);
+            const candidateLabel = anonymize
+              ? task.candidate_code
+              : `${task.applicant_name} (${task.candidate_code})`;
+
+            return (
+              <div
+                key={task.id}
+                className="flex flex-col gap-3 px-5 py-4 transition-colors hover:bg-muted/40 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="flex min-w-0 flex-1 items-start gap-3">
+                  <IconButton
+                    label={task.is_complete ? `Reopen ${task.title}` : `Complete ${task.title}`}
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => void toggleTask(task)}
+                    className="mt-0.5 shrink-0"
+                  >
+                    {task.is_complete ? (
+                      <CheckCircle2 className="size-5 text-success" />
+                    ) : (
+                      <Circle className="size-5 text-muted-foreground" />
+                    )}
+                  </IconButton>
+
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span
+                        className={`text-sm font-semibold ${
+                          task.is_complete ? "text-muted-foreground line-through" : "text-foreground"
+                        }`}
+                      >
+                        {task.title}
+                      </span>
+                      <StatusBadge
+                        status={
+                          task.priority === "HIGH" ? "danger" : task.priority === "MEDIUM" ? "warning" : "neutral"
+                        }
+                      >
+                        {task.priority.toLowerCase()}
+                      </StatusBadge>
+                      {isOverdue ? <StatusBadge status="danger" dot>Overdue</StatusBadge> : null}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+                      <span className="font-medium text-foreground">{candidateLabel}</span>
+                      <span aria-hidden="true">·</span>
+                      <span>{task.job_title}</span>
+                      <span aria-hidden="true">·</span>
+                      <span className="inline-flex items-center gap-1 tabular-nums">
+                        <Clock3 className="size-3.5" aria-hidden="true" />
+                        {formatDue(task.due_at)}
+                      </span>
+                      {task.assigned_to_name ? (
+                        <>
+                          <span aria-hidden="true">·</span>
+                          <Badge variant="outline">{task.assigned_to_name}</Badge>
+                        </>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+
+                {linkedApp ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => onSelectApplication(linkedApp)}
+                    className="shrink-0 self-start sm:self-center"
+                  >
+                    <span>Open candidate</span>
+                    <ArrowRight aria-hidden="true" />
+                  </Button>
+                ) : null}
+              </div>
+            );
+          })}
+        </section>
+      )}
+    </div>
+  );
+}

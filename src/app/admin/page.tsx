@@ -7,6 +7,8 @@ import { DashboardOverview } from "@/components/recruiter/DashboardOverview";
 import { JobsView } from "@/components/recruiter/JobsView";
 import { AllApplicantsView } from "@/components/recruiter/AllApplicantsView";
 import { RecruitmentPipelineView } from "@/components/recruiter/RecruitmentPipelineView";
+import { TasksHubView } from "@/components/recruiter/TasksHubView";
+import { TalentPoolView } from "@/components/recruiter/TalentPoolView";
 import { MessageTemplatesView } from "@/components/recruiter/MessageTemplatesView";
 import { CreateJobModal } from "@/components/recruiter/CreateJobModal";
 import { CandidateAnalysisModal } from "@/components/recruiter/CandidateAnalysisModal";
@@ -31,6 +33,12 @@ function AdminPageContent() {
   } = useRecruiter();
 
   const [selectedApplication, setSelectedApplication] = useState<Application | null>(null);
+  const [selectedQueue, setSelectedQueue] = useState<Application[] | undefined>(undefined);
+
+  const handleSelectApplication = (app: Application, queue?: Application[]) => {
+    setSelectedApplication(app);
+    setSelectedQueue(queue);
+  };
 
   // Check for legacy deep link: ?jobId=... and forward to dedicated dynamic route /admin/jobs/[id]
   useEffect(() => {
@@ -62,9 +70,13 @@ function AdminPageContent() {
       ) : activeView === "jobs" ? (
         <JobsView />
       ) : activeView === "applicants" ? (
-        <AllApplicantsView onSelectApplication={setSelectedApplication} />
+        <AllApplicantsView onSelectApplication={handleSelectApplication} />
       ) : activeView === "pipeline" ? (
         <RecruitmentPipelineView />
+      ) : activeView === "tasks" ? (
+        <TasksHubView onSelectApplication={handleSelectApplication} />
+      ) : activeView === "talent-pool" ? (
+        <TalentPoolView onSelectApplication={handleSelectApplication} />
       ) : activeView === "templates" ? (
         <MessageTemplatesView />
       ) : (
@@ -72,7 +84,7 @@ function AdminPageContent() {
           jobs={jobs}
           applications={applications}
           anonymize={anonymize}
-          onSelectApplication={setSelectedApplication}
+          onSelectApplication={handleSelectApplication}
         />
       )}
 
@@ -85,9 +97,18 @@ function AdminPageContent() {
 
       <CandidateAnalysisModal
         isOpen={selectedApplication !== null}
-        application={selectedApplication}
+        application={
+          selectedApplication
+            ? applications.find((a) => a.id === selectedApplication.id) || selectedApplication
+            : null
+        }
+        applicationsQueue={selectedQueue}
+        onSelectApplication={setSelectedApplication}
         job={jobs.find((j) => j.id === selectedApplication?.job) || null}
-        onClose={() => setSelectedApplication(null)}
+        onClose={() => {
+          setSelectedApplication(null);
+          setSelectedQueue(undefined);
+        }}
         anonymize={anonymize}
         onStatusUpdated={onApplicationUpdated}
       />

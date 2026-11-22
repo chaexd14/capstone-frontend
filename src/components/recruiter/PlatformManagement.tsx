@@ -10,14 +10,24 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchApi } from "@/lib/api";
 
-type Company = { id: number; name: string; description: string; website: string };
+type Company = {
+  id: number;
+  name: string;
+  description: string;
+  website: string;
+  recruiter_count?: number;
+  active_job_count?: number;
+  application_count?: number;
+};
 type Staff = { id: number; first_name: string; last_name: string; email: string; role: "recruiter"; company: number | null; active: boolean };
+type StaffInvitationRow = { id: number; email: string; state: string; expires_at: string };
 type Form = "company-new" | "company-edit" | "staff-new" | Staff;
 
 export function PlatformManagement() {
   const [companies, setCompanies] = useState<Company[] | null>(null);
   const [selection, setSelection] = useState<number | "unassigned" | null>(null);
   const [directory, setDirectory] = useState<{ key: number | "unassigned"; rows: Staff[] } | null>(null);
+  const [invitationsState, setInvitationsState] = useState<{ key: number; rows: StaffInvitationRow[] } | null>(null);
   const [form, setForm] = useState<Form | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -31,6 +41,7 @@ export function PlatformManagement() {
   const key = selection ?? companies?.[0]?.id ?? "unassigned";
   const company = companies?.find((item) => item.id === key);
   const staff = directory?.key === key ? directory.rows : null;
+  const invitations = typeof key === "number" && invitationsState?.key === key ? invitationsState.rows : [];
   const companyForm = form === "company-new" || form === "company-edit";
   const editingStaff = form && typeof form === "object" ? form : null;
 
@@ -60,6 +71,11 @@ export function PlatformManagement() {
       .catch((err: Error) => {
         if (!controller.signal.aborted) setStaffError({ key, text: err.message });
       });
+    if (typeof key === "number") {
+      fetchApi<StaffInvitationRow[]>(`/platform/staff/invitations/?company=${key}`, { signal: controller.signal })
+        .then((rows) => { if (!controller.signal.aborted) setInvitationsState({ key, rows }); })
+        .catch(() => { if (!controller.signal.aborted) setInvitationsState({ key, rows: [] }); });
+    }
     return () => controller.abort();
   }, [companies, key, revision]);
 
@@ -326,6 +342,13 @@ export function PlatformManagement() {
                   <h2 id="company-staff-title" ref={rosterHeading} tabIndex={-1} className="break-words text-lg font-semibold">{company?.name ?? "Unassigned staff"}</h2>
                   {company?.description && <p className="mt-1 break-words text-sm text-muted-foreground">{company.description}</p>}
                   {company?.website && <p className="mt-1 break-all text-sm text-muted-foreground">{company.website}</p>}
+                  {company && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Badge variant="secondary" className="tabular-nums">{company.recruiter_count ?? 0} recruiters</Badge>
+                      <Badge variant="outline" className="tabular-nums">{company.active_job_count ?? 0} active jobs</Badge>
+                      <Badge variant="outline" className="tabular-nums">{company.application_count ?? 0} applications</Badge>
+                    </div>
+                  )}
                   {!company && <p className="mt-1 text-sm text-muted-foreground">Assign these recruiters to a company to grant access to its workspace.</p>}
                 </div>
                 {company && (
@@ -363,6 +386,27 @@ export function PlatformManagement() {
                   </ul>
                 )}
               </div>
+
+              {company && invitations.length > 0 ? (
+                <div className="overflow-hidden rounded-xl border border-border bg-card">
+                  <h3 className="border-b border-border bg-muted/50 px-4 py-3 text-sm font-semibold">
+                    Pending staff invitations ({invitations.length})
+                  </h3>
+                  <ul className="divide-y divide-border">
+                    {invitations.map((inv) => (
+                      <li key={inv.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
+                        <div className="min-w-0 flex-1">
+                          <p className="break-all font-medium text-foreground">{inv.email}</p>
+                          <p className="text-sm text-muted-foreground">
+                            Expires {new Date(inv.expires_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <Badge variant="outline">{inv.state}</Badge>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
             </section>
           )}
         </div>

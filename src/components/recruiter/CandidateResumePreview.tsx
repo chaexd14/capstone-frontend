@@ -12,6 +12,7 @@ import {
   ExternalLink,
   Maximize2,
   Minimize2,
+  ShieldCheck,
   ZoomIn,
   ZoomOut,
   RotateCcw,
@@ -37,6 +38,8 @@ import {
 
 interface CandidateResumePreviewProps {
   application: Application;
+  anonymize?: boolean;
+  isIdentityRevealed?: boolean;
   isExpanded?: boolean;
   onToggleExpand?: () => void;
   className?: string;
@@ -142,6 +145,8 @@ function renderFormattedDocumentLines(rawText: string) {
 
 export function CandidateResumePreview({
   application,
+  anonymize = false,
+  isIdentityRevealed = false,
   isExpanded = false,
   onToggleExpand,
   className = "",
@@ -150,6 +155,12 @@ export function CandidateResumePreview({
   const resumeId = resume?.id;
   const isPurged = Boolean(resume?.is_purged);
   const extractedText = resume?.extracted_text;
+  const redactedText = resume?.redacted_text;
+  const isBlindModeActive = Boolean(
+    anonymize &&
+    !isIdentityRevealed &&
+    !["SHORTLISTED", "INTERVIEW", "HIRED"].includes(application.status)
+  );
 
   const [retryCount, setRetryCount] = useState<number>(0);
   const [zoomPercent, setZoomPercent] = useState<number>(100);
@@ -238,6 +249,7 @@ export function CandidateResumePreview({
   const shouldFetchPreview = Boolean(
     resumeId &&
     !isPurged &&
+    !isBlindModeActive &&
     (formatInfo.ext === "pdf" || (formatInfo.ext === "txt" && !extractedText))
   );
 
@@ -491,7 +503,12 @@ export function CandidateResumePreview({
     applyAnchoredZoom(targetZoom, e.clientX, e.clientY);
   };
 
-  const documentText = resume?.extracted_text || fallbackText || "";
+  const documentText = isBlindModeActive
+    ? redactedText || ""
+    : resume?.extracted_text || fallbackText || "";
+  const displayFilename = isBlindModeActive
+    ? `${application.candidate_code}_Redacted_Resume.${formatInfo.ext === "other" ? "txt" : formatInfo.ext}`
+    : resume?.original_filename || `${application.candidate_code} Resume`;
 
   const handleOpenInNewTab = () => {
     if (pdfPages.length > 0) {
@@ -521,10 +538,10 @@ export function CandidateResumePreview({
   };
 
   const hasPdfToolbarControls = Boolean(
-    resume && !isPurged && formatInfo.ext === "pdf" && pdfPages.length > 0
+    resume && !isPurged && !isBlindModeActive && formatInfo.ext === "pdf" && pdfPages.length > 0
   );
   const canOpenNewTab = Boolean(
-    resume && !isPurged && (pdfPages.length > 0 || documentText)
+    resume && !isPurged && !isBlindModeActive && (pdfPages.length > 0 || documentText)
   );
 
   return (
@@ -533,12 +550,20 @@ export function CandidateResumePreview({
     >
       {/* Single Clean Resume Header Bar */}
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border bg-card px-4 py-2.5">
-        <span
-          className="max-w-[220px] truncate text-sm font-semibold text-foreground sm:max-w-[340px]"
-          title={resume?.original_filename || "Applicant Resume"}
-        >
-          {resume?.original_filename || `${application.candidate_code} Resume`}
-        </span>
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            className="max-w-[220px] truncate text-sm font-semibold text-foreground sm:max-w-[340px]"
+            title={displayFilename}
+          >
+            {displayFilename}
+          </span>
+          {isBlindModeActive ? (
+            <Badge variant="secondary" className="gap-1">
+              <ShieldCheck className="size-3.5 text-primary" aria-hidden="true" />
+              PII redacted
+            </Badge>
+          ) : null}
+        </div>
 
         <div className="flex flex-wrap items-center gap-3">
           {hasPdfToolbarControls || canOpenNewTab || onToggleExpand ? (
@@ -650,6 +675,28 @@ export function CandidateResumePreview({
               title="Original resume file removed per retention policy"
               description="The physical resume file was removed in accordance with data privacy retention rules."
             />
+          </div>
+        ) : isBlindModeActive ? (
+          <div className="min-h-0 flex-1 space-y-4 overflow-auto overscroll-contain touch-pan-x touch-pan-y p-4 sm:p-6">
+            <div className="mx-auto flex max-w-[740px] items-start gap-2.5 rounded-xl border border-primary/20 bg-secondary/70 px-4 py-3 text-sm text-foreground">
+              <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+              <span>
+                Blind screening is active. Candidate name, contact details, address, demographic markers, and school prestige have been redacted from this document view.
+              </span>
+            </div>
+
+            {documentText ? (
+              <div className="mx-auto min-h-[640px] max-w-[740px] rounded-xl border border-border bg-card p-6 shadow-xs sm:p-10">
+                {renderFormattedDocumentLines(documentText)}
+              </div>
+            ) : (
+              <div className="mx-auto max-w-[740px] rounded-xl border border-dashed border-border bg-card">
+                <EmptyState
+                  title="Redacted preview pending"
+                  description="The redacted text version of this resume is still processing. Shortlist the candidate or reveal identity to inspect the original file."
+                />
+              </div>
+            )}
           </div>
         ) : formatInfo.ext === "pdf" ? (
           loadingFile ? (

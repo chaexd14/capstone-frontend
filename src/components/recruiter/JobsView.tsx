@@ -154,14 +154,16 @@ function JobStatusBadge({ status }: { status?: Job["status"] }) {
 
 interface JobLifecycleMenuProps {
   job: Job;
-  onEditDraft: (job: Job) => void;
+  onEditJob: (job: Job) => void;
+  onDuplicateJob: (job: Job) => void;
   onOpenRoster: (jobId: number) => void;
   onLifecycleAction: (job: Job, action: JobActionType) => void;
 }
 
 function JobLifecycleMenu({
   job,
-  onEditDraft,
+  onEditJob,
+  onDuplicateJob,
   onOpenRoster,
   onLifecycleAction,
 }: JobLifecycleMenuProps) {
@@ -186,16 +188,26 @@ function JobLifecycleMenu({
         <DropdownMenuLabel>Requisition actions</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {job.status === "DRAFT" ? (
-          <DropdownMenuItem onClick={() => onEditDraft(job)}>
+          <DropdownMenuItem onClick={() => onEditJob(job)}>
             <Pencil className="size-4" aria-hidden="true" />
             <span>Continue editing draft</span>
           </DropdownMenuItem>
         ) : (
-          <DropdownMenuItem onClick={() => onOpenRoster(job.id)}>
-            <UsersRound className="size-4" aria-hidden="true" />
-            <span>Open candidate roster</span>
-          </DropdownMenuItem>
+          <>
+            <DropdownMenuItem onClick={() => onOpenRoster(job.id)}>
+              <UsersRound className="size-4" aria-hidden="true" />
+              <span>Open candidate roster</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onEditJob(job)}>
+              <Pencil className="size-4" aria-hidden="true" />
+              <span>Edit requisition</span>
+            </DropdownMenuItem>
+          </>
         )}
+        <DropdownMenuItem onClick={() => onDuplicateJob(job)}>
+          <Copy className="size-4" aria-hidden="true" />
+          <span>Duplicate as new opening</span>
+        </DropdownMenuItem>
         {job.status === "CLOSED" ? (
           <DropdownMenuItem onClick={() => onLifecycleAction(job, "reopen")}>
             <RotateCcw className="size-4" aria-hidden="true" />
@@ -257,6 +269,25 @@ export function JobsView() {
   const [editingJob, setEditingJob] = useState<Job | null>(null);
   const [duplicatingTemplate, setDuplicatingTemplate] = useState<Partial<Job> | null>(null);
   const [selectedArchivedJob, setSelectedArchivedJob] = useState<ArchivedJob | null>(null);
+
+  const handleDuplicateJob = (sourceJob: Job) => {
+    setDuplicatingTemplate({
+      title: `${sourceJob.title} (Copy)`,
+      department: sourceJob.department,
+      employment_type: sourceJob.employment_type,
+      location: sourceJob.location,
+      description: sourceJob.description,
+      job_overview: sourceJob.job_overview,
+      salary_min: sourceJob.salary_min,
+      salary_max: sourceJob.salary_max,
+      minimum_experience: sourceJob.minimum_experience,
+      education_requirement: sourceJob.education_requirement,
+      required_skills: sourceJob.required_skills || [],
+      preferred_skills: sourceJob.preferred_skills || [],
+      rubric_weights: sourceJob.rubric_weights,
+      status: "PUBLISHED",
+    });
+  };
 
   const handleDuplicateArchivedJob = (archivedJob: ArchivedJob) => {
     setDuplicatingTemplate({
@@ -504,7 +535,8 @@ export function JobsView() {
             <CardFooter className="justify-between gap-3 border-t border-border px-5 py-3.5">
               <JobLifecycleMenu
                 job={job}
-                onEditDraft={setEditingJob}
+                onEditJob={setEditingJob}
+                onDuplicateJob={handleDuplicateJob}
                 onOpenRoster={(id) => router.push(`/admin/jobs/${id}`)}
                 onLifecycleAction={openLifecycleModal}
               />
@@ -741,6 +773,7 @@ export function JobsView() {
                       <TableHead className="text-center">Candidates</TableHead>
                       <TableHead className="text-center">Top</TableHead>
                       <TableHead className="text-center">Status</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -817,6 +850,16 @@ export function JobsView() {
 
                           <TableCell overflow="nowrap" className="text-center">
                             <JobStatusBadge status={job.status} />
+                          </TableCell>
+
+                          <TableCell overflow="nowrap" className="text-right" onClick={(e) => e.stopPropagation()}>
+                            <JobLifecycleMenu
+                              job={job}
+                              onEditJob={setEditingJob}
+                              onDuplicateJob={handleDuplicateJob}
+                              onOpenRoster={(id) => router.push(`/admin/jobs/${id}`)}
+                              onLifecycleAction={openLifecycleModal}
+                            />
                           </TableCell>
                         </TableRow>
                       );

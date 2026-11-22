@@ -1,14 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Activity, Clock3, Database, HardDrive, RefreshCw, Server, ShieldCheck } from "lucide-react";
+import { Activity, Clock3, Database, HardDrive, RefreshCw, RotateCcw, Server, ShieldCheck } from "lucide-react";
 import { fetchApi } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/feedback";
 import { ContextualLoading } from "@/components/ui/contextual-loading";
 import { MetricSummary } from "@/components/ui/metric-summary";
 import { PageHeader, PageHeaderActions, PageHeaderDescription, PageHeaderTitle } from "@/components/ui/page-header";
+import { SearchInput } from "@/components/ui/search-input";
 import { Section, SectionDescription, SectionHeader, SectionTitle } from "@/components/ui/section";
+import { toast } from "@/components/ui/sonner";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -109,9 +111,27 @@ function TrendChart({ points }: { points: Point[] }) {
   );
 }
 
+type FailedWorkItem = {
+  id: number;
+  kind: string;
+  target: string;
+  attempts: number;
+  run_after: string;
+};
+type SecurityEventRow = {
+  id: number;
+  action: string;
+  object_id: string;
+  created_at: string;
+};
+
 export function SystemMonitoring() {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [points, setPoints] = useState<Point[]>([]);
+  const [failedWork, setFailedWork] = useState<FailedWorkItem[]>([]);
+  const [securityEvents, setSecurityEvents] = useState<SecurityEventRow[]>([]);
+  const [eventFilter, setEventFilter] = useState("");
+  const [retryingWorkId, setRetryingWorkId] = useState<number | null>(null);
   const [range, setRange] = useState<"24h" | "7d">("24h");
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
@@ -120,18 +140,41 @@ export function SystemMonitoring() {
     if (!quiet) setRefreshing(true);
     setError("");
     try {
-      const [nextOverview, series] = await Promise.all([
+      const hours = range === "7d" ? 168 : 24;
+      const [nextOverview, series, failedRes, eventsRes] = await Promise.all([
         fetchApi<Overview>("/platform/monitoring/overview/"),
         fetchApi<{ points: Point[] }>(`/platform/monitoring/timeseries/?range=${range}`),
+        fetchApi<{ items: FailedWorkItem[] }>("/platform/monitoring/failed-work/").catch(() => ({ items: [] })),
+        fetchApi<{ events: SecurityEventRow[] }>(
+          `/platform/monitoring/security-events/?hours=${hours}${eventFilter.trim() ? `&action=${encodeURIComponent(eventFilter.trim())}` : ""}`
+        ).catch(() => ({ events: [] })),
       ]);
       setOverview(nextOverview);
       setPoints(series.points);
+      setFailedWork(failedRes.items || []);
+      setSecurityEvents(eventsRes.events || []);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "System monitoring could not be loaded.");
     } finally {
       setRefreshing(false);
     }
-  }, [range]);
+  }, [eventFilter, range]);
+
+  const retryFailedWork = async (workId: number) => {
+    setRetryingWorkId(workId);
+    try {
+      await fetchApi(`/platform/monitoring/failed-work/${workId}/retry/`, { method: "POST" });
+      setFailedWork((prev) => prev.filter((item) => item.id !== workId));
+      toast.success("Queued work item for retry");
+      void load(true);
+    } catch (err) {
+      toast.error("Could not retry work item", {
+        description: err instanceof Error ? err.message : "Try again.",
+      });
+    } finally {
+      setRetryingWorkId(null);
+    }
+  };
 
   useEffect(() => {
     const initialLoad = window.setTimeout(() => void load(), 0);
@@ -236,6 +279,96 @@ export function SystemMonitoring() {
               <TableHeader><TableRow><TableHead size="fill">Event category</TableHead><TableHead size="fit">Count</TableHead></TableRow></TableHeader>
               <TableBody>{overview.security_events_24h.map((event) => <TableRow key={event.action}><TableCell className="font-medium">{event.action.replaceAll(".", " ")}</TableCell><TableCell overflow="nowrap" className="tabular-nums">{event.count}</TableCell></TableRow>)}</TableBody>
             </Table>
+          )}
+        </Section>
+      </div>
+
+      {/* Failed Resume Queue Inspector & Redacted Audit Event Log */}
+      <div className="grid items-start gap-7 xl:grid-cols-2">
+        <Section>
+          <SectionHeader>
+            <div>
+              <SectionTitle>Failed resume queue ({failedWork.length})</SectionTitle>
+              <SectionDescription>Inspect failed background worker items and re-queue them safely.</SectionDescription>
+            </div>
+          </SectionHeader>
+          {failedWork.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">No failed worker items in the queue.</p>
+          ) : (
+            <Table density="compact">
+              <TableHeader>
+                <TableRow>
+                  <TableHead size="standard">Kind</TableHead>
+                  <TableHead size="fill">Target</TableHead>
+                  <TableHead size="fit" className="text-center">Attempts</TableHead>
+                  <TableHead size="fit" className="text-right">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {failedWork.map((item) => (
+                  <TableRow key={item.id}>
+                    <TableCell className="font-semibold">{item.kind}</TableCell>
+                    <TableCell overflow="truncate" title={item.target}>{item.target}</TableCell>
+                    <TableCell className="text-center tabular-nums">{item.attempts}</TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        disabled={retryingWorkId === item.id}
+                        onClick={() => void retryFailedWork(item.id)}
+                      >
+                        <RotateCcw className="size-3.5" aria-hidden="true" />
+                        Retry
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </Section>
+
+        <Section>
+          <SectionHeader>
+            <div>
+              <SectionTitle>Audit event log</SectionTitle>
+              <SectionDescription>Redacted platform security events for the selected {range} window.</SectionDescription>
+            </div>
+            <SearchInput
+              aria-label="Filter security event action"
+              placeholder="Filter action (e.g. job, staff)…"
+              value={eventFilter}
+              onChange={(e) => setEventFilter(e.target.value)}
+              onClear={() => setEventFilter("")}
+              containerClassName="w-full sm:w-56"
+            />
+          </SectionHeader>
+          {securityEvents.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted-foreground">No matching security events recorded.</p>
+          ) : (
+            <div className="max-h-72 overflow-y-auto">
+              <Table density="compact">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead size="fill">Action</TableHead>
+                    <TableHead size="fit">Object</TableHead>
+                    <TableHead size="standard" className="text-right">Time</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {securityEvents.slice(0, 40).map((ev) => (
+                    <TableRow key={ev.id}>
+                      <TableCell className="font-medium">{ev.action.replaceAll(".", " ")}</TableCell>
+                      <TableCell overflow="nowrap" className="tabular-nums text-muted-foreground">#{ev.object_id}</TableCell>
+                      <TableCell overflow="nowrap" className="text-right tabular-nums text-muted-foreground">
+                        {formatTime(ev.created_at)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
           )}
         </Section>
       </div>

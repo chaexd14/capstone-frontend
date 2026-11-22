@@ -13,7 +13,9 @@ import {
   MoreVertical,
   Plus,
   Columns3,
+  ListTodo,
   Mail,
+  Sparkles,
   HeartPulse,
 } from "lucide-react";
 import { useRecruiter } from "@/context/RecruiterContext";
@@ -47,6 +49,7 @@ export function RecruiterSidebar({ onCloseMobile }: RecruiterSidebarProps) {
     setAnonymize,
     jobs,
     applications,
+    openTasksCount,
     handleLogout,
     setIsCreateJobOpen,
   } = useRecruiter();
@@ -112,6 +115,22 @@ export function RecruiterSidebar({ onCloseMobile }: RecruiterSidebarProps) {
           href: "/admin?view=applicants",
           isActive: !isJobDetail && activeView === "applicants",
           badge: applications.length,
+        },
+        {
+          id: "tasks",
+          label: "Tasks",
+          icon: ListTodo,
+          href: "/admin?view=tasks",
+          isActive: !isJobDetail && activeView === "tasks",
+          badge: openTasksCount,
+        },
+        {
+          id: "talent-pool",
+          label: "Talent Pool",
+          icon: Sparkles,
+          href: "/admin?view=talent-pool",
+          isActive: !isJobDetail && activeView === "talent-pool",
+          badge: null as number | null,
         },
         {
           id: "templates",

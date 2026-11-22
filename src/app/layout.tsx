@@ -3,6 +3,7 @@ import { GeistSans } from "geist/font/sans";
 import { connection } from "next/server";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 export const metadata: Metadata = {
   title: "TalentMatch · AI Resume Screening & Candidate Evaluation",
@@ -25,8 +26,10 @@ export default async function RootLayout({
         className="min-h-full flex flex-col font-sans bg-background text-foreground selection:bg-primary selection:text-primary-foreground"
         suppressHydrationWarning
       >
-        {children}
-        <Toaster />
+        <TooltipProvider delayDuration={250}>
+          {children}
+          <Toaster />
+        </TooltipProvider>
       </body>
     </html>
   );

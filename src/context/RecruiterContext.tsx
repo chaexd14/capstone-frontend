@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Job } from "@/types/job";
-import { Application } from "@/types/application";
+import { Application, TeamMember } from "@/types/application";
 import { ApiError, clearResumeBlobCache, fetchApi } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
 
@@ -60,6 +60,9 @@ interface RecruiterContextValue {
   setAnonymize: (val: boolean) => void;
   jobs: Job[];
   applications: Application[];
+  teamMembers: TeamMember[];
+  openTasksCount: number;
+  overdueTasksCount: number;
   backendOnline: boolean;
   loading: boolean;
   loadData: () => Promise<void>;
@@ -83,6 +86,9 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
   const [anonymize, setAnonymize] = useState<boolean>(true);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [openTasksCount, setOpenTasksCount] = useState(0);
+  const [overdueTasksCount, setOverdueTasksCount] = useState(0);
   const [backendOnline, setBackendOnline] = useState(false);
   const [loading, setLoading] = useState(true);
   const [isCreateJobOpen, setIsCreateJobOpen] = useState(false);
@@ -121,6 +127,8 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
             name?: string;
             username?: string;
             supabase_id?: string;
+            company_id?: number | null;
+            company_name?: string | null;
           };
         }>("/auth/me/");
 
@@ -179,7 +187,10 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
           lastName,
           name: resolvedFullName,
           role: verifiedRole,
-          company: cleanNameValue(meta.company, opaqueIds) || "Talent Operations",
+          company:
+            cleanNameValue(meData?.user?.company_name, opaqueIds) ||
+            cleanNameValue(meta.company, opaqueIds) ||
+            "TalentMatch Recruiting",
         });
       } catch (err) {
         console.error("Auth check failed:", err);
@@ -204,13 +215,22 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
         return;
       }
-      const [jobsData, appsData] = await Promise.all([
+      const [jobsData, appsData, teamData, tasksSummary] = await Promise.all([
         fetchApi<Job[]>("/jobs/"),
         fetchApi<Application[]>("/applications/"),
+        fetchApi<TeamMember[]>("/companies/team/").catch(() => []),
+        fetchApi<{ summary: { open: number; overdue: number } }>("/applications/tasks/?status=open").catch(() => null),
       ]);
 
       setJobs(jobsData);
       setApplications(appsData);
+      setTeamMembers(teamData);
+      if (tasksSummary?.summary) {
+        setOpenTasksCount(tasksSummary.summary.open);
+        setOverdueTasksCount(tasksSummary.summary.overdue);
+      } else {
+        setOpenTasksCount(appsData.reduce((sum, app) => sum + (app.open_task_count || 0), 0));
+      }
       setBackendOnline(true);
       setLoading(false);
     } catch (err) {
@@ -291,6 +311,9 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
       setAnonymize,
       jobs,
       applications,
+      teamMembers,
+      openTasksCount,
+      overdueTasksCount,
       backendOnline,
       loading,
       loadData,
@@ -308,6 +331,9 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
       anonymize,
       jobs,
       applications,
+      teamMembers,
+      openTasksCount,
+      overdueTasksCount,
       backendOnline,
       loading,
       loadData,

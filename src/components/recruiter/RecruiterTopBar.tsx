@@ -22,6 +22,8 @@ export function RecruiterTopBar({ onOpenMobileMenu }: RecruiterTopBarProps) {
     jobs: "Jobs",
     applicants: "Applicants",
     pipeline: "Hiring Pipeline",
+    tasks: "Follow-up Tasks",
+    "talent-pool": "Talent Pool",
     templates: "Message Templates",
     platform: "Companies & Team",
     system: "System Health",
