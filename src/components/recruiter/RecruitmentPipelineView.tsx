@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ClipboardCheck,
   Download,
@@ -40,7 +40,7 @@ import { CandidateWorkflowPanel } from "./CandidateWorkflowPanel";
 import { prefetchCandidateWorkflow } from "./CandidateWorkflowContent";
 import { PipelineReportDialog } from "./PipelineReportDialog";
 import { ServerPagination } from "@/components/ui/server-pagination";
-import { usePaginatedApi } from "@/hooks/use-paginated-api";
+import { invalidatePaginatedCache, usePaginatedApi } from "@/hooks/use-paginated-api";
 
 const PIPELINE: Array<{ status: ApplicationStatus; label: string; description: string }> = [
   { status: "SUBMITTED", label: "New", description: "Awaiting first review" },
@@ -103,8 +103,44 @@ export function RecruitmentPipelineView() {
     params.set("ordering", sortMode === "score" ? "-match_result__match_score" : "-applied_at");
     return `/applications/?${params.toString()}`;
   }, [debouncedQuery, jobFilter, page, sortMode]);
-  const { data: applicationsPage, loading: pageLoading, refresh: refreshApplications } = usePaginatedApi<Application>(applicationsEndpoint);
-  const applications = applicationsPage?.results ?? contextApplications;
+  const {
+    data: applicationsPage,
+    loading: pageLoading,
+    setData: setApplicationsPage,
+  } = usePaginatedApi<Application>(applicationsEndpoint);
+  const applications = useMemo(() => {
+    if (!applicationsPage) return contextApplications;
+    const contextById = new Map(contextApplications.map((item) => [item.id, item]));
+    return applicationsPage.results.map((item) => {
+      const live = contextById.get(item.id);
+      if (!live) return item;
+      if (
+        item.updated_at &&
+        live.updated_at &&
+        new Date(item.updated_at).getTime() > new Date(live.updated_at).getTime()
+      ) {
+        return item;
+      }
+      return { ...item, ...live };
+    });
+  }, [applicationsPage, contextApplications]);
+
+  const patchVisibleApplications = useCallback(
+    (applicationIds: number[], patch: Partial<Application>) => {
+      const idSet = new Set(applicationIds);
+      setApplicationsPage((current) =>
+        current
+          ? {
+              ...current,
+              results: current.results.map((item) =>
+                idSet.has(item.id) ? { ...item, ...patch } : item
+              ),
+            }
+          : current
+      );
+    },
+    [setApplicationsPage]
+  );
 
   const workspaceApplication = useMemo(
     () => applications.find((item) => item.id === workspaceApplicationId) || null,
@@ -163,39 +199,74 @@ export function RecruitmentPipelineView() {
     const previousStatus = application.status;
     if (normalizeStage(previousStatus) === status && previousStatus === status) return;
     const stageLabel = PIPELINE.find((stage) => stage.status === status)?.label || status;
+    patchVisibleApplications([application.id], {
+      status,
+      updated_at: new Date().toISOString(),
+    });
 
     toast.success(`Moved ${application.candidate_code}`, {
       description: `Candidate is now in ${stageLabel}.`,
       action: {
         label: "Undo",
         onClick: () => {
-          void updateApplicationStatus(application, previousStatus).then(() => refreshApplications()).catch((err) => {
-            toast.error("Could not undo move", {
-              description: err instanceof Error ? err.message : "Try again.",
+          patchVisibleApplications([application.id], { status: previousStatus });
+          void updateApplicationStatus(application, previousStatus)
+            .then(() => {
+              invalidatePaginatedCache("/applications/");
+            })
+            .catch((err) => {
+              patchVisibleApplications([application.id], { status });
+              toast.error("Could not undo move", {
+                description: err instanceof Error ? err.message : "Try again.",
+              });
             });
-          });
         },
       },
     });
 
-    void updateApplicationStatus(application, status).then(() => refreshApplications()).catch((error) => {
-      toast.error("Candidate was not moved", {
-        description: error instanceof Error ? error.message : "Reverted to previous stage.",
+    void updateApplicationStatus(application, status)
+      .then(() => {
+        invalidatePaginatedCache("/applications/");
+      })
+      .catch((error) => {
+        patchVisibleApplications([application.id], { status: previousStatus });
+        toast.error("Candidate was not moved", {
+          description: error instanceof Error ? error.message : "Reverted to previous stage.",
+        });
       });
-    });
   };
 
   const applyBulkMove = async () => {
     if (selectedIds.length === 0 || bulkWorking) return;
     const idsToMove = [...selectedIds];
     const targetStage = bulkStatus;
+    const previousStatuses = new Map(
+      applications
+        .filter((application) => idsToMove.includes(application.id))
+        .map((application) => [application.id, application.status])
+    );
     setBulkWorking(true);
     setSelectedIds([]);
+    patchVisibleApplications(idsToMove, {
+      status: targetStage,
+      updated_at: new Date().toISOString(),
+    });
     try {
       const count = await bulkUpdateApplicationStatus(idsToMove, targetStage);
+      invalidatePaginatedCache("/applications/");
       toast.success(`${count} candidate${count === 1 ? "" : "s"} moved`);
-      void refreshApplications();
     } catch (error) {
+      setApplicationsPage((current) =>
+        current
+          ? {
+              ...current,
+              results: current.results.map((item) => {
+                const previousStatus = previousStatuses.get(item.id);
+                return previousStatus ? { ...item, status: previousStatus } : item;
+              }),
+            }
+          : current
+      );
       setSelectedIds(idsToMove);
       toast.error("Bulk action failed", {
         description: error instanceof Error ? error.message : "Try again.",

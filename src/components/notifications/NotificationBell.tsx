@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 import { useRouter } from "next/navigation";
 import {
   Bell,
@@ -32,6 +33,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { fetchApi } from "@/lib/api";
+import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { NotificationItem, NotificationsResponse } from "@/types/notification";
 
@@ -74,6 +76,10 @@ interface SharedNotificationBucket {
   visibilityHandler: (() => void) | null;
   listeners: Set<() => void>;
   onNewNotification: ((item: NotificationItem) => void) | null;
+  realtimeConnected: boolean;
+  realtimeClient: SupabaseClient | null;
+  realtimeChannel: RealtimeChannel | null;
+  realtimeRefCount: number;
 }
 
 const sharedNotificationStores = new Map<string, SharedNotificationBucket>();
@@ -92,6 +98,10 @@ function getOrCreateNotificationBucket(key: string): SharedNotificationBucket {
       visibilityHandler: null,
       listeners: new Set(),
       onNewNotification: null,
+      realtimeConnected: false,
+      realtimeClient: null,
+      realtimeChannel: null,
+      realtimeRefCount: 0,
     };
     sharedNotificationStores.set(key, bucket);
   }
@@ -100,6 +110,25 @@ function getOrCreateNotificationBucket(key: string): SharedNotificationBucket {
 
 function notifyBucketListeners(bucket: SharedNotificationBucket) {
   bucket.listeners.forEach((listener) => listener());
+}
+
+function publishApplicationPatch(item: NotificationItem) {
+  if (
+    typeof window === "undefined" ||
+    !item.application ||
+    !item.application_status
+  ) {
+    return;
+  }
+  window.dispatchEvent(
+    new CustomEvent("talentmatch:application-patch", {
+      detail: {
+        id: item.application,
+        status: item.application_status,
+        updated_at: item.application_updated_at,
+      },
+    })
+  );
 }
 
 async function fetchNotificationBucket(
@@ -216,6 +245,7 @@ export function NotificationBell({ role, userId }: NotificationBellProps) {
         void fetchNotificationBucket(storeKey, isRecruiter, isApplicant, userId);
       }
       bucket.intervalId = setInterval(() => {
+        if (bucket.realtimeConnected) return;
         if (typeof document !== "undefined" && document.visibilityState === "hidden") {
           return;
         }
@@ -250,6 +280,57 @@ export function NotificationBell({ role, userId }: NotificationBellProps) {
     };
   }, [role, storeKey, isRecruiter, isApplicant, userId]);
 
+  useEffect(() => {
+    if (!role || !storeKey) return;
+    if (isApplicant && !userId) return;
+    const bucket = getOrCreateNotificationBucket(storeKey);
+    bucket.realtimeRefCount += 1;
+    if (!bucket.realtimeChannel) {
+      const realtime = createClient();
+      const filter = isApplicant
+        ? `user_id=eq.${userId}`
+        : `recipient_type=eq.RECRUITER`;
+      bucket.realtimeClient = realtime;
+      bucket.realtimeChannel = realtime
+        .channel(`notifications:${storeKey}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "INSERT",
+            schema: "public",
+            table: "notifications_notification",
+            filter,
+          },
+          (payload) => {
+            const item = payload.new as NotificationItem;
+            if (!item?.id || bucket.knownIds.has(item.id)) return;
+            bucket.notifications = [item, ...bucket.notifications].slice(0, 50);
+            bucket.knownIds.add(item.id);
+            if (!item.is_read) bucket.unreadCount += 1;
+            bucket.lastFetchedAt = Date.now();
+            notifyBucketListeners(bucket);
+            bucket.onNewNotification?.(item);
+          }
+        )
+        .subscribe((status) => {
+          bucket.realtimeConnected = status === "SUBSCRIBED";
+          if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+            void fetchNotificationBucket(storeKey, isRecruiter, isApplicant, userId);
+          }
+        });
+    }
+
+    return () => {
+      bucket.realtimeRefCount = Math.max(0, bucket.realtimeRefCount - 1);
+      if (bucket.realtimeRefCount === 0 && bucket.realtimeClient && bucket.realtimeChannel) {
+        bucket.realtimeConnected = false;
+        void bucket.realtimeClient.removeChannel(bucket.realtimeChannel);
+        bucket.realtimeClient = null;
+        bucket.realtimeChannel = null;
+      }
+    };
+  }, [isApplicant, isRecruiter, role, storeKey, userId]);
+
   const markAsRead = async (item: NotificationItem) => {
     if (item.is_read || !storeKey) return;
     const bucket = getOrCreateNotificationBucket(storeKey);
@@ -261,7 +342,10 @@ export function NotificationBell({ role, userId }: NotificationBellProps) {
     notifyBucketListeners(bucket);
 
     try {
-      await fetchApi(`/notifications/${item.id}/read/`, { method: "PATCH" });
+      const updated = await fetchApi<NotificationItem>(`/notifications/${item.id}/read/`, {
+        method: "PATCH",
+      });
+      publishApplicationPatch(updated);
     } catch {
       void fetchNotificationBucket(storeKey, isRecruiter, isApplicant, userId);
     }
@@ -289,8 +373,9 @@ export function NotificationBell({ role, userId }: NotificationBellProps) {
     }
   };
 
-  const handleNotificationClick = async (item: NotificationItem) => {
-    await markAsRead(item);
+  const handleNotificationClick = (item: NotificationItem) => {
+    publishApplicationPatch(item);
+    void markAsRead(item);
     setIsOpen(false);
     navigateToNotification(item);
   };

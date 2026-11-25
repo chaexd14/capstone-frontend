@@ -10,6 +10,8 @@ export interface NotificationItem {
   recipient_type: RecipientType;
   user_id?: string | null;
   application?: number | null;
+  application_status?: string | null;
+  application_updated_at?: string | null;
   candidate_code?: string | null;
   applicant_name?: string | null;
   job?: number | null;

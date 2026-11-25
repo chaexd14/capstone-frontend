@@ -244,7 +244,6 @@ export function JobsView() {
   const router = useRouter();
   const {
     jobs: contextJobs,
-    loadData,
     onJobUpdated,
     updateJobStatusOptimistic,
     setIsCreateJobOpen,
@@ -425,7 +424,6 @@ export function JobsView() {
       setArchivedJobs((prev) => prev.filter((j) => j.id !== archivedJob.id));
       setSelectedArchivedJob(null);
       onJobUpdated(restored);
-      void loadData();
       toast.success("Position Restored", { description: `"${archivedJob.title}" has been restored to active requisitions.` });
       setJobTab("ACTIVE");
     } catch (err: unknown) {

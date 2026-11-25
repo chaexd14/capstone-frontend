@@ -150,7 +150,13 @@ export function CandidateWorkflowContent({
   onApplicationUpdated,
   initialTab = "tasks",
 }: CandidateWorkflowContentProps) {
-  const { currentUser, teamMembers, mergeApplicationPatch, adjustTaskCounts } = useRecruiter();
+  const {
+    currentUser,
+    teamMembers,
+    ensureTeamMembers,
+    mergeApplicationPatch,
+    adjustTaskCounts,
+  } = useRecruiter();
 
   const [notes, setNotes] = useState<CandidateNote[]>([]);
   const [tasks, setTasks] = useState<RecruiterTask[]>([]);
@@ -164,6 +170,11 @@ export function CandidateWorkflowContent({
   const [saving, setSaving] = useState(false);
 
   const [workflowTab, setWorkflowTab] = useState(initialTab);
+
+  useEffect(() => {
+    if (workflowTab !== "tasks") return;
+    void ensureTeamMembers().catch(() => {});
+  }, [ensureTeamMembers, workflowTab]);
 
   // Tasks & Notes dialog state
   const [noteBody, setNoteBody] = useState("");
@@ -240,8 +251,19 @@ export function CandidateWorkflowContent({
   };
 
   useEffect(() => {
+    const sectionsByTab: Record<string, WorkspaceSection[]> = {
+      tasks: ["tasks"],
+      interviews: ["interviews", "scorecards"],
+      notes: ["notes"],
+      history: ["activity"],
+    };
+    const sections = (sectionsByTab[workflowTab] || []).filter(
+      (section) =>
+        !loadedSections.has(section) &&
+        !requestedSectionsRef.current.has(section)
+    );
+    if (sections.length === 0) return;
     let active = true;
-    const sections: WorkspaceSection[] = ["tasks", "interviews", "scorecards"];
     sections.forEach((section) => requestedSectionsRef.current.add(section));
     void fetchWorkspace(application.id, sections)
       .then((workspace) => {
@@ -250,34 +272,9 @@ export function CandidateWorkflowContent({
         setLoadedSections((current) => new Set([...current, ...sections]));
       })
       .catch((error: unknown) => {
-        if (!active) return;
         sections.forEach((section) => requestedSectionsRef.current.delete(section));
-        setLoadedSections((current) => new Set([...current, ...sections]));
-        toast.error("Workspace unavailable", {
-          description: error instanceof Error ? error.message : "Could not load recruiter workflow records.",
-        });
-      })
-      .finally(() => undefined);
-    return () => {
-      active = false;
-    };
-  }, [application.id]);
-
-  useEffect(() => {
-    const section = workflowTab === "notes" ? "notes" : workflowTab === "history" ? "activity" : null;
-    if (!section || loadedSections.has(section) || requestedSectionsRef.current.has(section)) return;
-    let active = true;
-    requestedSectionsRef.current.add(section);
-    void fetchWorkspace(application.id, [section])
-      .then((workspace) => {
-        if (!active) return;
-        applyWorkspace(workspace);
-        setLoadedSections((current) => new Set(current).add(section));
-      })
-      .catch((error: unknown) => {
-        requestedSectionsRef.current.delete(section);
         if (active) {
-          setLoadedSections((current) => new Set(current).add(section));
+          setLoadedSections((current) => new Set([...current, ...sections]));
           toast.error("Workspace unavailable", {
             description: error instanceof Error ? error.message : "Could not load this workflow section.",
           });

@@ -26,6 +26,7 @@ export interface PaginatedTasksResponse<T> extends PaginatedResponse<T> {
 let cachedAccessToken: string | null = null;
 let authListenerInitialized = false;
 let pendingSessionPromise: Promise<string | null> | null = null;
+const inFlightGetRequests = new Map<string, Promise<unknown>>();
 
 function ensureAuthTokenListener() {
   if (authListenerInitialized || typeof window === "undefined") return;
@@ -34,6 +35,7 @@ function ensureAuthTokenListener() {
     const supabase = createClient();
     supabase.auth.onAuthStateChange((_event, session) => {
       cachedAccessToken = session?.access_token ?? null;
+      inFlightGetRequests.clear();
     });
   } catch {
     authListenerInitialized = false;
@@ -43,6 +45,7 @@ function ensureAuthTokenListener() {
 export function clearAuthTokenCache() {
   cachedAccessToken = null;
   pendingSessionPromise = null;
+  inFlightGetRequests.clear();
 }
 
 export class ApiError extends Error {
@@ -282,9 +285,36 @@ export function prefetchResumeForApplication(app: Application | null | undefined
 }
 
 export async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetchApiResponse(endpoint, options);
-  if (response.status === 204) return undefined as T;
-  return response.json();
+  const method = (options.method || "GET").toUpperCase();
+  const canDeduplicate =
+    method === "GET" &&
+    !options.body &&
+    !options.signal &&
+    !options.headers;
+  const requestKey = canDeduplicate ? endpoint : null;
+
+  if (requestKey) {
+    const existing = inFlightGetRequests.get(requestKey);
+    if (existing) return existing as Promise<T>;
+  }
+
+  const request = (async () => {
+    const response = await fetchApiResponse(endpoint, options);
+    if (response.status === 204) return undefined as T;
+    return response.json() as Promise<T>;
+  })();
+
+  if (requestKey) {
+    inFlightGetRequests.set(requestKey, request);
+    const cleanup = () => {
+      if (inFlightGetRequests.get(requestKey) === request) {
+        inFlightGetRequests.delete(requestKey);
+      }
+    };
+    void request.then(cleanup, cleanup);
+  }
+
+  return request;
 }
 
 export async function fetchResumePreview(
