@@ -369,13 +369,15 @@ export function JobDetailSheet({
             <div className="flex items-center gap-3 flex-wrap pt-1">
               {hasApplied ? (
                 <Button
+                  type="button"
+                  variant="success"
+                  size="lg"
                   onClick={() => {
                     onClose();
                     if (onViewApplication) onViewApplication();
                   }}
-                  className="h-11 px-6 rounded-xl font-bold text-sm bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 gap-2 cursor-pointer shadow-2xs transition-all active:scale-[0.98]"
                 >
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <CheckCircle2 aria-hidden="true" />
                   <span>View Application Status</span>
                 </Button>
               ) : isClosed ? (

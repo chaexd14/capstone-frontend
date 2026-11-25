@@ -1,42 +1,32 @@
 "use client";
 
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import React, { useState, useEffect, useMemo, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  Search,
-  Bookmark,
-  ArrowRight,
-  X,
-  MapPin,
-  GraduationCap,
-  Terminal,
-  Landmark,
-  HardHat,
-  TrendingUp,
-  Stethoscope,
-  Briefcase,
-} from "lucide-react";
+import { ArrowRight, Search } from "lucide-react";
 import { fetchApi, type PaginatedResponse } from "@/lib/api";
 import { Job } from "@/types/job";
-import { toast } from "@/components/ui/sonner";
-import { formatSalary, SALARY_RANGES } from "@/lib/salary";
-import { getJobOverview, truncateJobOverview } from "@/lib/job-overview";
+import { SALARY_RANGES } from "@/lib/salary";
+import { cn } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/feedback";
+import { SearchInput } from "@/components/ui/search-input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
+import { toast } from "@/components/ui/sonner";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { PublicFooter } from "@/components/layout/PublicFooter";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
+  FeaturedJobCard,
+  StandardJobCard,
+} from "@/components/landing/LandingJobCards";
 
 const CATEGORIES = [
   "All",
@@ -76,7 +66,8 @@ const FALLBACK_JOBS: Job[] = [
     education_requirement: "BS Computer Science or related field",
     description:
       "Architect and maintain scalable Next.js and Python services.\nCollaborate with product and engineering leads on core platform delivery.",
-    job_overview: "Join a product engineering team building dependable tools that help recruiters make structured, evidence-led hiring decisions.",
+    job_overview:
+      "Join a product engineering team building dependable tools that help recruiters make structured, evidence-led hiring decisions.",
     required_skills: ["TypeScript", "React / Next.js", "Python", "PostgreSQL"],
     preferred_skills: ["Docker", "Tailwind CSS", "Redis"],
     salary_min: 75_000,
@@ -95,7 +86,8 @@ const FALLBACK_JOBS: Job[] = [
     education_requirement: "BS Accountancy with active PRC CPA license",
     description:
       "Lead statutory financial reporting, internal audit compliance, and tax reviews.\nPartner with operational units on monthly closing and variance analysis.",
-    job_overview: "Guide financial accuracy and compliance while partnering with operational leaders across a growing organization.",
+    job_overview:
+      "Guide financial accuracy and compliance while partnering with operational leaders across a growing organization.",
     required_skills: ["PRC CPA", "Financial Reporting", "Tax Compliance", "SAP"],
     preferred_skills: ["Oracle Financials", "QuickBooks"],
     salary_min: 75_000,
@@ -114,7 +106,8 @@ const FALLBACK_JOBS: Job[] = [
     education_requirement: "BS Civil Engineering with PRC license",
     description:
       "Supervise structural site execution, contractor schedules, and quality assurance.\nPrepare quantity takeoffs, progress billing, and AutoCAD revisions.",
-    job_overview: "Help deliver complex construction projects by coordinating safe, accurate, and timely work across the project site.",
+    job_overview:
+      "Help deliver complex construction projects by coordinating safe, accurate, and timely work across the project site.",
     required_skills: ["PRC Civil Engineer", "AutoCAD", "Site Supervision", "Project Estimation"],
     preferred_skills: ["Primavera P6", "Revit"],
     salary_min: 60_000,
@@ -133,7 +126,8 @@ const FALLBACK_JOBS: Job[] = [
     education_requirement: "Bachelor's Degree in Business or related field",
     description:
       "Manage full-cycle enterprise client acquisition and strategic account expansion.\nConduct executive product briefings, commercial proposals, and contract closures.",
-    job_overview: "Build lasting enterprise partnerships and help customers adopt solutions that support measurable business growth.",
+    job_overview:
+      "Build lasting enterprise partnerships and help customers adopt solutions that support measurable business growth.",
     required_skills: ["B2B Sales", "Lead Generation", "Pipeline Management", "Negotiation"],
     preferred_skills: ["HubSpot CRM", "Enterprise Software Sales"],
     salary_min: 50_000,
@@ -152,7 +146,8 @@ const FALLBACK_JOBS: Job[] = [
     education_requirement: "BS Nursing with active PRC RN & BLS/ACLS certification",
     description:
       "Deliver acute patient triage, vital telemetry monitoring, and emergency care protocols.\nCoordinate multidisciplinary treatment plans with attending physicians.",
-    job_overview: "Join a multidisciplinary clinical team providing responsive, compassionate care in critical patient moments.",
+    job_overview:
+      "Join a multidisciplinary clinical team providing responsive, compassionate care in critical patient moments.",
     required_skills: ["PRC Registered Nurse", "BLS / ACLS", "Emergency Triage", "Patient Telemetry"],
     preferred_skills: ["IV Therapy Certified", "Hospital Information Systems"],
     salary_min: 35_000,
@@ -163,72 +158,11 @@ const FALLBACK_JOBS: Job[] = [
   },
 ];
 
-function getExperiencePill(job: Job): string {
-  if (job.minimum_experience) {
-    const exp = job.minimum_experience.toLowerCase();
-    if (exp.includes("0-1") || exp.includes("entry") || exp.includes("fresh")) return "1 yr";
-    if (exp.includes("1-2") || exp.includes("1 to 2")) return "1-2 yrs";
-    if (exp.includes("2-3") || exp.includes("2 to 3") || exp.includes("2")) return "2 yrs";
-    if (exp.includes("3-5") || exp.includes("3 to 5") || exp.includes("3")) return "3+ yrs";
-    if (exp.includes("5") || exp.includes("senior")) return "5+ yrs";
-    return job.minimum_experience;
-  }
-  return "2 yrs";
-}
-
-interface DepartmentMeta {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-}
-
-function getDepartmentMeta(job: Job): DepartmentMeta {
+function matchesCategory(job: Job, category: string): boolean {
+  if (category === "All") return true;
   const dept = (job.department || "").toLowerCase();
-  const title = (job.title || "").toLowerCase();
-
-  if (title.includes("python") || title.includes("react") || title.includes("full stack") || title.includes("full-stack") || title.includes("software")) {
-    return { icon: Terminal, label: "Software Engineering" };
-  }
-  if (dept.includes("information technology") || dept.includes("network") || title.includes("network")) {
-    return { icon: Terminal, label: "IT & Network Systems" };
-  }
-  if (dept.includes("sale") || dept.includes("business") || title.includes("sales")) {
-    return { icon: TrendingUp, label: "Sales & Business Development" };
-  }
-  if (dept.includes("fin") || dept.includes("account") || title.includes("cpa") || title.includes("accountant")) {
-    return { icon: Landmark, label: "Finance & Accounting" };
-  }
-  if (dept.includes("civil") || dept.includes("construct") || dept.includes("engineering") || title.includes("civil")) {
-    return { icon: HardHat, label: "Engineering & Construction" };
-  }
-  if (dept.includes("health") || dept.includes("medical") || title.includes("nurs")) {
-    return { icon: Stethoscope, label: "Healthcare & Medical" };
-  }
-  if (dept.includes("educat") || dept.includes("academ") || title.includes("teacher")) {
-    return { icon: GraduationCap, label: "Education & Academics" };
-  }
-  return { icon: Briefcase, label: job.department || "Operations" };
-}
-
-function getRoleSummary(job: Job): string {
-  return truncateJobOverview(getJobOverview(job), 170);
-}
-
-function getRelativeTime(dateString?: string): string {
-  if (!dateString) return "Just now";
-  try {
-    const now = new Date();
-    const date = new Date(dateString);
-    const diffMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
-    if (diffMinutes < 120) return "Just now";
-    const diffHours = Math.floor(diffMinutes / 60);
-    if (diffHours < 24) return `${diffHours}h ago`;
-    const diffDays = Math.floor(diffHours / 24);
-    if (diffDays === 1) return "1 day ago";
-    if (diffDays < 7) return `${diffDays} days ago`;
-    return "Just now";
-  } catch {
-    return "Just now";
-  }
+  const cat = category.toLowerCase();
+  return dept.includes(cat.split(" ")[0]);
 }
 
 export default function HomePage() {
@@ -244,6 +178,7 @@ export default function HomePage() {
     () => true,
     () => false
   );
+
   const [bookmarkedIds, setBookmarkedIds] = useState<Set<number>>(() => {
     if (typeof window === "undefined") return new Set<number>();
     try {
@@ -255,7 +190,6 @@ export default function HomePage() {
   });
 
   const [isScrolled, setIsScrolled] = useState(false);
-  const [activeModal, setActiveModal] = useState<"terms" | "privacy" | null>(null);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -271,14 +205,20 @@ export default function HomePage() {
       try {
         const cached = sessionStorage.getItem("tm_cached_jobs");
         if (cached) setJobs(JSON.parse(cached));
-      } catch { }
+      } catch {
+        // Ignore storage read errors
+      }
       try {
         const data = await fetchApi<PaginatedResponse<Job>>("/jobs/?page=1&page_size=6");
         setJobs(data.results);
         try {
           sessionStorage.setItem("tm_cached_jobs", JSON.stringify(data.results));
-        } catch { }
-      } catch { }
+        } catch {
+          // Ignore storage write errors
+        }
+      } catch {
+        // Fallback jobs remain available when backend is unreachable
+      }
     };
     loadJobs();
   }, []);
@@ -299,7 +239,9 @@ export default function HomePage() {
       }
       try {
         localStorage.setItem("talentmatch_bookmarked_jobs", JSON.stringify(Array.from(next)));
-      } catch { }
+      } catch {
+        // Ignore storage write errors
+      }
       return next;
     });
   };
@@ -327,62 +269,72 @@ export default function HomePage() {
   const allOpenJobs = useMemo(() => {
     return jobs.length > 0
       ? jobs
-        .filter((j) => j.status !== "ARCHIVED" && j.status !== "DRAFT" && j.status !== "CLOSED")
-        .sort((a, b) => {
-          const aIsTest = a.title.toLowerCase().includes("test") ? 1 : 0;
-          const bIsTest = b.title.toLowerCase().includes("test") ? 1 : 0;
-          if (aIsTest !== bIsTest) return aIsTest - bIsTest;
-          return (b.required_skills?.length || 0) - (a.required_skills?.length || 0);
-        })
+          .filter((j) => j.status !== "ARCHIVED" && j.status !== "DRAFT" && j.status !== "CLOSED")
+          .sort((a, b) => {
+            const aIsTest = a.title.toLowerCase().includes("test") ? 1 : 0;
+            const bIsTest = b.title.toLowerCase().includes("test") ? 1 : 0;
+            if (aIsTest !== bIsTest) return aIsTest - bIsTest;
+            return (b.required_skills?.length || 0) - (a.required_skills?.length || 0);
+          })
       : FALLBACK_JOBS;
   }, [jobs]);
 
   const activeJobs = useMemo(() => {
-    const filtered = allOpenJobs.filter((j) => {
-      if (selectedCategory !== "All") {
-        const dept = (j.department || "").toLowerCase();
-        const cat = selectedCategory.toLowerCase();
-        if (!dept.includes(cat.split(" ")[0])) return false;
-      }
-      return true;
-    });
-    return (filtered.length > 0 ? filtered : allOpenJobs).slice(0, 6);
+    return allOpenJobs.filter((j) => matchesCategory(j, selectedCategory)).slice(0, 5);
   }, [allOpenJobs, selectedCategory]);
 
+  const getTargetHref = (job: Job) =>
+    jobs.length > 0
+      ? `/careers?jobId=${job.id}`
+      : `/careers?q=${encodeURIComponent(job.title)}`;
+
   return (
-    <div className="min-h-screen bg-[#e3f1fe] text-[#1e293b] flex flex-col font-sans selection:bg-primary selection:text-white">
+    <div className="min-h-screen bg-background text-foreground flex flex-col font-sans">
       {/* ============================================================== */}
-      {/* 1. TOP NAVBAR (Center Nav revealed only when scrolled)         */}
+      {/* 1. TOP NAVBAR (Center Nav revealed when scrolled)              */}
       {/* ============================================================== */}
       <header
-        className={`fixed top-0 inset-x-0 z-40 transition-all duration-300 ${isScrolled
-          ? "bg-white/95 backdrop-blur-md shadow-xs"
-          : "bg-transparent"
-          }`}
+        className={cn(
+          "fixed top-0 inset-x-0 z-40 transition-all duration-200",
+          isScrolled
+            ? "bg-card/95 backdrop-blur-md border-b border-border shadow-xs"
+            : "bg-transparent"
+        )}
       >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 sm:h-18 flex items-center justify-between gap-2 sm:gap-4">
-          {/* Left Brand Identity */}
-          <Link href="/" className="flex items-center gap-2 sm:gap-2.5 shrink-0 group">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-2 sm:gap-4">
+          {/* Brand Identity */}
+          <Link
+            href="/"
+            className="flex items-center gap-2.5 shrink-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          >
             <div
-              className={`w-8 h-8 rounded-lg font-bold text-sm flex items-center justify-center tracking-tight shadow-2xs transition-colors duration-200 ${isScrolled ? "bg-primary text-white" : "bg-white text-primary"
-                }`}
+              className={cn(
+                "grid size-8 place-items-center rounded-lg font-bold text-sm tracking-tight transition-colors",
+                isScrolled
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-card text-primary"
+              )}
             >
               TM
             </div>
             <span
-              className={`whitespace-nowrap font-bold text-lg sm:text-xl tracking-tight transition-colors duration-200 ${isScrolled ? "text-[#1e293b]" : "text-white"
-                }`}
+              className={cn(
+                "whitespace-nowrap font-bold text-lg sm:text-xl tracking-tight transition-colors",
+                isScrolled ? "text-foreground" : "text-primary-foreground"
+              )}
             >
-              Talent Match
+              TalentMatch
             </span>
           </Link>
 
-          {/* Center Navigation: ONLY visible when scrolled */}
+          {/* Center Navigation: Revealed when scrolled */}
           <nav
-            className={`hidden md:flex items-center gap-9 h-full transition-all duration-300 transform ${isScrolled
-              ? "opacity-100 translate-y-0 pointer-events-auto"
-              : "opacity-0 -translate-y-2 pointer-events-none"
-              }`}
+            className={cn(
+              "hidden md:flex items-center gap-8 h-full transition-all duration-200",
+              isScrolled
+                ? "opacity-100 translate-y-0 pointer-events-auto"
+                : "opacity-0 -translate-y-2 pointer-events-none"
+            )}
             aria-label="Primary navigation"
           >
             <Link
@@ -394,76 +346,86 @@ export default function HomePage() {
             </Link>
             <Link
               href="/careers"
-              className="text-slate-700 hover:text-[#1e293b] font-semibold text-sm h-full flex items-center px-1 transition-colors"
+              className="text-muted-foreground hover:text-foreground font-semibold text-sm h-full flex items-center px-1 transition-colors"
             >
               Explore
             </Link>
             <Link
               href="/careers?tab=BOOKMARK"
-              className="text-slate-700 hover:text-[#1e293b] font-semibold text-sm h-full flex items-center gap-1.5 px-1 transition-colors"
+              className="text-muted-foreground hover:text-foreground font-semibold text-sm h-full flex items-center gap-1.5 px-1 transition-colors"
             >
-              <span>Bookmark</span>
+              <span>Bookmarks</span>
               {mounted && bookmarkedIds.size > 0 && (
-                <span className="h-4.5 px-1.5 rounded-full bg-blue-50 text-primary text-sm font-bold border border-blue-200 flex items-center justify-center tabular-nums">
+                <Badge
+                  variant="secondary"
+                  className="rounded-full px-2 py-0.5 tabular-nums"
+                >
                   {bookmarkedIds.size}
-                </span>
+                </Badge>
               )}
             </Link>
           </nav>
 
-          {/* Right Actions */}
-          <div className="flex shrink-0 items-center gap-1 sm:gap-4">
-            <Link
-              href="/applicant/login"
-              className={`whitespace-nowrap text-sm font-semibold px-2 py-2 sm:px-2.5 rounded-lg transition-colors duration-200 ${isScrolled ? "text-slate-700 hover:text-[#1e293b]" : "text-white hover:bg-white/10"
-                }`}
+          {/* Right Auth Actions */}
+          <div className="flex shrink-0 items-center gap-2">
+            <Button
+              asChild
+              variant="ghost"
+              size="sm"
+              className={cn(
+                !isScrolled &&
+                  "text-primary-foreground hover:bg-white/15 hover:text-primary-foreground"
+              )}
             >
-              Log in
-            </Link>
-            <Link
-              href="/applicant/signup"
-              className={`whitespace-nowrap text-sm font-semibold px-3 py-2 sm:px-4 rounded-lg transition-colors duration-200 shadow-2xs ${isScrolled
-                ? "bg-primary hover:bg-primary/90 text-white"
-                : "bg-white hover:bg-white/90 text-primary"
-                }`}
+              <Link href="/applicant/login">Log in</Link>
+            </Button>
+            <Button
+              asChild
+              variant={isScrolled ? "default" : "secondary"}
+              size="sm"
+              className={cn(
+                !isScrolled && "bg-card text-primary hover:bg-card/90 shadow-xs"
+              )}
             >
-              Sign up
-            </Link>
+              <Link href="/applicant/signup">Sign up</Link>
+            </Button>
           </div>
         </div>
       </header>
 
-      <main className="flex-1 bg-[#e3f1fe]">
+      <main className="flex-1 bg-background">
         {/* ============================================================== */}
-        {/* 2. BOLD BRAND BLUE HERO BANNER (Matches Login.png Blue)      */}
+        {/* 2. BRAND-BLUE HERO BANNER                                      */}
         {/* ============================================================== */}
-        <section className="relative bg-primary text-white pt-24 pb-20 sm:pt-28 sm:pb-24 px-4 sm:px-6 lg:px-8 overflow-hidden">
-          {/* Subtle architectural grid lines inside the blue field */}
+        <section className="relative bg-primary text-primary-foreground pt-24 pb-20 sm:pt-28 sm:pb-24 px-4 sm:px-6 lg:px-8 overflow-hidden">
+          {/* Subtle architectural grid lines permitted on saturated brand-blue hero fields */}
           <div
             aria-hidden="true"
             className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.07)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.07)_1px,transparent_1px)] bg-[size:48px_48px]"
           />
 
           <div className="relative max-w-4xl mx-auto text-center">
-            <h1 className="text-3xl sm:text-5xl lg:text-[3.5rem] font-bold tracking-tight text-white leading-[1.1] text-balance animate-fade-in-up">
+            <h1 className="text-3xl sm:text-5xl lg:text-[3.5rem] font-bold tracking-tight text-primary-foreground leading-[1.1] text-balance animate-fade-in-up">
               Find the job that fits your skills, not just your keywords.
             </h1>
 
-            <p className="mt-4 text-sm sm:text-lg text-[#e0f2fe] max-w-2xl mx-auto leading-relaxed animate-fade-in-up animation-delay-75">
+            <p className="mt-4 text-sm sm:text-lg text-blue-50 max-w-[65ch] mx-auto leading-relaxed">
               Search verified openings across technology, finance, healthcare, and engineering. Pick a role below or search to jump straight into the Applicant Portal.
             </p>
 
-            {/* Quick-Search Chips inside Hero */}
-            <div className="mt-6 flex flex-wrap items-center justify-center gap-2 text-sm sm:text-sm animate-fade-in animation-delay-150">
-              <span className="text-[#e0f2fe] font-medium mr-1">Popular:</span>
+            {/* Quick-Search Chips */}
+            <div className="mt-6 flex flex-wrap items-center justify-center gap-2 text-sm">
+              <span className="text-blue-50 font-medium mr-1">Popular:</span>
               {QUICK_SEARCHES.map((item) => (
                 <Button
                   key={item.label}
                   type="button"
+                  variant="ghost"
+                  size="sm"
                   onClick={() =>
                     router.push(buildPortalUrl(item.q, item.type, item.category, "All"))
                   }
-                  className="px-3.5 py-1.5 rounded-full bg-white/15 hover:bg-white text-white hover:text-primary font-medium transition-colors cursor-pointer"
+                  className="rounded-full bg-white/15 text-primary-foreground hover:bg-card hover:text-primary"
                 >
                   {item.label}
                 </Button>
@@ -473,583 +435,177 @@ export default function HomePage() {
         </section>
 
         {/* ============================================================== */}
-        {/* 3. FLOATING PILL SEARCH BAR (Bridges Hero & #e3f1fe Canvas)    */}
+        {/* 3. FLOATING CANONICAL SEARCH & FILTER CARD                     */}
         {/* ============================================================== */}
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 -mt-9 sm:-mt-10 relative z-20 animate-float-in animation-delay-150">
-          <form
-            onSubmit={handleSearchSubmit}
-            aria-label="Search open jobs and redirect to Applicant Portal"
-            className="bg-white rounded-3xl lg:rounded-full border border-blue-200/90 p-3 sm:px-5 sm:py-3 shadow-[0_14px_36px_rgba(25,136,245,0.14)] focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/15 transition-all flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3"
-          >
-            {/* Left: Pill Search Input with Branded Search Button */}
-            <div className="relative flex-1 flex items-center min-w-0">
-              <Input
-                type="text"
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 -mt-8 sm:-mt-10 relative z-20">
+          <Card className="p-3 sm:p-4 shadow-md">
+            <form
+              onSubmit={handleSearchSubmit}
+              aria-label="Search open jobs and redirect to Applicant Portal"
+              className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3"
+            >
+              <SearchInput
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
+                onClear={() => setSearchQuery("")}
                 placeholder="Search by job title, skill, or city..."
                 aria-label="Search by job title, skill, or city"
-                className="w-full pl-4 pr-20 py-2.5 rounded-full border border-slate-300/90 bg-slate-50/50 focus:bg-white text-sm sm:text-base text-[#1e293b] placeholder:text-slate-500 focus:outline-none focus:border-primary transition-colors"
+                containerClassName="flex-1 min-w-0"
               />
-              {searchQuery && (
-                <Button
-                  type="button"
-                  onClick={() => setSearchQuery("")}
-                  aria-label="Clear search input"
-                  className="absolute right-12 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 lg:flex lg:items-center gap-2.5">
+                {/* Job Type */}
+                <Select
+                  value={selectedJobType}
+                  onValueChange={(val) => setSelectedJobType(val || "All")}
                 >
-                  <X className="w-4 h-4" />
-                </Button>
-              )}
-              <Button
-                type="submit"
-                aria-label="Search jobs in Applicant Portal"
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-primary hover:bg-primary/90 text-white flex items-center justify-center shadow-xs transition-transform active:scale-95 cursor-pointer"
-              >
-                <Search className="w-4 h-4 stroke-[2.5]" />
+                  <SelectTrigger
+                    aria-label="Filter by job type"
+                    className="w-full lg:w-36"
+                  >
+                    <SelectValue placeholder="Job Type">
+                      {selectedJobType === "All" ? "All Job Types" : selectedJobType}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {JOB_TYPES.map((type) => (
+                      <SelectItem key={type} value={type}>
+                        {type === "All" ? "All Job Types" : type}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* Category */}
+                <Select
+                  value={selectedCategory}
+                  onValueChange={(val) => setSelectedCategory(val || "All")}
+                >
+                  <SelectTrigger
+                    aria-label="Filter by category"
+                    className="w-full lg:w-48"
+                  >
+                    <SelectValue placeholder="Category">
+                      {selectedCategory === "All" ? "All Categories" : selectedCategory}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CATEGORIES.map((cat) => (
+                      <SelectItem key={cat} value={cat}>
+                        {cat === "All" ? "All Categories" : cat}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* Salary Range */}
+                <Select
+                  value={selectedSalary}
+                  onValueChange={(val) => setSelectedSalary(val || "All")}
+                >
+                  <SelectTrigger
+                    aria-label="Filter by salary range"
+                    className="w-full lg:w-44"
+                  >
+                    <SelectValue placeholder="Salary range">
+                      {selectedSalary === "All" ? "All Salary Ranges" : selectedSalary}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SALARY_RANGES.map((sal) => (
+                      <SelectItem key={sal} value={sal}>
+                        {sal === "All" ? "All Salary Ranges" : sal}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <Button type="submit" className="shrink-0">
+                <Search aria-hidden="true" />
+                <span>Search</span>
               </Button>
-            </div>
-
-            {/* Right: Inline Dropdown Filters (Matches Applicant portal.png) */}
-            <div className="flex items-center justify-around sm:justify-end gap-1 sm:gap-2 flex-nowrap px-1">
-              {/* Job Type */}
-              <Select
-                value={selectedJobType}
-                onValueChange={(val) => setSelectedJobType(val ?? "All")}
-              >
-                <SelectTrigger
-                  aria-label="Filter by job type"
-                  className="!w-auto shrink-0 inline-flex border-0 shadow-none bg-transparent hover:bg-slate-100 text-slate-700 font-medium text-sm sm:text-sm px-2.5 h-9 rounded-lg gap-1 cursor-pointer focus:ring-0 focus:ring-offset-0 whitespace-nowrap"
-                >
-                  <span className={selectedJobType !== "All" ? "text-primary font-semibold" : "text-slate-700"}>
-                    {selectedJobType === "All" ? "Job Type" : selectedJobType}
-                  </span>
-                </SelectTrigger>
-                <SelectContent className="bg-white rounded-2xl shadow-xl border border-slate-200 p-1 z-50">
-                  {JOB_TYPES.map((type) => (
-                    <SelectItem key={type} value={type} className="text-sm font-semibold rounded-xl cursor-pointer">
-                      {type === "All" ? "All Job Types" : type}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <div className="h-4.5 w-px bg-slate-300 mx-0.5 shrink-0" aria-hidden="true" />
-
-              {/* Category */}
-              <Select
-                value={selectedCategory}
-                onValueChange={(val) => setSelectedCategory(val ?? "All")}
-              >
-                <SelectTrigger
-                  aria-label="Filter by category"
-                  className="!w-auto shrink-0 inline-flex border-0 shadow-none bg-transparent hover:bg-slate-100 text-slate-700 font-medium text-sm sm:text-sm px-2.5 h-9 rounded-lg gap-1 cursor-pointer focus:ring-0 focus:ring-offset-0 whitespace-nowrap"
-                >
-                  <span className={`truncate max-w-[110px] sm:max-w-[160px] ${selectedCategory !== "All" ? "text-primary font-semibold" : "text-slate-700"}`}>
-                    {selectedCategory === "All" ? "Category" : selectedCategory}
-                  </span>
-                </SelectTrigger>
-                <SelectContent className="bg-white rounded-2xl shadow-xl border border-slate-200 p-1 z-50">
-                  {CATEGORIES.map((cat) => (
-                    <SelectItem key={cat} value={cat} className="text-sm font-semibold rounded-xl cursor-pointer">
-                      {cat === "All" ? "All Categories" : cat}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <div className="h-4.5 w-px bg-slate-300 mx-0.5 shrink-0" aria-hidden="true" />
-
-              {/* Salary Range */}
-              <Select
-                value={selectedSalary}
-                onValueChange={(val) => setSelectedSalary(val ?? "All")}
-              >
-                <SelectTrigger
-                  aria-label="Filter by salary range"
-                  className="!w-auto shrink-0 inline-flex border-0 shadow-none bg-transparent hover:bg-slate-100 text-slate-700 font-medium text-sm sm:text-sm px-2.5 h-9 rounded-lg gap-1 cursor-pointer focus:ring-0 focus:ring-offset-0 whitespace-nowrap"
-                >
-                  <span className={selectedSalary !== "All" ? "text-primary font-semibold" : "text-slate-700"}>
-                    {selectedSalary === "All" ? "Salary range" : selectedSalary}
-                  </span>
-                </SelectTrigger>
-                <SelectContent className="bg-white rounded-2xl shadow-xl border border-slate-200 p-1 z-50">
-                  {SALARY_RANGES.map((sal) => (
-                    <SelectItem key={sal} value={sal} className="text-sm font-semibold rounded-xl cursor-pointer">
-                      {sal === "All" ? "All Salary Ranges" : sal}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </form>
+            </form>
+          </Card>
         </div>
 
         {/* ============================================================== */}
-        {/* 4. OPEN POSITIONS STAGE (Full-Bleed #e3f1fe Sky-Blue Canvas)   */}
+        {/* 4. OPEN POSITIONS STAGE                                        */}
         {/* ============================================================== */}
-        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-7 pb-16 space-y-5">
-          {/* Compact Section Header + Department Filter Toolbar Directly on #e3f1fe */}
-          <div className="flex flex-col gap-4 animate-fade-in-up animation-delay-225">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-10 pb-16 space-y-6">
+          {/* Section Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
               <div className="flex flex-wrap items-center gap-3">
-                <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-[#1e293b]">
+                <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
                   Open Positions
                 </h2>
-                <span className="px-3 py-1 rounded-full bg-white text-primary border border-blue-200/90 text-sm font-bold tracking-tight tabular-nums shadow-2xs">
+                <StatusBadge status="info" className="tabular-nums">
                   {allOpenJobs.length} Open Roles
-                </span>
-                <span className="hidden md:inline-block text-sm text-slate-600">
-                  — Browse by department or select any role to open it in the Applicant Portal.
-                </span>
+                </StatusBadge>
               </div>
+              <p className="text-sm text-muted-foreground max-w-[70ch]">
+                Select any role below to view full qualifications and apply in the Applicant Portal.
+              </p>
+            </div>
 
+            <Button asChild variant="outline" className="self-start sm:self-auto shrink-0">
               <Link
-                href={buildPortalUrl(searchQuery, selectedJobType, selectedCategory, selectedSalary)}
-                className="self-start sm:self-auto px-4 py-2 rounded-full bg-white hover:bg-primary text-primary hover:text-white border border-blue-200/90 font-semibold text-sm sm:text-sm inline-flex items-center gap-2 transition-colors shadow-2xs shrink-0"
+                href={buildPortalUrl(
+                  searchQuery,
+                  selectedJobType,
+                  selectedCategory,
+                  selectedSalary
+                )}
               >
                 <span>View all in Applicant Portal</span>
-                <ArrowRight className="w-4 h-4" />
+                <ArrowRight aria-hidden="true" />
               </Link>
-            </div>
-
-            {/* Interactive Department Filter Strip */}
-            <div
-              className="flex flex-wrap items-center gap-1.5 sm:gap-2"
-              role="tablist"
-              aria-label="Filter open positions by department"
-            >
-              {CATEGORIES.map((cat) => {
-                const isActive = selectedCategory === cat;
-                return (
-                  <Button
-                    key={cat}
-                    type="button"
-                    role="tab"
-                    aria-selected={isActive}
-                    onClick={() => setSelectedCategory(cat)}
-                    className={`px-3 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-all cursor-pointer ${isActive
-                      ? "bg-primary text-white shadow-[0_6px_16px_rgba(33,150,243,0.28)]"
-                      : "bg-white hover:bg-blue-50 text-slate-700 hover:text-primary border border-blue-200/80 shadow-2xs"
-                      }`}
-                  >
-                    {cat === "All" ? "All Departments" : cat}
-                  </Button>
-                );
-              })}
-            </div>
+            </Button>
           </div>
 
-          {/* Featured Spotlight Role (Login.png Blue-and-White Split Card Directly on #e3f1fe) */}
-          {activeJobs.length > 0 && (() => {
-            const spotlightJob = activeJobs[0];
-            const salary = formatSalary(spotlightJob);
-            const timeAgo = getRelativeTime(spotlightJob.created_at);
-            const isBookmarked = mounted && bookmarkedIds.has(spotlightJob.id);
-            const summary = getRoleSummary(spotlightJob);
-            const expPill = getExperiencePill(spotlightJob);
-            const meta = getDepartmentMeta(spotlightJob);
-            const DeptIcon = meta.icon;
-            const workMode = (spotlightJob.location || "").toLowerCase().includes("remote")
-              ? "Remote"
-              : (spotlightJob.location || "").toLowerCase().includes("hybrid")
-                ? "Hybrid"
-                : "On-site";
-            const skills =
-              spotlightJob.required_skills && spotlightJob.required_skills.length > 0
-                ? spotlightJob.required_skills.slice(0, 5)
-                : ["Domain Expertise", "Cross-Functional Execution", "Analytical Problem Solving"];
-            const targetHref =
-              jobs.length > 0
-                ? `/careers?jobId=${spotlightJob.id}`
-                : `/careers?q=${encodeURIComponent(spotlightJob.title)}`;
+          {activeJobs.length === 0 ? (
+            <Card>
+              <EmptyState
+                title="No open roles in this department"
+                description="There are currently no published openings in this category. View all departments or explore the full Applicant Portal."
+                actionLabel="Show all departments"
+                onAction={() => setSelectedCategory("All")}
+              />
+            </Card>
+          ) : (
+            <div className="space-y-6">
+              {/* Featured Spotlight Role */}
+              <FeaturedJobCard
+                job={activeJobs[0]}
+                targetHref={getTargetHref(activeJobs[0])}
+                isBookmarked={mounted && bookmarkedIds.has(activeJobs[0].id)}
+                onToggleBookmark={toggleBookmark}
+              />
 
-            return (
-              <article
-                onClick={() => router.push(targetHref)}
-                role="button"
-                tabIndex={0}
-                aria-label={`View featured job details for ${spotlightJob.title}`}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    router.push(targetHref);
-                  }
-                }}
-                className="bg-white rounded-3xl border border-blue-200/90 shadow-[0_10px_28px_rgba(25,136,245,0.10)] hover:shadow-[0_16px_38px_rgba(25,136,245,0.16)] hover:border-primary transition-all duration-200 overflow-hidden grid grid-cols-1 lg:grid-cols-12 group cursor-pointer animate-fade-in-up animation-delay-300"
-              >
-                {/* Left Panel: Saturated Brand Blue Panel (Matches Login.png) */}
-                <div className="lg:col-span-4 bg-primary text-white p-5 sm:p-7 flex flex-col justify-between gap-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="w-13 h-13 rounded-2xl bg-white/15 border border-white/25 flex items-center justify-center shrink-0">
-                      <DeptIcon className="w-6 h-6 text-white stroke-[2.2]" />
-                    </div>
-                    <span className="px-3 py-1 rounded-full bg-white/15 border border-white/25 text-sm font-semibold text-white">
-                      {meta.label}
-                    </span>
-                  </div>
-
-                  <div>
-                    <div className="text-sm font-medium text-[#e0f2fe]">
-                      Monthly Compensation
-                    </div>
-                    <div className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight mt-0.5 tabular-nums">
-                      {salary}
-                    </div>
-                    <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-                      <span className="bg-white/15 text-white font-semibold text-sm px-3 py-1 rounded-full">
-                        {spotlightJob.employment_type || "Full-Time"}
-                      </span>
-                      <span className="bg-white/15 text-white font-semibold text-sm px-3 py-1 rounded-full">
-                        {workMode}
-                      </span>
-                      <span className="bg-white/15 text-white font-semibold text-sm px-3 py-1 rounded-full">
-                        {expPill}
-                      </span>
-                    </div>
-                  </div>
+              {/* 2-Column Grid of Remaining Open Roles */}
+              {activeJobs.length > 1 && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+                  {activeJobs.slice(1, 5).map((job) => (
+                    <StandardJobCard
+                      key={job.id}
+                      job={job}
+                      targetHref={getTargetHref(job)}
+                      isBookmarked={mounted && bookmarkedIds.has(job.id)}
+                      onToggleBookmark={toggleBookmark}
+                    />
+                  ))}
                 </div>
-
-                {/* Right Panel: Crisp White Role Details Panel */}
-                <div className="lg:col-span-8 p-5 sm:p-7 flex flex-col justify-between gap-4">
-                  <div className="space-y-3">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0 flex-1">
-                        <h3 className="text-xl sm:text-2xl lg:text-[1.7rem] font-bold text-[#1e293b] tracking-tight group-hover:text-primary transition-colors leading-tight">
-                          {spotlightJob.title}
-                        </h3>
-                        <div className="flex items-center gap-1.5 text-sm sm:text-sm text-slate-600 font-medium mt-1">
-                          <MapPin className="w-4 h-4 text-primary shrink-0" />
-                          <span>{spotlightJob.location || "Makati City, Metro Manila"}</span>
-                        </div>
-                      </div>
-
-                      <Button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleBookmark(spotlightJob.id, spotlightJob.title);
-                        }}
-                        aria-label={
-                          isBookmarked
-                            ? `Remove bookmark for ${spotlightJob.title}`
-                            : `Bookmark ${spotlightJob.title}`
-                        }
-                        className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-colors shrink-0 cursor-pointer ${isBookmarked
-                          ? "bg-[#e1f0fe] border-primary text-primary"
-                          : "bg-slate-50 border-slate-200 text-slate-400 hover:text-primary hover:border-blue-300"
-                          }`}
-                      >
-                        <Bookmark
-                          className={`w-5 h-5 transition-colors ${isBookmarked ? "fill-primary text-primary" : ""
-                            }`}
-                        />
-                      </Button>
-                    </div>
-
-                    <p className="text-sm sm:text-base text-slate-600 leading-relaxed line-clamp-2">
-                      {summary}
-                    </p>
-
-                    <div className="flex flex-wrap items-center gap-2 pt-0.5">
-                      {skills.map((skill) => (
-                        <span
-                          key={skill}
-                          className="bg-[#e1f0fe] text-[#0284c7] font-semibold text-sm px-3 py-1 rounded-full"
-                        >
-                          {skill}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="pt-3.5 border-t border-slate-100 flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                      <span className="text-sm sm:text-sm font-semibold text-emerald-600 shrink-0">
-                        {timeAgo}
-                      </span>
-                      {spotlightJob.education_requirement && (
-                        <span className="hidden sm:inline-flex items-center gap-1.5 text-sm text-slate-500 font-medium min-w-0 truncate">
-                          <GraduationCap className="w-4 h-4 text-primary shrink-0" />
-                          <span className="truncate">
-                            {spotlightJob.education_requirement.replace(/\.$/, "")}
-                          </span>
-                        </span>
-                      )}
-                    </div>
-
-                    <span className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary group-hover:bg-primary/90 text-white font-semibold text-sm sm:text-sm px-5 py-2.5 shadow-2xs transition-colors shrink-0">
-                      <span>Apply this job</span>
-                      <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
-                    </span>
-                  </div>
-                </div>
-              </article>
-            );
-          })()}
-
-          {/* 2-Column Grid of Remaining Open Roles Directly on #e3f1fe (Matches Applicant portal.png) */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-stretch animate-fade-in-up animation-delay-375">
-            {activeJobs.slice(1, 5).map((job) => {
-              const salary = formatSalary(job);
-              const timeAgo = getRelativeTime(job.created_at);
-              const isBookmarked = mounted && bookmarkedIds.has(job.id);
-              const summary = getRoleSummary(job);
-              const expPill = getExperiencePill(job);
-              const meta = getDepartmentMeta(job);
-              const DeptIcon = meta.icon;
-              const workMode = (job.location || "").toLowerCase().includes("remote")
-                ? "Remote"
-                : (job.location || "").toLowerCase().includes("hybrid")
-                  ? "Hybrid"
-                  : "On-site";
-              const skills =
-                job.required_skills && job.required_skills.length > 0
-                  ? job.required_skills.slice(0, 4)
-                  : ["Domain Expertise", "Cross-Functional Execution", "Analytical Problem Solving"];
-              const targetHref =
-                jobs.length > 0
-                  ? `/careers?jobId=${job.id}`
-                  : `/careers?q=${encodeURIComponent(job.title)}`;
-
-              return (
-                <article
-                  key={job.id}
-                  onClick={() => router.push(targetHref)}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`View job details for ${job.title}`}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      router.push(targetHref);
-                    }
-                  }}
-                  className="bg-white rounded-3xl p-5 sm:p-6 border border-blue-200/80 shadow-[0_8px_24px_rgba(25,136,245,0.06)] hover:shadow-[0_16px_36px_rgba(25,136,245,0.14)] hover:border-primary hover:-translate-y-1 transition-all duration-200 ease-out flex flex-col justify-between group cursor-pointer"
-                >
-                  <div className="space-y-3.5">
-                    {/* Top Identity Row */}
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex items-start gap-3.5 flex-1 min-w-0">
-                        <div className="w-12 h-12 rounded-2xl bg-primary text-white flex items-center justify-center shrink-0 shadow-2xs">
-                          <DeptIcon className="w-6 h-6 stroke-[2.2]" />
-                        </div>
-
-                        <div className="min-w-0 flex-1">
-                          <h3
-                            className="text-xl sm:text-2xl font-bold text-[#1e293b] tracking-tight group-hover:text-primary transition-colors leading-snug line-clamp-2"
-                            title={job.title}
-                          >
-                            {job.title}
-                          </h3>
-                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm sm:text-sm text-slate-600 font-medium mt-0.5">
-                            <span>{job.location || "Makati City, Metro Manila"}</span>
-                            <span className="text-slate-300" aria-hidden="true">•</span>
-                            <span className="text-primary font-semibold">{meta.label}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <Button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleBookmark(job.id, job.title);
-                        }}
-                        aria-label={
-                          isBookmarked
-                            ? `Remove bookmark for ${job.title}`
-                            : `Bookmark ${job.title}`
-                        }
-                        className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-colors shrink-0 cursor-pointer ${isBookmarked
-                          ? "bg-[#e1f0fe] border-primary text-primary"
-                          : "bg-slate-50 border-slate-200 text-slate-400 hover:text-primary hover:border-blue-300"
-                          }`}
-                      >
-                        <Bookmark
-                          className={`w-5 h-5 transition-colors ${isBookmarked ? "fill-primary text-primary" : ""
-                            }`}
-                        />
-                      </Button>
-                    </div>
-
-                    {/* Pills + Salary Row (Matches Applicant portal.png) */}
-                    <div className="flex items-center justify-between gap-2 pt-0.5 flex-wrap">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="bg-[#e1f0fe] text-[#0284c7] font-semibold text-sm px-3 py-1 rounded-full">
-                          {job.employment_type || "Full-Time"}
-                        </span>
-                        <span className="bg-[#e1f0fe] text-[#0284c7] font-semibold text-sm px-3 py-1 rounded-full">
-                          {workMode}
-                        </span>
-                        <span className="bg-[#e1f0fe] text-[#0284c7] font-semibold text-sm px-3 py-1 rounded-full">
-                          {expPill}
-                        </span>
-                      </div>
-
-                      <div className="font-extrabold text-[#1e293b] text-base sm:text-lg tracking-tight shrink-0 tabular-nums">
-                        {salary}
-                      </div>
-                    </div>
-
-                    {/* Concise Role Summary + Sky-Blue Skill Chips */}
-                    <p className="text-sm sm:text-sm text-slate-600 leading-relaxed line-clamp-2">
-                      {summary}
-                    </p>
-
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {skills.map((skill) => (
-                        <span
-                          key={skill}
-                          className="bg-[#f0f7ff] text-[#0369a1] font-semibold text-sm px-2.5 py-1 rounded-md"
-                        >
-                          {skill}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Bottom Row: "Apply this job" Primary Button + Green Timestamp */}
-                  <div className="pt-3.5 mt-4 border-t border-slate-100 flex items-center justify-between gap-4">
-                    <span className="inline-flex items-center justify-center rounded-xl bg-primary group-hover:bg-primary/90 text-white font-semibold text-sm sm:text-sm px-5 py-2.5 shadow-2xs transition-colors">
-                      Apply this job
-                    </span>
-
-                    <span className="text-sm sm:text-sm font-semibold text-emerald-600">
-                      {timeAgo}
-                    </span>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
+              )}
+            </div>
+          )}
         </section>
       </main>
 
       {/* ============================================================== */}
-      {/* 5. FOOTER (System Name, Navigation Links & Terms/Privacy)      */}
+      {/* 5. SHARED CANONICAL PUBLIC FOOTER & LEGAL MODAL                */}
       {/* ============================================================== */}
-      <footer className="bg-white border-t border-slate-200/90 py-8 px-4 sm:px-6 lg:px-8 text-sm sm:text-sm text-slate-600">
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-5">
-          {/* System Name & Brand */}
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-primary text-white font-bold text-sm flex items-center justify-center tracking-tight shadow-2xs">
-              TM
-            </div>
-            <span className="font-bold text-base text-[#1e293b] tracking-tight">
-              Talent Match
-            </span>
-            <span className="text-slate-300 text-sm hidden sm:inline" aria-hidden="true">•</span>
-            <span className="text-slate-500 text-sm hidden sm:inline">
-              © {new Date().getFullYear()} Talent Match. All rights reserved.
-            </span>
-          </div>
-
-          {/* Navigation Links */}
-          <nav aria-label="Footer navigation" className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 font-medium text-slate-600">
-            <Link href="/" className="hover:text-primary transition-colors">
-              Home
-            </Link>
-            <Link href="/careers" className="hover:text-primary transition-colors">
-              Explore Jobs
-            </Link>
-            <Link href="/careers?tab=BOOKMARK" className="hover:text-primary transition-colors">
-              Bookmarks
-            </Link>
-            <Link href="/applicant/login" className="hover:text-primary transition-colors">
-              Applicant Portal
-            </Link>
-            <Link href="/recruiter/login" className="hover:text-primary transition-colors">
-              Recruiter Portal
-            </Link>
-          </nav>
-
-          {/* Legal: Terms of Service & Privacy Policy */}
-          <div className="flex items-center gap-4 text-sm font-semibold text-slate-500">
-            <Button
-              type="button"
-              onClick={() => setActiveModal("terms")}
-              className="hover:text-primary transition-colors cursor-pointer"
-            >
-              Terms of Service
-            </Button>
-            <span className="text-slate-300" aria-hidden="true">•</span>
-            <Button
-              type="button"
-              onClick={() => setActiveModal("privacy")}
-              className="hover:text-primary transition-colors cursor-pointer"
-            >
-              Privacy Policy
-            </Button>
-          </div>
-        </div>
-      </footer>
-
-      {/* Accessible Terms of Service & Privacy Policy Dialog Modals */}
-      <Dialog open={activeModal !== null} onOpenChange={(open) => !open && setActiveModal(null)}>
-        <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-2xl">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-bold text-[#1e293b] tracking-tight">
-              {activeModal === "terms" ? "Terms of Service" : "Privacy Policy"}
-            </DialogTitle>
-            <DialogDescription className="text-sm text-slate-500">
-              Talent Match Platform Agreement • Last updated October 2026
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="mt-4 space-y-4 text-sm sm:text-sm text-slate-600 leading-relaxed">
-            {activeModal === "terms" ? (
-              <>
-                <p>
-                  Welcome to <strong>Talent Match</strong>. By accessing or using our job discovery and applicant recruitment platform, you agree to comply with and be bound by these Terms of Service.
-                </p>
-                <div>
-                  <h4 className="font-bold text-slate-800 text-sm sm:text-sm">1. Platform Services</h4>
-                  <p className="mt-1">
-                    Talent Match provides verified job listings, applicant screening, and skills-based matching between candidates and verified hiring organizations. We do not guarantee employment offers or candidate hiring outcomes.
-                  </p>
-                </div>
-                <div>
-                  <h4 className="font-bold text-slate-800 text-sm sm:text-sm">2. Applicant & Recruiter Conduct</h4>
-                  <p className="mt-1">
-                    Users must submit accurate work histories, skills, and credential documents. Fraudulent profiles, duplicate spam submissions, and unauthorized automated scraping of verified listings are strictly prohibited.
-                  </p>
-                </div>
-                <div>
-                  <h4 className="font-bold text-slate-800 text-sm sm:text-sm">3. Account Integrity</h4>
-                  <p className="mt-1">
-                    Users are responsible for maintaining the confidentiality of their credentials. Any unauthorized use must be reported immediately to Talent Match support.
-                  </p>
-                </div>
-              </>
-            ) : (
-              <>
-                <p>
-                  At <strong>Talent Match</strong>, safeguarding your personal career data and privacy is our highest priority. This Privacy Policy outlines our data collection, usage, and protection practices.
-                </p>
-                <div>
-                  <h4 className="font-bold text-slate-800 text-sm sm:text-sm">1. Information We Collect</h4>
-                  <p className="mt-1">
-                    We collect profile information you provide directly, including contact details, resume documents, educational credentials, work experience, and job search preferences.
-                  </p>
-                </div>
-                <div>
-                  <h4 className="font-bold text-slate-800 text-sm sm:text-sm">2. Transparent Skills Matching</h4>
-                  <p className="mt-1">
-                    Career profiles and application materials are analyzed exclusively to calculate transparent skill alignment scores for verified job openings. We do not sell your personal data to third-party advertising networks.
-                  </p>
-                </div>
-                <div>
-                  <h4 className="font-bold text-slate-800 text-sm sm:text-sm">3. Data Retention & Control</h4>
-                  <p className="mt-1">
-                    You have the right to inspect, update, export, or permanently delete your career profile and application history at any time from your Applicant Portal settings.
-                  </p>
-                </div>
-              </>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <PublicFooter />
     </div>
   );
 }

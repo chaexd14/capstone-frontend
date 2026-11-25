@@ -14,6 +14,8 @@ const buttonVariants = cva(
           "bg-primary text-primary-foreground shadow-sm shadow-primary/20 hover:bg-primary/90 hover:shadow-md active:scale-[0.99] font-semibold",
         destructive:
           "bg-destructive text-destructive-foreground shadow-xs hover:bg-destructive/90 active:scale-[0.99]",
+        success:
+          "border border-emerald-200/90 bg-emerald-50 text-emerald-700 shadow-xs hover:bg-emerald-100 hover:border-emerald-300 hover:text-emerald-800 active:scale-[0.99] font-semibold",
         outline:
           "border border-border bg-card shadow-xs hover:bg-secondary hover:border-primary/40 hover:text-primary text-foreground active:scale-[0.99]",
         secondary:

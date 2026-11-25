@@ -27,6 +27,35 @@ interface FairnessAuditViewProps {
 
 const fairnessAuditCache = new Map<number, FairnessAuditData>();
 
+const COHORT_LABELS: Record<string, string> = {
+  "Early Career (0-2y)": "Early career (0–2 yrs)",
+  "Mid-Level (3-6y)": "Mid-level (3–6 yrs)",
+  "Senior (7y+)": "Senior (7+ yrs)",
+  "Unspecified Tenure": "Experience not listed",
+};
+
+const VARIANT_LABELS: Record<string, string> = {
+  "Female pronoun & name swap": "Changed name and pronouns",
+  "Regional university & provincial address swap": "Changed to regional school and provincial city",
+  "Elite university prestige swap": "Changed to top Metro Manila university and city",
+};
+
+function formatCohortLabel(cohort: string): string {
+  return COHORT_LABELS[cohort] ?? cohort;
+}
+
+function formatVariantLabel(label: string): string {
+  return VARIANT_LABELS[label] ?? label;
+}
+
+function formatSampleSource(source: string): string {
+  if (source === "Synthetic benchmark resume") return "Sample resume";
+  if (source.startsWith("Application ")) {
+    return `Candidate ${source.slice("Application ".length)}`;
+  }
+  return source;
+}
+
 export function FairnessAuditView({ jobId }: FairnessAuditViewProps) {
   const cached = fairnessAuditCache.get(jobId) ?? null;
   const [data, setData] = useState<FairnessAuditData | null>(cached);
@@ -48,7 +77,11 @@ export function FairnessAuditView({ jobId }: FairnessAuditViewProps) {
       fairnessAuditCache.set(jobId, res);
       setData(res);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not load fairness audit data.");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong while loading this report. Try again."
+      );
     } finally {
       setLoading(false);
     }
@@ -69,41 +102,43 @@ export function FairnessAuditView({ jobId }: FairnessAuditViewProps) {
         { method: "POST", body: JSON.stringify({}) }
       );
       setCfResult(res);
-      toast.success("Counterfactual invariance check complete", {
+      toast.success("Bias test complete", {
         description: res.is_invariant
-          ? `Pass — max score delta is ${res.max_counterfactual_gap}% (threshold ≤ 2.0%).`
-          : `Attention — max score delta is ${res.max_counterfactual_gap}%.`,
+          ? `Passed — scores stayed within ${res.max_counterfactual_gap}% (limit: 2%).`
+          : `Needs review — scores shifted by up to ${res.max_counterfactual_gap}%.`,
       });
     } catch (err) {
-      toast.error("Counterfactual check failed", {
-        description: err instanceof Error ? err.message : "Try again.",
+      toast.error("Couldn’t run bias test", {
+        description: err instanceof Error ? err.message : "Please try again.",
       });
     } finally {
       setRunningCf(false);
     }
   };
 
-  if (loading) return <ContextualLoading label="Running fairness & compliance audit" />;
+  if (loading) return <ContextualLoading label="Checking fairness metrics…" />;
   if (error || !data) {
     return (
       <ErrorState
-        title="Fairness audit unavailable"
-        description={error || "Could not load audit summary."}
+        title="Couldn’t load fairness check"
+        description={error || "Something went wrong while loading this report. Try again."}
         onAction={() => void loadAudit()}
       />
     );
   }
 
   const cohorts = Object.keys(data.adverse_impact.rates || {});
+  const flagCount = data.jd_lint.flag_count;
+  const flagLabel = `${flagCount} ${flagCount === 1 ? "issue" : "issues"} to review`;
 
   return (
     <div className="space-y-6">
       <Section>
         <SectionHeader>
           <div>
-            <SectionTitle>Screening fairness &amp; compliance summary</SectionTitle>
+            <SectionTitle>Fairness summary</SectionTitle>
             <SectionDescription>
-              Audit PII redaction coverage, job description bias linting, rubric-to-shortlist alignment, and EEOC Four-Fifths adverse impact ratios.
+              Check that personal details are hidden, the job post uses fair language, and candidates are shortlisted based on match score.
             </SectionDescription>
           </div>
           <Button type="button" variant="outline" size="sm" onClick={() => void loadAudit(true)}>
@@ -114,27 +149,31 @@ export function FairnessAuditView({ jobId }: FairnessAuditViewProps) {
 
         <div className="grid grid-cols-2 gap-6 border-t border-border pt-5 sm:grid-cols-4">
           <MetricSummary
-            label="PII redaction"
+            label="Personal info hidden"
             value={`${data.redaction_coverage_percent}%`}
-            description={`${data.evaluated_count} of ${data.total_applicants} evaluated`}
+            description={
+              data.total_applicants === 0
+                ? "No resumes screened yet"
+                : `${data.evaluated_count} of ${data.total_applicants} resumes screened`
+            }
             tone="success"
           />
           <MetricSummary
-            label="JD bias lint"
-            value={data.jd_lint.is_clean ? "Clean" : `${data.jd_lint.flag_count} flags`}
-            description={data.jd_lint.is_regulated ? "Regulated licensure role" : "Standard role"}
+            label="Job post language"
+            value={data.jd_lint.is_clean ? "Looks good" : flagLabel}
+            description={data.jd_lint.is_regulated ? "Requires license" : "No license required"}
             tone={data.jd_lint.is_clean ? "success" : "neutral"}
           />
           <MetricSummary
-            label="Four-Fifths rule"
-            value={data.adverse_impact.adverse_impact_detected ? "Review" : "Compliant"}
-            description="80% selection ratio check"
+            label="Selection balance"
+            value={data.adverse_impact.adverse_impact_detected ? "Needs review" : "Balanced"}
+            description="Checks balance across experience levels"
             tone={data.adverse_impact.adverse_impact_detected ? "neutral" : "success"}
           />
           <MetricSummary
-            label="Invariance check"
-            value={cfResult ? (cfResult.is_invariant ? "Pass" : "Flagged") : "Ready"}
-            description={cfResult ? `Max gap ${cfResult.max_counterfactual_gap}%` : "Run counterfactual test below"}
+            label="Bias test"
+            value={cfResult ? (cfResult.is_invariant ? "Passed" : "Needs review") : "Not run yet"}
+            description={cfResult ? `Max change: ${cfResult.max_counterfactual_gap}%` : "Run test below"}
             tone={cfResult?.is_invariant ? "success" : "brand"}
           />
         </div>
@@ -144,17 +183,19 @@ export function FairnessAuditView({ jobId }: FairnessAuditViewProps) {
         <Section>
           <SectionHeader>
             <div>
-              <SectionTitle>Merit alignment (Score band vs. shortlist)</SectionTitle>
-              <SectionDescription>Verifies that higher-scoring merit bands progress consistently.</SectionDescription>
+              <SectionTitle>Score vs. shortlist rate</SectionTitle>
+              <SectionDescription>
+                Checks whether higher-scoring candidates move forward more often.
+              </SectionDescription>
             </div>
           </SectionHeader>
           <Table density="compact">
             <TableHeader>
               <TableRow>
-                <TableHead>Match band</TableHead>
+                <TableHead>Match level</TableHead>
                 <TableHead className="text-center">Applicants</TableHead>
-                <TableHead className="text-center">Shortlisted+</TableHead>
-                <TableHead className="text-right">Selection rate</TableHead>
+                <TableHead className="text-center">Moved forward</TableHead>
+                <TableHead className="text-right">Shortlist rate</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -175,27 +216,27 @@ export function FairnessAuditView({ jobId }: FairnessAuditViewProps) {
         <Section>
           <SectionHeader>
             <div>
-              <SectionTitle>Adverse Impact Ratio (EEOC Four-Fifths)</SectionTitle>
+              <SectionTitle>Selection balance by experience</SectionTitle>
               <SectionDescription>
-                Selection rate ratios across tenure cohorts (≥ 0.80 meets the four-fifths threshold).
+                Compares shortlist rates across experience levels. A score of 0.80 or higher is considered balanced.
               </SectionDescription>
             </div>
             <StatusBadge status={data.adverse_impact.adverse_impact_detected ? "warning" : "success"} dot>
-              {data.adverse_impact.adverse_impact_detected ? "Review recommended" : "Within threshold"}
+              {data.adverse_impact.adverse_impact_detected ? "Needs review" : "Balanced"}
             </StatusBadge>
           </SectionHeader>
 
           {cohorts.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
-              Not enough applicant cohort data yet.
+              No applicant data yet. Experience groups will appear here once candidates apply.
             </p>
           ) : (
             <Table density="compact">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Cohort</TableHead>
-                  <TableHead className="text-center">Selection rate</TableHead>
-                  <TableHead className="text-right">Impact ratio</TableHead>
+                  <TableHead>Experience level</TableHead>
+                  <TableHead className="text-center">Shortlist rate</TableHead>
+                  <TableHead className="text-right">Balance score</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -205,7 +246,9 @@ export function FairnessAuditView({ jobId }: FairnessAuditViewProps) {
                   const violating = data.adverse_impact.violating_groups.includes(cohort);
                   return (
                     <TableRow key={cohort}>
-                      <TableCell className="font-medium text-foreground">{cohort}</TableCell>
+                      <TableCell className="font-medium text-foreground">
+                        {formatCohortLabel(cohort)}
+                      </TableCell>
                       <TableCell className="text-center tabular-nums">
                         {(rate * 100).toFixed(1)}%
                       </TableCell>
@@ -226,14 +269,14 @@ export function FairnessAuditView({ jobId }: FairnessAuditViewProps) {
       <Section>
         <SectionHeader>
           <div>
-            <SectionTitle>Counterfactual demographic invariance test</SectionTitle>
+            <SectionTitle>Name &amp; background bias test</SectionTitle>
             <SectionDescription>
-              Perturbs candidate names, pronouns, addresses, and university prestige through TalentMatch’s redaction pipeline to verify zero scoring drift.
+              Swaps a resume’s name, pronouns, city, and school to confirm personal details don’t change the match score.
             </SectionDescription>
           </div>
           <Button type="button" onClick={() => void runCounterfactual()} disabled={runningCf}>
             <Play className="size-4" aria-hidden="true" />
-            {runningCf ? "Running test…" : "Run invariance test"}
+            {runningCf ? "Running test…" : "Run bias test"}
           </Button>
         </SectionHeader>
 
@@ -247,32 +290,36 @@ export function FairnessAuditView({ jobId }: FairnessAuditViewProps) {
               )}
               <span className="font-semibold text-foreground">
                 {cfResult.is_invariant
-                  ? "Demographic invariance verified"
-                  : "Counterfactual score variance detected"}
+                  ? "No bias detected — scores stayed consistent"
+                  : "Score changed when personal details were swapped"}
               </span>
               <Badge variant="secondary" className="tabular-nums">
-                Base score: {cfResult.base_score}%
+                Original score: {cfResult.base_score}%
               </Badge>
               <Badge variant="outline" className="tabular-nums">
-                Max gap: {cfResult.max_counterfactual_gap}%
+                Largest change: {cfResult.max_counterfactual_gap}%
               </Badge>
               {cfResult.sample_source ? (
-                <span className="text-muted-foreground">Source: {cfResult.sample_source}</span>
+                <span className="text-muted-foreground">
+                  Tested on: {formatSampleSource(cfResult.sample_source)}
+                </span>
               ) : null}
             </div>
 
             <Table density="compact">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Counterfactual perturbation</TableHead>
-                  <TableHead className="text-center">Variant score</TableHead>
-                  <TableHead className="text-right">Score delta</TableHead>
+                  <TableHead>What was changed</TableHead>
+                  <TableHead className="text-center">New score</TableHead>
+                  <TableHead className="text-right">Difference</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {cfResult.variants.map((v) => (
                   <TableRow key={v.variant_label}>
-                    <TableCell className="font-medium text-foreground">{v.variant_label}</TableCell>
+                    <TableCell className="font-medium text-foreground">
+                      {formatVariantLabel(v.variant_label)}
+                    </TableCell>
                     <TableCell className="text-center tabular-nums">{v.score}%</TableCell>
                     <TableCell className="text-right tabular-nums">
                       <StatusBadge status={v.score_gap <= 2 ? "success" : "warning"}>
@@ -287,7 +334,7 @@ export function FairnessAuditView({ jobId }: FairnessAuditViewProps) {
         ) : (
           <p className="flex items-center gap-2 rounded-xl border border-dashed border-border bg-muted/30 px-4 py-5 text-sm text-muted-foreground">
             <ShieldCheck className="size-4 shrink-0 text-primary" aria-hidden="true" />
-            Click “Run invariance test” to verify that demographic and school-prestige changes do not alter candidate scores.
+            Run this test to confirm that changing a candidate’s name, pronouns, city, or school does not affect their match score.
           </p>
         )}
       </Section>

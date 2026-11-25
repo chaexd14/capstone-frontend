@@ -176,15 +176,15 @@ export function JobDetailModal({ job, hasApplied, isOpen, onClose, onApply, onVi
           </Button>
           {hasApplied ? (
             <Button
+              type="button"
               size="default"
-              variant="secondary"
+              variant="success"
               onClick={() => {
                 onClose();
                 if (onViewApplication) onViewApplication();
               }}
-              className="gap-2 font-semibold border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20"
             >
-              <CheckCircle2 className="h-4 w-4" />
+              <CheckCircle2 aria-hidden="true" />
               <span>Already Applied · View Status</span>
             </Button>
           ) : job.status === "CLOSED" ? (

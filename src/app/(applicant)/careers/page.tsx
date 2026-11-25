@@ -6,7 +6,7 @@ import { ApplicantPortal } from "@/components/applicant/ApplicantPortal";
 import { Job } from "@/types/job";
 import { Application } from "@/types/application";
 import { fetchApi, type PaginatedResponse } from "@/lib/api";
-import { Loader2 } from "lucide-react";
+import { ContextualLoading } from "@/components/ui/contextual-loading";
 import { createClient } from "@/lib/supabase/client";
 import type { User } from "@supabase/supabase-js";
 
@@ -132,26 +132,14 @@ export default function CareersPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#e3f1fe] text-slate-900 flex flex-col font-sans selection:bg-primary selection:text-white relative">
-      {/* Blueprint Background Texture: Fine Dot Mesh + Architectural 48px Grid */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(rgba(33,150,243,0.15)_1px,transparent_1px)] [background-size:24px_24px]"
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none fixed inset-0 z-0 bg-[linear-gradient(to_right,rgba(33,150,243,0.035)_1px,transparent_1px),linear-gradient(to_bottom,rgba(33,150,243,0.035)_1px,transparent_1px)] [background-size:48px_48px]"
-      />
-
+    <div className="min-h-screen bg-background text-foreground flex flex-col font-sans">
       {loading ? (
-        <div className="flex flex-col items-center justify-center min-h-screen gap-3 relative z-10">
-          <div className="w-12 h-12 rounded-2xl bg-white text-primary shadow-md flex items-center justify-center border border-blue-200/80">
-            <Loader2 className="h-6 w-6 animate-spin text-primary" />
-          </div>
-          <div className="text-sm font-semibold text-slate-600">Loading open positions...</div>
-        </div>
+        <ContextualLoading
+          label="Loading open positions..."
+          className="min-h-screen"
+        />
       ) : (
-        <div className="relative z-10 flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col">
           <Suspense fallback={null}>
             <ApplicantPortal
               jobs={jobs}
