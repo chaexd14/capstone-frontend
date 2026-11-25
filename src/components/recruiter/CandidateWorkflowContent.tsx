@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Calendar,
   CalendarPlus,
@@ -74,18 +74,46 @@ interface CandidateWorkflowContentProps {
 }
 
 interface ApplicationWorkspaceResponse {
-  notes: CandidateNote[];
-  tasks: RecruiterTask[];
-  activity: ApplicationActivity[];
-  interviews: InterviewSchedule[];
-  scorecards: InterviewScorecard[];
+  notes?: CandidateNote[];
+  tasks?: RecruiterTask[];
+  activity?: ApplicationActivity[];
+  interviews?: InterviewSchedule[];
+  scorecards?: InterviewScorecard[];
 }
 
-function fetchWorkspace(applicationId: number) {
-  return Promise.all([
-    fetchApi<ApplicationWorkspaceResponse>(`/applications/${applicationId}/workspace/`),
-    fetchCommunicationTemplatesCached().catch(() => [] as CommunicationTemplate[]),
-  ]);
+type WorkspaceSection = keyof ApplicationWorkspaceResponse;
+const WORKSPACE_CACHE_MS = 30_000;
+const workspaceCache = new Map<string, { expires: number; data: ApplicationWorkspaceResponse }>();
+const workspaceRequests = new Map<string, Promise<ApplicationWorkspaceResponse>>();
+
+function fetchWorkspace(applicationId: number, sections: WorkspaceSection[]) {
+  const normalized = [...sections].sort();
+  const key = `${applicationId}:${normalized.join(",")}`;
+  const cached = workspaceCache.get(key);
+  if (cached && cached.expires > Date.now()) return Promise.resolve(cached.data);
+  const pending = workspaceRequests.get(key);
+  if (pending) return pending;
+
+  const params = new URLSearchParams({ sections: normalized.join(",") });
+  const request = fetchApi<ApplicationWorkspaceResponse>(
+    `/applications/${applicationId}/workspace/?${params.toString()}`
+  ).then((data) => {
+    workspaceCache.set(key, { expires: Date.now() + WORKSPACE_CACHE_MS, data });
+    return data;
+  }).finally(() => workspaceRequests.delete(key));
+  workspaceRequests.set(key, request);
+  return request;
+}
+
+export function prefetchCandidateWorkflow(applicationId: number) {
+  void fetchWorkspace(applicationId, ["tasks", "interviews", "scorecards"]).catch(() => undefined);
+}
+
+function invalidateWorkspaceCache(applicationId: number) {
+  const prefix = `${applicationId}:`;
+  for (const key of workspaceCache.keys()) {
+    if (key.startsWith(prefix)) workspaceCache.delete(key);
+  }
 }
 
 let localActivitySeq = -1;
@@ -130,7 +158,9 @@ export function CandidateWorkflowContent({
   const [templates, setTemplates] = useState<CommunicationTemplate[]>([]);
   const [interviews, setInterviews] = useState<InterviewSchedule[]>([]);
   const [scorecards, setScorecards] = useState<InterviewScorecard[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loadedSections, setLoadedSections] = useState<Set<WorkspaceSection>>(new Set());
+  const [templatesLoaded, setTemplatesLoaded] = useState(false);
+  const requestedSectionsRef = useRef<Set<WorkspaceSection>>(new Set());
   const [saving, setSaving] = useState(false);
 
   const [workflowTab, setWorkflowTab] = useState(initialTab);
@@ -201,31 +231,78 @@ export function CandidateWorkflowContent({
     [application.job_title, candidateName, companyName, nextInterview, recruiterName]
   );
 
+  const applyWorkspace = (workspace: ApplicationWorkspaceResponse) => {
+    if (workspace.notes) setNotes(workspace.notes);
+    if (workspace.tasks) setTasks(workspace.tasks);
+    if (workspace.activity) setActivity(workspace.activity);
+    if (workspace.interviews) setInterviews(workspace.interviews);
+    if (workspace.scorecards) setScorecards(workspace.scorecards);
+  };
+
   useEffect(() => {
     let active = true;
-    void fetchWorkspace(application.id)
-      .then(([workspace, templateData]) => {
+    const sections: WorkspaceSection[] = ["tasks", "interviews", "scorecards"];
+    sections.forEach((section) => requestedSectionsRef.current.add(section));
+    void fetchWorkspace(application.id, sections)
+      .then((workspace) => {
         if (!active) return;
-        setNotes(workspace.notes || []);
-        setTasks(workspace.tasks || []);
-        setActivity(workspace.activity || []);
-        setTemplates(templateData || []);
-        setInterviews(workspace.interviews || []);
-        setScorecards(workspace.scorecards || []);
+        applyWorkspace(workspace);
+        setLoadedSections((current) => new Set([...current, ...sections]));
       })
       .catch((error: unknown) => {
         if (!active) return;
+        sections.forEach((section) => requestedSectionsRef.current.delete(section));
+        setLoadedSections((current) => new Set([...current, ...sections]));
         toast.error("Workspace unavailable", {
           description: error instanceof Error ? error.message : "Could not load recruiter workflow records.",
         });
       })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
+      .finally(() => undefined);
     return () => {
       active = false;
     };
   }, [application.id]);
+
+  useEffect(() => {
+    const section = workflowTab === "notes" ? "notes" : workflowTab === "history" ? "activity" : null;
+    if (!section || loadedSections.has(section) || requestedSectionsRef.current.has(section)) return;
+    let active = true;
+    requestedSectionsRef.current.add(section);
+    void fetchWorkspace(application.id, [section])
+      .then((workspace) => {
+        if (!active) return;
+        applyWorkspace(workspace);
+        setLoadedSections((current) => new Set(current).add(section));
+      })
+      .catch((error: unknown) => {
+        requestedSectionsRef.current.delete(section);
+        if (active) {
+          setLoadedSections((current) => new Set(current).add(section));
+          toast.error("Workspace unavailable", {
+            description: error instanceof Error ? error.message : "Could not load this workflow section.",
+          });
+        }
+      })
+      .finally(() => undefined);
+    return () => { active = false; };
+  }, [application.id, loadedSections, workflowTab]);
+
+  useEffect(() => {
+    if (workflowTab !== "message" || templatesLoaded) return;
+    let active = true;
+    void fetchCommunicationTemplatesCached()
+      .then((data) => { if (active) setTemplates(data); })
+      .catch(() => { if (active) setTemplates([]); })
+      .finally(() => { if (active) setTemplatesLoaded(true); });
+    return () => { active = false; };
+  }, [templatesLoaded, workflowTab]);
+
+  const tasksLoading = !loadedSections.has("tasks");
+  const interviewsLoading =
+    !loadedSections.has("interviews") || !loadedSections.has("scorecards");
+  const notesLoading = !loadedSections.has("notes");
+  const historyLoading = !loadedSections.has("activity");
+  const templatesLoading = !templatesLoaded;
 
   useEffect(() => {
     if (templates.length > 0 && !selectedTemplate) {
@@ -293,6 +370,7 @@ export function CandidateWorkflowContent({
           body: JSON.stringify({ body: noteBody.trim() }),
         }
       );
+      invalidateWorkspaceCache(application.id);
       setNotes((current) =>
         editingNote ? current.map((item) => (item.id === note.id ? note : item)) : [note, ...current]
       );
@@ -313,6 +391,7 @@ export function CandidateWorkflowContent({
     setNotes((current) => current.filter((note) => note.id !== noteId));
     try {
       await fetchApi(`/applications/${application.id}/notes/${noteId}/`, { method: "DELETE" });
+      invalidateWorkspaceCache(application.id);
       toast.success("Note removed");
     } catch (error) {
       setNotes(prevNotes);
@@ -340,6 +419,7 @@ export function CandidateWorkflowContent({
           }),
         }
       );
+      invalidateWorkspaceCache(application.id);
       const nextTasks = editingTask
         ? tasks.map((item) => (item.id === task.id ? task : item))
         : [task, ...tasks];
@@ -384,6 +464,7 @@ export function CandidateWorkflowContent({
         `/applications/${application.id}/tasks/${task.id}/`,
         { method: "PATCH", body: JSON.stringify({ is_complete: nextComplete }) }
       );
+      invalidateWorkspaceCache(application.id);
       setTasks((current) => current.map((item) => (item.id === updated.id ? updated : item)));
       appendLocalActivity("TASK", `${updated.is_complete ? "Completed" : "Updated"} task: ${updated.title}`);
     } catch (error) {
@@ -406,6 +487,7 @@ export function CandidateWorkflowContent({
 
     try {
       await fetchApi(`/applications/${application.id}/tasks/${task.id}/`, { method: "DELETE" });
+      invalidateWorkspaceCache(application.id);
       appendLocalActivity("TASK", `Deleted task: ${task.title}`);
       toast.success("Task removed");
     } catch (error) {
@@ -432,6 +514,7 @@ export function CandidateWorkflowContent({
           interviewer_names: [recruiterName],
         }),
       });
+      invalidateWorkspaceCache(application.id);
       const nextInterviews = [created, ...interviews];
       setInterviews(nextInterviews);
       setInterviewDialogOpen(false);
@@ -462,6 +545,7 @@ export function CandidateWorkflowContent({
         `/applications/${application.id}/interviews/${interview.id}/`,
         { method: "PATCH", body: JSON.stringify({ status }) }
       );
+      invalidateWorkspaceCache(application.id);
       setInterviews((prev) => prev.map((item) => (item.id === updated.id ? updated : item)));
       appendLocalActivity("INTERVIEW", `Updated interview (${status.toLowerCase()}): ${updated.title}`);
       toast.success(`Interview marked ${status.toLowerCase()}`);
@@ -513,6 +597,7 @@ export function CandidateWorkflowContent({
           concerns: scConcerns.trim(),
         }),
       });
+      invalidateWorkspaceCache(application.id);
       const nextScorecards = [created, ...scorecards];
       setScorecards(nextScorecards);
       setScorecardDialogOpen(false);
@@ -593,6 +678,7 @@ export function CandidateWorkflowContent({
           draft_action: draftAction,
         }),
       });
+      invalidateWorkspaceCache(application.id);
       setActivity((current) => [entry, ...current]);
     } catch (error) {
       toast.error("Draft activity was not recorded", {
@@ -635,9 +721,9 @@ export function CandidateWorkflowContent({
           onValueChange={setWorkflowTab}
           className="px-5 sm:px-6"
           tabs={[
-            { id: "tasks", label: "Tasks", count: loading ? undefined : openTaskCount, icon: <ListTodo /> },
-            { id: "interviews", label: "Interviews", count: loading ? undefined : interviews.length + scorecards.length, icon: <Calendar /> },
-            { id: "notes", label: "Notes", count: loading ? undefined : notes.length, icon: <NotebookPen /> },
+            { id: "tasks", label: "Tasks", count: tasksLoading ? undefined : openTaskCount, icon: <ListTodo /> },
+            { id: "interviews", label: "Interviews", count: interviewsLoading ? undefined : interviews.length + scorecards.length, icon: <Calendar /> },
+            { id: "notes", label: "Notes", count: notesLoading ? undefined : notes.length, icon: <NotebookPen /> },
             { id: "message", label: "Message", icon: <MessageSquareText /> },
             { id: "history", label: "Tags & History", icon: <History /> },
           ]}
@@ -667,7 +753,7 @@ export function CandidateWorkflowContent({
               </Button>
             </CardHeader>
             <CardContent className="p-3 sm:p-4" aria-label="Candidate tasks">
-              {loading ? (
+              {tasksLoading ? (
                 <ContextualLoading label="Loading candidate tasks" className="min-h-32" />
               ) : tasks.length === 0 ? (
                 <EmptyState title="No follow-up tasks" description="Create the next action to keep this candidate moving." className="min-h-32 py-6" />
@@ -732,7 +818,7 @@ export function CandidateWorkflowContent({
               </Button>
             </CardHeader>
             <CardContent className="p-5">
-              {loading ? (
+              {interviewsLoading ? (
                 <ContextualLoading label="Loading interviews" className="min-h-24" />
               ) : interviews.length === 0 ? (
                 <EmptyState title="No interviews scheduled" description="Schedule a video, phone, or on-site session to track candidate conversations." className="min-h-24 py-4" />
@@ -793,7 +879,9 @@ export function CandidateWorkflowContent({
               </Button>
             </CardHeader>
             <CardContent className="p-5">
-              {scorecards.length === 0 ? (
+              {interviewsLoading ? (
+                <ContextualLoading label="Loading scorecards" className="min-h-24" />
+              ) : scorecards.length === 0 ? (
                 <EmptyState title="No scorecards submitted" description="Capture structured 1–5 competency ratings and a hiring recommendation after interviews." className="min-h-24 py-4" />
               ) : (
                 <div className="divide-y divide-border">
@@ -854,7 +942,9 @@ export function CandidateWorkflowContent({
             </CardHeader>
             <CardContent className="p-5">
               <div className="divide-y divide-border">
-                {notes.length === 0 ? (
+                {notesLoading ? (
+                  <ContextualLoading label="Loading private notes" className="min-h-32" />
+                ) : notes.length === 0 ? (
                   <EmptyState title="No private notes" description="Recruiter-only context will appear here." className="min-h-32 py-6" />
                 ) : (
                   notes.map((note) => (
@@ -913,8 +1003,8 @@ export function CandidateWorkflowContent({
                 }
               >
                 <Select value={selectedTemplate} onValueChange={applyTemplate}>
-                  <SelectTrigger id="workflow-template">
-                    <SelectValue placeholder="Choose a template" />
+                  <SelectTrigger id="workflow-template" disabled={templatesLoading}>
+                    <SelectValue placeholder={templatesLoading ? "Loading templates…" : "Choose a template"} />
                   </SelectTrigger>
                   <SelectContent>
                     {templates.map((template) => (
@@ -1040,7 +1130,9 @@ export function CandidateWorkflowContent({
             </CardHeader>
             <CardContent className="p-5">
               <div className="relative space-y-5 before:absolute before:bottom-2 before:left-[7px] before:top-2 before:w-px before:bg-border">
-                {activity.length === 0 ? (
+                {historyLoading ? (
+                  <ContextualLoading label="Loading workflow history" className="min-h-32" />
+                ) : activity.length === 0 ? (
                   <EmptyState title="No workflow activity" description="Status, notes, tasks, and outreach actions will be recorded here." className="min-h-32 py-6" />
                 ) : (
                   activity.map((entry) => (

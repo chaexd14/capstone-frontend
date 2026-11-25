@@ -48,7 +48,7 @@ export function RecruiterSidebar({ onCloseMobile }: RecruiterSidebarProps) {
     anonymize,
     setAnonymize,
     jobs,
-    applications,
+    workspaceTotals,
     openTasksCount,
     handleLogout,
     setIsCreateJobOpen,
@@ -58,7 +58,7 @@ export function RecruiterSidebar({ onCloseMobile }: RecruiterSidebarProps) {
   const isSuperAdmin = currentUser?.role === "superadmin";
   const isJobDetail = pathname.startsWith("/admin/jobs/");
 
-  const activeJobsCount = jobs.filter(
+  const activeJobsCount = workspaceTotals.activeJobs || jobs.filter(
     (j) => j.status === "PUBLISHED" || (!j.status && j.status !== "CLOSED")
   ).length;
 
@@ -104,9 +104,7 @@ export function RecruiterSidebar({ onCloseMobile }: RecruiterSidebarProps) {
           icon: Columns3,
           href: "/admin?view=pipeline",
           isActive: !isJobDetail && activeView === "pipeline",
-          badge: applications.filter(
-            (application) => !["HIRED", "REJECTED"].includes(application.status)
-          ).length,
+          badge: workspaceTotals.pipeline,
         },
         {
           id: "applicants",
@@ -114,7 +112,7 @@ export function RecruiterSidebar({ onCloseMobile }: RecruiterSidebarProps) {
           icon: Users,
           href: "/admin?view=applicants",
           isActive: !isJobDetail && activeView === "applicants",
-          badge: applications.length,
+          badge: workspaceTotals.applications,
         },
         {
           id: "tasks",

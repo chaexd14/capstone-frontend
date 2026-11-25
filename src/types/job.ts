@@ -27,6 +27,8 @@ export interface Job {
   rubric_weights?: RubricWeights;
   status: JobStatus;
   applicant_count?: number;
+  top_match_score?: number | null;
+  average_match_score?: number | null;
   created_at: string;
   updated_at: string;
 }

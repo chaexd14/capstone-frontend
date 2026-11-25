@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ClipboardCheck,
   Download,
@@ -37,7 +37,10 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { CollectionToolbar } from "@/components/ui/toolbar";
 import { CandidateAnalysisModal } from "./CandidateAnalysisModal";
 import { CandidateWorkflowPanel } from "./CandidateWorkflowPanel";
+import { prefetchCandidateWorkflow } from "./CandidateWorkflowContent";
 import { PipelineReportDialog } from "./PipelineReportDialog";
+import { ServerPagination } from "@/components/ui/server-pagination";
+import { usePaginatedApi } from "@/hooks/use-paginated-api";
 
 const PIPELINE: Array<{ status: ApplicationStatus; label: string; description: string }> = [
   { status: "SUBMITTED", label: "New", description: "Awaiting first review" },
@@ -62,7 +65,7 @@ function getScoreBadgeVariant(score?: number | null): NonNullable<BadgeProps["va
 
 export function RecruitmentPipelineView() {
   const {
-    applications,
+    applications: contextApplications,
     jobs,
     anonymize,
     onApplicationUpdated,
@@ -82,6 +85,26 @@ export function RecruitmentPipelineView() {
   const [dragOverStage, setDragOverStage] = useState<ApplicationStatus | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
   const [reportSession, setReportSession] = useState(0);
+  const [page, setPage] = useState(1);
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedQuery(query.trim());
+      setPage(1);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [query]);
+
+  const applicationsEndpoint = useMemo(() => {
+    const params = new URLSearchParams({ page: String(page), page_size: "20" });
+    if (debouncedQuery) params.set("q", debouncedQuery);
+    if (jobFilter !== "all") params.set("job_id", jobFilter);
+    params.set("ordering", sortMode === "score" ? "-match_result__match_score" : "-applied_at");
+    return `/applications/?${params.toString()}`;
+  }, [debouncedQuery, jobFilter, page, sortMode]);
+  const { data: applicationsPage, loading: pageLoading, refresh: refreshApplications } = usePaginatedApi<Application>(applicationsEndpoint);
+  const applications = applicationsPage?.results ?? contextApplications;
 
   const workspaceApplication = useMemo(
     () => applications.find((item) => item.id === workspaceApplicationId) || null,
@@ -128,6 +151,7 @@ export function RecruitmentPipelineView() {
     setQuery("");
     setJobFilter("all");
     setSelectedIds([]);
+    setPage(1);
   };
 
   const openReportModal = () => {
@@ -145,7 +169,7 @@ export function RecruitmentPipelineView() {
       action: {
         label: "Undo",
         onClick: () => {
-          void updateApplicationStatus(application, previousStatus).catch((err) => {
+          void updateApplicationStatus(application, previousStatus).then(() => refreshApplications()).catch((err) => {
             toast.error("Could not undo move", {
               description: err instanceof Error ? err.message : "Try again.",
             });
@@ -154,7 +178,7 @@ export function RecruitmentPipelineView() {
       },
     });
 
-    void updateApplicationStatus(application, status).catch((error) => {
+    void updateApplicationStatus(application, status).then(() => refreshApplications()).catch((error) => {
       toast.error("Candidate was not moved", {
         description: error instanceof Error ? error.message : "Reverted to previous stage.",
       });
@@ -170,6 +194,7 @@ export function RecruitmentPipelineView() {
     try {
       const count = await bulkUpdateApplicationStatus(idsToMove, targetStage);
       toast.success(`${count} candidate${count === 1 ? "" : "s"} moved`);
+      void refreshApplications();
     } catch (error) {
       setSelectedIds(idsToMove);
       toast.error("Bulk action failed", {
@@ -225,6 +250,8 @@ export function RecruitmentPipelineView() {
               value={jobFilter}
               onValueChange={(value) => {
                 setJobFilter(value);
+                setPage(1);
+                setSelectedIds([]);
                 setSelectedIds([]);
               }}
             >
@@ -241,7 +268,7 @@ export function RecruitmentPipelineView() {
               </SelectContent>
             </Select>
 
-            <Select value={sortMode} onValueChange={(v) => setSortMode(v as "score" | "newest")}>
+            <Select value={sortMode} onValueChange={(v) => { setSortMode(v as "score" | "newest"); setPage(1); setSelectedIds([]); }}>
               <SelectTrigger className="w-full sm:w-44" aria-label="Sort pipeline cards">
                 <SelectValue />
               </SelectTrigger>
@@ -320,6 +347,9 @@ export function RecruitmentPipelineView() {
             <div className="grid min-w-[2100px] grid-cols-6 gap-3">
               {PIPELINE.map((stage) => {
                 const stageApplications = applicationsByStage.get(stage.status) ?? [];
+                const exactStageCount = stage.status === "SUBMITTED"
+                  ? (applicationsPage?.facets?.status_counts?.SUBMITTED || 0) + (applicationsPage?.facets?.status_counts?.PROCESSING || 0)
+                  : applicationsPage?.facets?.status_counts?.[stage.status];
                 const isDropTarget = dragOverStage === stage.status;
 
                 return (
@@ -357,7 +387,7 @@ export function RecruitmentPipelineView() {
                           {stage.label}
                         </h2>
                         <Badge variant="outline" className="bg-card px-2 py-0.5 text-sm tabular-nums">
-                          {stageApplications.length}
+                          {exactStageCount ?? stageApplications.length}
                         </Badge>
                       </div>
                       <p className="mt-1 text-sm leading-5 text-muted-foreground">
@@ -384,6 +414,7 @@ export function RecruitmentPipelineView() {
                             <Card
                               key={application.id}
                               draggable
+                              onPointerEnter={() => prefetchCandidateWorkflow(application.id)}
                               onClick={() => setWorkspaceApplicationId(application.id)}
                               onDragStart={() => setDraggedId(application.id)}
                               onDragEnd={() => {
@@ -402,6 +433,7 @@ export function RecruitmentPipelineView() {
                                   <Button
                                     variant="ghost"
                                     type="button"
+                                    onFocus={() => prefetchCandidateWorkflow(application.id)}
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       setWorkspaceApplicationId(application.id);
@@ -491,6 +523,20 @@ export function RecruitmentPipelineView() {
           </div>
         </>
       )}
+
+      {applicationsPage ? (
+        <ServerPagination
+          page={applicationsPage.page}
+          pageSize={applicationsPage.page_size}
+          count={applicationsPage.count}
+          totalPages={applicationsPage.total_pages}
+          loading={pageLoading}
+          onPageChange={(nextPage) => {
+            setSelectedIds([]);
+            setPage(nextPage);
+          }}
+        />
+      ) : null}
 
       <CandidateWorkflowPanel
         key={workspaceApplication?.id ?? "empty"}

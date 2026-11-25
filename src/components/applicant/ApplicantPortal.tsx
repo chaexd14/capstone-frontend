@@ -28,6 +28,7 @@ import {
   Sparkles,
   Calendar,
   WifiOff,
+  Loader2,
 } from "lucide-react";
 import { ApplyModal } from "./ApplyModal";
 import { JobDetailSheet } from "./JobDetailSheet";
@@ -50,6 +51,11 @@ interface ApplicantPortalProps {
   currentUser?: User | null;
   onLogout?: () => void;
   backendOnline?: boolean;
+  hasMoreJobs?: boolean;
+  hasMoreApplications?: boolean;
+  loadingMore?: boolean;
+  onLoadMoreJobs?: () => void;
+  onLoadMoreApplications?: () => void;
 }
 
 const CATEGORIES = [
@@ -226,6 +232,11 @@ export function ApplicantPortal({
   currentUser,
   onLogout,
   backendOnline = true,
+  hasMoreJobs = false,
+  hasMoreApplications = false,
+  loadingMore = false,
+  onLoadMoreJobs,
+  onLoadMoreApplications,
 }: ApplicantPortalProps) {
   const searchParams = useSearchParams();
 
@@ -1177,6 +1188,14 @@ export function ApplicantPortal({
                     );
                   })}
                 </div>
+                {hasMoreJobs && navTab === "Explore" ? (
+                  <div className="flex justify-center pt-2">
+                    <Button type="button" variant="outline" onClick={onLoadMoreJobs} disabled={loadingMore}>
+                      {loadingMore ? <Loader2 className="animate-spin" aria-hidden="true" /> : null}
+                      {loadingMore ? "Loading positions…" : "Load more positions"}
+                    </Button>
+                  </div>
+                ) : null}
               </div>
             )}
           </div>
@@ -1416,6 +1435,14 @@ export function ApplicantPortal({
                     </div>
                   );
                 })}
+                {hasMoreApplications ? (
+                  <div className="flex justify-center pt-2">
+                    <Button type="button" variant="outline" onClick={onLoadMoreApplications} disabled={loadingMore}>
+                      {loadingMore ? <Loader2 className="animate-spin" aria-hidden="true" /> : null}
+                      {loadingMore ? "Loading applications…" : "Load more applications"}
+                    </Button>
+                  </div>
+                ) : null}
               </div>
             )}
           </div>

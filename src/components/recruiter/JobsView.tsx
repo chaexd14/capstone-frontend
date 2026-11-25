@@ -16,8 +16,7 @@ import {
   UsersRound,
 } from "lucide-react";
 import { Job, ArchivedJob } from "@/types/job";
-import { Application } from "@/types/application";
-import { fetchApi } from "@/lib/api";
+import { fetchApi, type PaginatedResponse } from "@/lib/api";
 import { useRecruiter } from "@/context/RecruiterContext";
 import { ConfirmJobActionModal, JobActionType } from "./ConfirmJobActionModal";
 import { CreateJobModal } from "./CreateJobModal";
@@ -77,6 +76,8 @@ import {
 } from "@/components/ui/table";
 import { CollectionToolbar, type ViewMode } from "@/components/ui/toolbar";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { ServerPagination } from "@/components/ui/server-pagination";
+import { usePaginatedApi } from "@/hooks/use-paginated-api";
 
 type RequisitionTab = "ACTIVE" | "DRAFT" | "CLOSED" | "ARCHIVED";
 type DisplayMode = ViewMode;
@@ -126,35 +127,6 @@ interface JobStats {
 }
 
 const EMPTY_JOB_STATS: JobStats = { count: 0, topScore: null, avgScore: null };
-
-function buildJobStatsMap(applications: Application[]): Map<number, JobStats> {
-  const accum = new Map<number, { count: number; scoreSum: number; scoreCount: number; topScore: number | null }>();
-  for (const app of applications) {
-    let entry = accum.get(app.job);
-    if (!entry) {
-      entry = { count: 0, scoreSum: 0, scoreCount: 0, topScore: null };
-      accum.set(app.job, entry);
-    }
-    entry.count += 1;
-    const score = app.match_result?.match_score;
-    if (typeof score === "number" && score > 0) {
-      entry.scoreSum += score;
-      entry.scoreCount += 1;
-      if (entry.topScore === null || score > entry.topScore) {
-        entry.topScore = score;
-      }
-    }
-  }
-  const result = new Map<number, JobStats>();
-  accum.forEach((entry, jobId) => {
-    result.set(jobId, {
-      count: entry.count,
-      topScore: entry.topScore,
-      avgScore: entry.scoreCount > 0 ? Math.round(entry.scoreSum / entry.scoreCount) : null,
-    });
-  });
-  return result;
-}
 
 function JobStatusBadge({ status }: { status?: Job["status"] }) {
   if (status === "CLOSED") {
@@ -271,8 +243,7 @@ function JobLifecycleMenu({
 export function JobsView() {
   const router = useRouter();
   const {
-    jobs,
-    applications,
+    jobs: contextJobs,
     loadData,
     onJobUpdated,
     updateJobStatusOptimistic,
@@ -283,13 +254,52 @@ export function JobsView() {
   const [jobTab, setJobTab] = useState<RequisitionTab>("ACTIVE");
   const [searchQuery, setSearchQuery] = useState("");
   const [departmentFilter, setDepartmentFilter] = useState("ALL");
+  const [page, setPage] = useState(1);
+  const [debouncedSearch, setDebouncedSearch] = useState("");
 
   const [archivedJobs, setArchivedJobs] = useState<ArchivedJob[]>([]);
   const [archivedLoaded, setArchivedLoaded] = useState(false);
   const [archivedLoading, setArchivedLoading] = useState(false);
   const [archivedError, setArchivedError] = useState<string | null>(null);
+  const [archivedPage, setArchivedPage] = useState(1);
+  const [archivedPageData, setArchivedPageData] = useState<PaginatedResponse<ArchivedJob> | null>(null);
 
-  const jobStatsById = useMemo(() => buildJobStatsMap(applications), [applications]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(searchQuery.trim());
+      setPage(1);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
+
+  const jobsEndpoint = useMemo(() => {
+    if (jobTab === "ARCHIVED") return null;
+    const params = new URLSearchParams({ page: String(page), page_size: "20" });
+    params.set("status", jobTab === "ACTIVE" ? "PUBLISHED" : jobTab);
+    if (debouncedSearch) params.set("q", debouncedSearch);
+    if (departmentFilter !== "ALL") params.set("department", departmentFilter);
+    return `/jobs/?${params.toString()}`;
+  }, [debouncedSearch, departmentFilter, jobTab, page]);
+  const { data: jobsPage, loading: jobsLoading, refresh: refreshJobs } = usePaginatedApi<Job>(jobsEndpoint);
+  const jobs = jobsPage?.results ?? contextJobs.filter((job) =>
+    jobTab === "ACTIVE" ? job.status === "PUBLISHED" : job.status === jobTab
+  );
+  const statusCounts = jobsPage?.facets?.status_counts ?? contextJobs.reduce<Record<string, number>>((counts, job) => {
+    counts[job.status] = (counts[job.status] || 0) + 1;
+    return counts;
+  }, {});
+
+  const jobStatsById = useMemo(() => {
+    const map = new Map<number, JobStats>();
+    for (const job of jobs) {
+      map.set(job.id, {
+        count: job.applicant_count ?? 0,
+        topScore: job.top_match_score == null ? null : Math.round(job.top_match_score),
+        avgScore: job.average_match_score == null ? null : Math.round(job.average_match_score),
+      });
+    }
+    return map;
+  }, [jobs]);
 
   // Action Confirmation Modal State
   const [actionModalType, setActionModalType] = useState<JobActionType | null>(null);
@@ -299,8 +309,22 @@ export function JobsView() {
   const [duplicatingTemplate, setDuplicatingTemplate] = useState<Partial<Job> | null>(null);
   const [selectedArchivedJob, setSelectedArchivedJob] = useState<ArchivedJob | null>(null);
 
-  const handleDuplicateJob = (sourceJob: Job) => {
-    setDuplicatingTemplate({
+  const fetchJobDetail = async (job: Job) =>
+    fetchApi<Job>(`/jobs/${job.id}/`);
+
+  const openJobEditor = async (job: Job) => {
+    try {
+      setEditingJob(await fetchJobDetail(job));
+    } catch (err) {
+      console.error("Failed to load requisition details:", err);
+      toast.error("Could not open requisition", { description: "Please try again." });
+    }
+  };
+
+  const handleDuplicateJob = async (sourceSummary: Job) => {
+    try {
+      const sourceJob = await fetchJobDetail(sourceSummary);
+      setDuplicatingTemplate({
       title: `${sourceJob.title} (Copy)`,
       department: sourceJob.department,
       employment_type: sourceJob.employment_type,
@@ -315,11 +339,17 @@ export function JobsView() {
       preferred_skills: sourceJob.preferred_skills || [],
       rubric_weights: sourceJob.rubric_weights,
       status: "PUBLISHED",
-    });
+      });
+    } catch (err) {
+      console.error("Failed to load requisition template:", err);
+      toast.error("Could not duplicate requisition", { description: "Please try again." });
+    }
   };
 
-  const handleDuplicateArchivedJob = (archivedJob: ArchivedJob) => {
-    setDuplicatingTemplate({
+  const handleDuplicateArchivedJob = async (archivedSummary: ArchivedJob) => {
+    try {
+      const archivedJob = await fetchApi<ArchivedJob>(`/archived-jobs/${archivedSummary.id}/`);
+      setDuplicatingTemplate({
       id: archivedJob.id,
       title: archivedJob.title,
       department: archivedJob.department,
@@ -332,15 +362,23 @@ export function JobsView() {
       preferred_skills: archivedJob.preferred_skills || [],
       rubric_weights: archivedJob.rubric_weights,
       status: "PUBLISHED",
-    });
+      });
+    } catch (err) {
+      console.error("Failed to load archived requisition template:", err);
+      toast.error("Could not duplicate requisition", { description: "Please try again." });
+    }
   };
 
   const loadArchivedJobs = useCallback(async () => {
     setArchivedLoading(true);
     setArchivedError(null);
     try {
-      const data = await fetchApi<ArchivedJob[]>("/archived-jobs/");
-      setArchivedJobs(data);
+      const params = new URLSearchParams({ page: String(archivedPage), page_size: "20" });
+      if (searchQuery.trim()) params.set("q", searchQuery.trim());
+      if (departmentFilter !== "ALL") params.set("department", departmentFilter);
+      const data = await fetchApi<PaginatedResponse<ArchivedJob>>(`/archived-jobs/?${params.toString()}`);
+      setArchivedJobs(data.results);
+      setArchivedPageData(data);
       setArchivedLoaded(true);
     } catch (err) {
       console.error("Failed to fetch archived jobs:", err);
@@ -350,17 +388,17 @@ export function JobsView() {
     } finally {
       setArchivedLoading(false);
     }
-  }, []);
+  }, [archivedPage, departmentFilter, searchQuery]);
 
   // Lazy-load archived jobs only when the Archived tab is opened
   useEffect(() => {
-    if (jobTab === "ARCHIVED" && !archivedLoaded) {
+    if (jobTab === "ARCHIVED") {
       const timer = setTimeout(() => {
         void loadArchivedJobs();
       }, 0);
       return () => clearTimeout(timer);
     }
-  }, [jobTab, archivedLoaded, loadArchivedJobs]);
+  }, [jobTab, loadArchivedJobs]);
 
   const titleCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -374,13 +412,6 @@ export function JobsView() {
     }
     return counts;
   }, [jobs, archivedJobs]);
-
-  const activeJobs = useMemo(
-    () => jobs.filter((j) => j.status === "PUBLISHED" || (!j.status && j.status !== "CLOSED")),
-    [jobs]
-  );
-  const draftJobs = useMemo(() => jobs.filter((j) => j.status === "DRAFT"), [jobs]);
-  const closedJobs = useMemo(() => jobs.filter((j) => j.status === "CLOSED"), [jobs]);
 
   const openLifecycleModal = (job: Job, action: JobActionType) => {
     setActionJob(job);
@@ -414,6 +445,7 @@ export function JobsView() {
     setActionJob(null);
     try {
       await updateJobStatusOptimistic(targetJob, action);
+      void refreshJobs();
       if (action === "close") {
         toast.success("Position Closed", { description: `"${targetJob.title}" is now closed.` });
       } else if (action === "reopen") {
@@ -433,7 +465,7 @@ export function JobsView() {
     }
   };
 
-  const displayedJobs = jobTab === "ACTIVE" ? activeJobs : jobTab === "DRAFT" ? draftJobs : closedJobs;
+  const displayedJobs = jobs;
   const departmentOptions = useMemo(() => {
     const source = jobTab === "ARCHIVED" ? archivedJobs : displayedJobs;
     return Array.from(new Set(source.map((job) => job.department).filter(Boolean))).sort((a, b) => a.localeCompare(b));
@@ -458,6 +490,7 @@ export function JobsView() {
   const clearFilters = () => {
     setSearchQuery("");
     setDepartmentFilter("ALL");
+    setPage(1);
   };
 
   const dateColumnLabel =
@@ -492,7 +525,7 @@ export function JobsView() {
                         <Button
                           type="button"
                           variant="link"
-                          onClick={() => setEditingJob(job)}
+                          onClick={() => void openJobEditor(job)}
                           className="h-auto max-w-full justify-start p-0 text-left text-base font-bold text-foreground hover:text-primary"
                         >
                           <span className="truncate">{job.title}</span>
@@ -554,8 +587,8 @@ export function JobsView() {
             <CardFooter className="justify-between gap-3 border-t border-border px-5 py-3.5">
               <JobLifecycleMenu
                 job={job}
-                onEditJob={setEditingJob}
-                onDuplicateJob={handleDuplicateJob}
+                onEditJob={(target) => void openJobEditor(target)}
+                onDuplicateJob={(target) => void handleDuplicateJob(target)}
                 onOpenRoster={(id) => router.push(`/admin/jobs/${id}`)}
                 onLifecycleAction={openLifecycleModal}
               />
@@ -565,7 +598,7 @@ export function JobsView() {
                   type="button"
                   variant="secondary"
                   size="sm"
-                  onClick={() => setEditingJob(job)}
+                  onClick={() => void openJobEditor(job)}
                 >
                   <span>Continue draft</span>
                   <ArrowRight aria-hidden="true" />
@@ -656,7 +689,7 @@ export function JobsView() {
               <Button
                 type="button"
                 size="sm"
-                onClick={() => handleDuplicateArchivedJob(archived)}
+                onClick={() => void handleDuplicateArchivedJob(archived)}
               >
                 <Copy aria-hidden="true" />
                 <span>Duplicate</span>
@@ -699,11 +732,14 @@ export function JobsView() {
                 onValueChange={(value) => {
                   setJobTab(value as RequisitionTab);
                   setDepartmentFilter("ALL");
+                  setPage(1);
+                  setArchivedPage(1);
+                  setArchivedLoaded(false);
                 }}
                 tabs={[
-                  { id: "ACTIVE", label: "Active", count: activeJobs.length },
-                  { id: "DRAFT", label: "Drafts", count: draftJobs.length },
-                  { id: "CLOSED", label: "Closed", count: closedJobs.length },
+                  { id: "ACTIVE", label: "Active", count: statusCounts.PUBLISHED || 0 },
+                  { id: "DRAFT", label: "Drafts", count: statusCounts.DRAFT || 0 },
+                  { id: "CLOSED", label: "Closed", count: statusCounts.CLOSED || 0 },
                   { id: "ARCHIVED", label: "Archived", count: archivedLoaded ? archivedJobs.length : undefined },
                 ]}
               />
@@ -719,7 +755,7 @@ export function JobsView() {
               />
             }
             filters={
-              <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
+              <Select value={departmentFilter} onValueChange={(value) => { setDepartmentFilter(value); setPage(1); }}>
                 <SelectTrigger aria-label="Filter by department" className="w-full sm:w-44">
                   <SelectValue placeholder="All departments" />
                 </SelectTrigger>
@@ -741,7 +777,9 @@ export function JobsView() {
         </div>
 
         {/* Main Content Area */}
-        {jobTab !== "ARCHIVED" ? (
+        {jobTab !== "ARCHIVED" && jobsLoading && !jobsPage ? (
+          <ContextualLoading label="Loading requisitions" />
+        ) : jobTab !== "ARCHIVED" ? (
           filteredJobs.length === 0 ? (
             <EmptyState
               title={
@@ -806,7 +844,7 @@ export function JobsView() {
                         <TableRow
                           key={job.id}
                           onClick={() =>
-                            isDraft ? setEditingJob(job) : router.push(`/admin/jobs/${job.id}`)
+                            isDraft ? void openJobEditor(job) : router.push(`/admin/jobs/${job.id}`)
                           }
                           className="cursor-pointer hover:bg-muted/50"
                         >
@@ -820,7 +858,7 @@ export function JobsView() {
                                       variant="link"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        setEditingJob(job);
+                                        void openJobEditor(job);
                                       }}
                                       className="h-auto max-w-[240px] justify-start p-0 text-left text-sm font-semibold text-foreground hover:text-primary"
                                     >
@@ -874,8 +912,8 @@ export function JobsView() {
                           <TableCell overflow="nowrap" className="text-right" onClick={(e) => e.stopPropagation()}>
                             <JobLifecycleMenu
                               job={job}
-                              onEditJob={setEditingJob}
-                              onDuplicateJob={handleDuplicateJob}
+                              onEditJob={(target) => void openJobEditor(target)}
+                              onDuplicateJob={(target) => void handleDuplicateJob(target)}
                               onOpenRoster={(id) => router.push(`/admin/jobs/${id}`)}
                               onLifecycleAction={openLifecycleModal}
                             />
@@ -1015,6 +1053,30 @@ export function JobsView() {
           </>
         )}
 
+        {jobTab !== "ARCHIVED" && jobsPage ? (
+          <ServerPagination
+            page={jobsPage.page}
+            pageSize={jobsPage.page_size}
+            count={jobsPage.count}
+            totalPages={jobsPage.total_pages}
+            loading={jobsLoading}
+            onPageChange={setPage}
+          />
+        ) : null}
+        {jobTab === "ARCHIVED" && archivedPageData ? (
+          <ServerPagination
+            page={archivedPageData.page}
+            pageSize={archivedPageData.page_size}
+            count={archivedPageData.count}
+            totalPages={archivedPageData.total_pages}
+            loading={archivedLoading}
+            onPageChange={(nextPage) => {
+              setArchivedPage(nextPage);
+              setArchivedLoaded(false);
+            }}
+          />
+        ) : null}
+
         {/* Archived Requisition Details & Actions Dialog */}
         <Dialog
           open={selectedArchivedJob !== null}
@@ -1086,7 +1148,7 @@ export function JobsView() {
                     onClick={() => {
                       const target = selectedArchivedJob;
                       setSelectedArchivedJob(null);
-                      handleDuplicateArchivedJob(target);
+                      void handleDuplicateArchivedJob(target);
                     }}
                   >
                     <Copy aria-hidden="true" />

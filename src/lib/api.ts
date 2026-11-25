@@ -3,6 +3,26 @@ import type { Application, CommunicationTemplate, Resume } from "@/types/applica
 
 export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api").replace(/\/+$/, "");
 
+export interface PaginationFacets {
+  status_counts?: Record<string, number>;
+  [key: string]: unknown;
+}
+
+export interface PaginatedResponse<T> {
+  count: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  next: string | null;
+  previous: string | null;
+  results: T[];
+  facets?: PaginationFacets;
+}
+
+export interface PaginatedTasksResponse<T> extends PaginatedResponse<T> {
+  summary: { open: number; overdue: number; due_today: number };
+}
+
 let cachedAccessToken: string | null = null;
 let authListenerInitialized = false;
 let pendingSessionPromise: Promise<string | null> | null = null;

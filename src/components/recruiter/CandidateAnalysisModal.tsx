@@ -85,7 +85,7 @@ const STATUS_LABEL: Record<ApplicationStatus, { label: string; tone: NonNullable
 const IDENTITY_REVEAL_STATUSES = new Set<ApplicationStatus>(["SHORTLISTED", "INTERVIEW", "HIRED"]);
 
 export function CandidateAnalysisModal({
-  application,
+  application: applicationSummary,
   applicationsQueue,
   onSelectApplication,
   job,
@@ -104,6 +104,21 @@ export function CandidateAnalysisModal({
   const [rejectionReason, setRejectionReason] = useState<RejectionReason | "">("SKILLS_GAP");
   const [rejectionNote, setRejectionNote] = useState("");
   const [revealedAppId, setRevealedAppId] = useState<number | null>(null);
+  const [applicationDetail, setApplicationDetail] = useState<Application | null>(null);
+  const application = applicationDetail?.id === applicationSummary?.id ? applicationDetail : applicationSummary;
+
+  useEffect(() => {
+    if (!isOpen || !applicationSummary?.id) return;
+    const controller = new AbortController();
+    void fetchApi<Application>(`/applications/${applicationSummary.id}/`, { signal: controller.signal })
+      .then(setApplicationDetail)
+      .catch((err) => {
+        if (!(err instanceof DOMException && err.name === "AbortError")) {
+          console.error("Candidate detail load failed:", err);
+        }
+      });
+    return () => controller.abort();
+  }, [applicationSummary?.id, isOpen]);
 
   const updating = Boolean(application && pendingApplicationIds.has(application.id));
 

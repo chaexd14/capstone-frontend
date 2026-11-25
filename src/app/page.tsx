@@ -19,7 +19,7 @@ import {
   Stethoscope,
   Briefcase,
 } from "lucide-react";
-import { fetchApi } from "@/lib/api";
+import { fetchApi, type PaginatedResponse } from "@/lib/api";
 import { Job } from "@/types/job";
 import { toast } from "@/components/ui/sonner";
 import { formatSalary, SALARY_RANGES } from "@/lib/salary";
@@ -273,10 +273,10 @@ export default function HomePage() {
         if (cached) setJobs(JSON.parse(cached));
       } catch { }
       try {
-        const data = await fetchApi<Job[]>("/jobs/");
-        setJobs(data);
+        const data = await fetchApi<PaginatedResponse<Job>>("/jobs/?page=1&page_size=6");
+        setJobs(data.results);
         try {
-          sessionStorage.setItem("tm_cached_jobs", JSON.stringify(data));
+          sessionStorage.setItem("tm_cached_jobs", JSON.stringify(data.results));
         } catch { }
       } catch { }
     };

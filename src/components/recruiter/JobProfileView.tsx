@@ -217,7 +217,7 @@ export function JobProfileView({
   // Filter applications for this specific job
   const jobApplications = useMemo(
     () => applications.filter(
-      (app) => app.job === currentJob.id || app.job_title === currentJob.title
+      (app) => String(app.job) === String(currentJob.id) || app.job_title === currentJob.title
     ),
     [applications, currentJob.id, currentJob.title]
   );
@@ -292,7 +292,7 @@ export function JobProfileView({
     const matchesStatus = statusFilter === "ALL" || app.status === statusFilter;
 
     const score = app.match_result?.match_score ?? 0;
-    const band = app.match_result?.ai_insights?.band || (score >= 85 ? "Strong" : score >= 70 ? "Good" : score >= 50 ? "Partial" : "Weak");
+    const band = app.match_result?.band || app.match_result?.ai_insights?.band || (score >= 85 ? "Strong" : score >= 70 ? "Good" : score >= 50 ? "Partial" : "Weak");
     const matchesBand = bandFilter === "ALL" || band === bandFilter;
 
     return matchesSearch && matchesStatus && matchesBand;

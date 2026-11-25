@@ -1,11 +1,17 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { useRecruiter } from "@/context/RecruiterContext";
 import { JobProfileView } from "@/components/recruiter/JobProfileView";
+import { fetchApi } from "@/lib/api";
+import { Job } from "@/types/job";
+import { Application } from "@/types/application";
+import { usePaginatedApi } from "@/hooks/use-paginated-api";
+import { ServerPagination } from "@/components/ui/server-pagination";
+import { ErrorState } from "@/components/ui/feedback";
 
 export default function JobDetailPage() {
   const params = useParams();
@@ -14,19 +20,34 @@ export default function JobDetailPage() {
 
   const {
     jobs,
-    applications,
     anonymize,
     loading,
     onJobUpdated,
     onJobArchived,
     onApplicationUpdated,
   } = useRecruiter();
+  const [fetchedJob, setFetchedJob] = useState<Job | null>(null);
+  const [detailLoading, setDetailLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const {
+    data: applicationsPage,
+    loading: applicationsLoading,
+    error: applicationsError,
+    refresh: refreshApplications,
+  } = usePaginatedApi<Application>(
+    jobId ? `/jobs/${jobId}/applicants/?page=${page}&page_size=20` : null
+  );
 
   const currentJob = useMemo(() => {
-    return jobs.find((j) => String(j.id) === String(jobId));
-  }, [jobs, jobId]);
+    return fetchedJob || jobs.find((j) => String(j.id) === String(jobId));
+  }, [fetchedJob, jobs, jobId]);
 
-  if (loading && !currentJob) {
+  useEffect(() => {
+    if (!jobId || fetchedJob) return;
+    void fetchApi<Job>(`/jobs/${jobId}/`).then(setFetchedJob).catch(() => null).finally(() => setDetailLoading(false));
+  }, [fetchedJob, jobId]);
+
+  if ((loading || detailLoading) && !currentJob) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[50vh] gap-3" role="status" aria-live="polite">
         <Loader2 className="h-6 w-6 animate-spin text-primary motion-reduce:animate-none" aria-hidden="true" />
@@ -60,7 +81,7 @@ export default function JobDetailPage() {
     <div className="space-y-6">
       <JobProfileView
         job={currentJob}
-        applications={applications}
+        applications={applicationsPage?.results ?? []}
         anonymize={anonymize}
         onBack={() => router.push("/admin?view=jobs")}
         onApplicationUpdated={onApplicationUpdated}
@@ -70,6 +91,24 @@ export default function JobDetailPage() {
           router.push("/admin?view=jobs");
         }}
       />
+      {applicationsError ? (
+        <ErrorState
+          title="Could not load applicants"
+          description={applicationsError}
+          onAction={() => void refreshApplications()}
+          className="rounded-2xl border border-border bg-card"
+        />
+      ) : null}
+      {applicationsPage ? (
+        <ServerPagination
+          page={applicationsPage.page}
+          pageSize={applicationsPage.page_size}
+          count={applicationsPage.count}
+          totalPages={applicationsPage.total_pages}
+          loading={applicationsLoading}
+          onPageChange={setPage}
+        />
+      ) : null}
     </div>
   );
 }

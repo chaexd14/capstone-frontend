@@ -96,6 +96,14 @@ export function DashboardOverview({
   const shortlisted = applications.filter(
     (app) => app.status === "SHORTLISTED" || app.status === "INTERVIEW" || app.status === "HIRED"
   ).length;
+  const activeJobCount = analytics?.requisition_counts?.active ?? activeJobs.length;
+  const closedJobCount = analytics?.requisition_counts?.closed ?? closedJobs.length;
+  const inReviewCount = analytics
+    ? (analytics.stage_counts.UNDER_REVIEW || 0) + (analytics.stage_counts.PROCESSING || 0)
+    : inReview;
+  const shortlistedCount = analytics
+    ? (analytics.stage_counts.SHORTLISTED || 0) + (analytics.stage_counts.INTERVIEW || 0) + (analytics.stage_counts.HIRED || 0)
+    : shortlisted;
   const activeSnapshot = activeJobs.slice(0, 4);
   const recentApplications = useMemo(
     () => [...applications].sort((a, b) => (b.id || 0) - (a.id || 0)).slice(0, 5),
@@ -168,12 +176,12 @@ export function DashboardOverview({
       >
         <MetricSummary
           label="Active requisitions"
-          value={activeJobs.length}
-          description={closedJobs.length ? `${closedJobs.length} closed roles` : "All published roles are live"}
+          value={activeJobCount}
+          description={closedJobCount ? `${closedJobCount} closed roles` : "All published roles are live"}
         />
         <MetricSummary
           label="Total candidates"
-          value={applications.length}
+          value={analytics?.total_applications ?? applications.length}
           description={
             analytics?.median_review_hours !== null && analytics?.median_review_hours !== undefined
               ? `Median review ${analytics.median_review_hours}h`
@@ -182,13 +190,13 @@ export function DashboardOverview({
         />
         <MetricSummary
           label="In review"
-          value={inReview}
+          value={inReviewCount}
           description="Candidates needing attention"
           tone="brand"
         />
         <MetricSummary
           label="Shortlisted+"
-          value={shortlisted}
+          value={shortlistedCount}
           description="Shortlisted, interview & hired"
           tone="success"
         />
@@ -476,7 +484,7 @@ export function DashboardOverview({
       <div className="flex flex-wrap gap-3 text-sm text-muted-foreground">
         <span className="inline-flex items-center gap-1.5">
           <BriefcaseBusiness className="size-3.5" />
-          {activeJobs.length} roles currently active
+          {activeJobCount} roles currently active
         </span>
         <span aria-hidden="true">·</span>
         <span>Candidate identities follow the current blind-screening setting.</span>

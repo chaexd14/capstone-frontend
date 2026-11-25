@@ -17,7 +17,7 @@ import {
   RejectionReason,
   TeamMember,
 } from "@/types/application";
-import { ApiError, clearResumeBlobCache, fetchApi } from "@/lib/api";
+import { ApiError, clearResumeBlobCache, fetchApi, type PaginatedResponse } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
 
 export interface RecruiterUserInfo {
@@ -46,9 +46,6 @@ export interface StatusUpdateOptions {
 }
 
 export type JobLifecycleAction = "close" | "reopen" | "archive" | "delete-draft";
-
-const POLL_INTERVAL_MS = 30_000;
-const VISIBILITY_REFRESH_MIN_GAP_MS = 10_000;
 
 const UUID_LIKE_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -93,6 +90,11 @@ interface RecruiterContextValue {
   setAnonymize: (val: boolean) => void;
   jobs: Job[];
   applications: Application[];
+  workspaceTotals: {
+    activeJobs: number;
+    applications: number;
+    pipeline: number;
+  };
   teamMembers: TeamMember[];
   openTasksCount: number;
   overdueTasksCount: number;
@@ -136,6 +138,11 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
   const [anonymize, setAnonymize] = useState<boolean>(true);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [applications, setApplications] = useState<Application[]>([]);
+  const [workspaceTotals, setWorkspaceTotals] = useState({
+    activeJobs: 0,
+    applications: 0,
+    pipeline: 0,
+  });
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [openTasksCount, setOpenTasksCount] = useState(0);
   const [overdueTasksCount, setOverdueTasksCount] = useState(0);
@@ -295,8 +302,8 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
 
       const shouldFetchTeam = Boolean(currentUserId && teamLoadedForUserRef.current !== currentUserId);
       const [jobsData, appsData, teamData, tasksSummary] = await Promise.all([
-        fetchApi<Job[]>("/jobs/", { signal: controller.signal }),
-        fetchApi<Application[]>("/applications/", { signal: controller.signal }),
+        fetchApi<PaginatedResponse<Job>>("/jobs/?page=1&page_size=20", { signal: controller.signal }),
+        fetchApi<PaginatedResponse<Application>>("/applications/?page=1&page_size=20", { signal: controller.signal }),
         shouldFetchTeam
           ? fetchApi<TeamMember[]>("/companies/team/", { signal: controller.signal }).catch(() => null)
           : Promise.resolve(null),
@@ -315,8 +322,19 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      setJobs(jobsData);
-      setApplications(appsData);
+      setJobs(jobsData.results);
+      setApplications(appsData.results);
+      const jobStatuses = jobsData.facets?.status_counts ?? {};
+      const applicationStatuses = appsData.facets?.status_counts ?? {};
+      setWorkspaceTotals({
+        activeJobs: Number(jobStatuses.PUBLISHED ?? 0),
+        applications: appsData.count,
+        pipeline: Object.entries(applicationStatuses).reduce(
+          (total, [status, count]) =>
+            status === "HIRED" || status === "REJECTED" ? total : total + Number(count),
+          0
+        ),
+      });
       if (shouldFetchTeam && teamData !== null) {
         setTeamMembers(teamData);
         teamLoadedForUserRef.current = currentUserId;
@@ -325,7 +343,7 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
         setOpenTasksCount(tasksSummary.summary.open);
         setOverdueTasksCount(tasksSummary.summary.overdue);
       } else {
-        setOpenTasksCount(appsData.reduce((sum, app) => sum + (app.open_task_count || 0), 0));
+        setOpenTasksCount(appsData.results.reduce((sum, app) => sum + (app.open_task_count || 0), 0));
       }
       setBackendOnline(true);
       setLoading(false);
@@ -357,27 +375,9 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
     const timer = setTimeout(() => {
       void loadData();
     }, 0);
-    const interval = setInterval(() => {
-      if (typeof document !== "undefined" && document.visibilityState === "hidden") {
-        return;
-      }
-      void loadData();
-    }, POLL_INTERVAL_MS);
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        const elapsed = Date.now() - lastLoadCompletedAtRef.current;
-        if (elapsed >= VISIBILITY_REFRESH_MIN_GAP_MS) {
-          void loadData();
-        }
-      }
-    };
-    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     return () => {
       clearTimeout(timer);
-      clearInterval(interval);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
       loadAbortRef.current?.abort();
     };
   }, [currentUser, loadData]);
@@ -707,6 +707,7 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
       setAnonymize,
       jobs,
       applications,
+      workspaceTotals,
       teamMembers,
       openTasksCount,
       overdueTasksCount,
@@ -733,6 +734,7 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
       anonymize,
       jobs,
       applications,
+      workspaceTotals,
       teamMembers,
       openTasksCount,
       overdueTasksCount,

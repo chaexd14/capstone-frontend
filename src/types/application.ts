@@ -146,6 +146,7 @@ export interface MatchResult {
   matched_skills: string[];
   missing_skills: string[];
   ai_insights?: AiInsights;
+  band?: MatchBand | string | null;
   explanation: string;
   created_at: string;
   updated_at: string;
@@ -292,6 +293,7 @@ export interface TeamMember {
 
 export interface RecruiterAnalytics {
   total_applications: number;
+  requisition_counts?: { active: number; draft: number; closed: number };
   stage_counts: Record<string, number>;
   funnel: Array<{
     stage: string;

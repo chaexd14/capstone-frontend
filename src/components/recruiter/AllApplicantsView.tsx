@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Download, Scale, ShieldCheck } from "lucide-react";
 import { Application, ApplicationStatus } from "@/types/application";
@@ -45,6 +45,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { CollectionToolbar } from "@/components/ui/toolbar";
+import { ContextualLoading } from "@/components/ui/contextual-loading";
+import { ServerPagination } from "@/components/ui/server-pagination";
+import { usePaginatedApi } from "@/hooks/use-paginated-api";
 
 type DisplayMode = "cards" | "table";
 type SortOption = "newest" | "score_desc" | "score_asc" | "activity";
@@ -97,7 +100,7 @@ function ApplicationStatusBadge({ status }: { status: ApplicationStatus }) {
 }
 
 export function AllApplicantsView({ onSelectApplication }: AllApplicantsViewProps) {
-  const { applications, jobs, anonymize, onApplicationUpdated, bulkUpdateApplicationStatus } = useRecruiter();
+  const { applications: contextApplications, jobs, anonymize, onApplicationUpdated, bulkUpdateApplicationStatus } = useRecruiter();
   const [displayMode, setDisplayMode] = useState<DisplayMode>("table");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
@@ -111,6 +114,28 @@ export function AllApplicantsView({ onSelectApplication }: AllApplicantsViewProp
   const [compareOpen, setCompareOpen] = useState(false);
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [reportSession, setReportSession] = useState(0);
+  const [page, setPage] = useState(1);
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(searchQuery.trim());
+      setPage(1);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [searchQuery]);
+
+  const applicationsEndpoint = useMemo(() => {
+    const params = new URLSearchParams({ page: String(page), page_size: "20" });
+    if (debouncedSearch) params.set("q", debouncedSearch);
+    if (statusFilter !== "ALL") params.set("status", statusFilter);
+    if (departmentFilter !== "ALL") params.set("department", departmentFilter);
+    if (jobFilter !== "ALL") params.set("job_id", jobFilter);
+    params.set("ordering", sortBy === "score_desc" ? "-match_result__match_score" : sortBy === "score_asc" ? "match_result__match_score" : sortBy === "activity" ? "-updated_at" : "-applied_at");
+    return `/applications/?${params.toString()}`;
+  }, [debouncedSearch, departmentFilter, jobFilter, page, sortBy, statusFilter]);
+  const { data: applicationsPage, loading: pageLoading, refresh: refreshApplications } = usePaginatedApi<Application>(applicationsEndpoint);
+  const applications = applicationsPage?.results ?? contextApplications;
 
   const jobDepartmentById = useMemo(() => {
     const map = new Map<number, string>();
@@ -141,7 +166,7 @@ export function AllApplicantsView({ onSelectApplication }: AllApplicantsViewProp
       if (departmentFilter !== "ALL" && department !== departmentFilter) return false;
       const score = app.match_result?.match_score ?? 0;
       const band =
-        app.match_result?.ai_insights?.band ||
+        app.match_result?.band || app.match_result?.ai_insights?.band ||
         (score >= 85 ? "Strong" : score >= 70 ? "Good" : score >= 50 ? "Partial" : "Weak");
       if (bandFilter !== "ALL" && band !== bandFilter) return false;
       if (!query) return true;
@@ -182,6 +207,7 @@ export function AllApplicantsView({ onSelectApplication }: AllApplicantsViewProp
     setJobFilter("ALL");
     setBandFilter("ALL");
     setSelectedIds([]);
+    setPage(1);
   };
 
   const toggleSelect = (id: number) => {
@@ -208,6 +234,7 @@ export function AllApplicantsView({ onSelectApplication }: AllApplicantsViewProp
     try {
       const count = await bulkUpdateApplicationStatus(idsToMove, targetStatus);
       toast.success(`${count} candidate${count === 1 ? "" : "s"} updated`);
+      void refreshApplications();
     } catch (err) {
       setSelectedIds(idsToMove);
       toast.error("Bulk update failed", {
@@ -279,8 +306,8 @@ export function AllApplicantsView({ onSelectApplication }: AllApplicantsViewProp
                 </Link>
                 <div className="flex flex-wrap items-center gap-1.5">
                   <Badge variant="secondary">{department}</Badge>
-                  {app.match_result?.ai_insights?.band ? (
-                    <Badge variant="outline">{app.match_result.ai_insights.band} fit</Badge>
+                  {app.match_result?.band || app.match_result?.ai_insights?.band ? (
+                    <Badge variant="outline">{app.match_result.band || app.match_result.ai_insights?.band} fit</Badge>
                   ) : null}
                   {app.tags?.slice(0, 2).map((tag) => (
                     <Badge key={tag} variant="outline">{tag}</Badge>
@@ -358,7 +385,7 @@ export function AllApplicantsView({ onSelectApplication }: AllApplicantsViewProp
         }
         filters={
           <>
-            <Select value={jobFilter} onValueChange={setJobFilter}>
+            <Select value={jobFilter} onValueChange={(value) => { setJobFilter(value); setPage(1); setSelectedIds([]); }}>
               <SelectTrigger aria-label="Filter by requisition" className="w-full sm:w-44">
                 <SelectValue placeholder="All requisitions" />
               </SelectTrigger>
@@ -372,7 +399,7 @@ export function AllApplicantsView({ onSelectApplication }: AllApplicantsViewProp
               </SelectContent>
             </Select>
 
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <Select value={statusFilter} onValueChange={(value) => { setStatusFilter(value); setPage(1); setSelectedIds([]); }}>
               <SelectTrigger aria-label="Filter by status" className="w-full sm:w-40">
                 <SelectValue placeholder="All statuses" />
               </SelectTrigger>
@@ -386,7 +413,7 @@ export function AllApplicantsView({ onSelectApplication }: AllApplicantsViewProp
               </SelectContent>
             </Select>
 
-            <Select value={bandFilter} onValueChange={setBandFilter}>
+            <Select value={bandFilter} onValueChange={(value) => { setBandFilter(value); setPage(1); setSelectedIds([]); }}>
               <SelectTrigger aria-label="Filter by match strength" className="w-full sm:w-40">
                 <SelectValue placeholder="All strengths" />
               </SelectTrigger>
@@ -399,7 +426,7 @@ export function AllApplicantsView({ onSelectApplication }: AllApplicantsViewProp
               </SelectContent>
             </Select>
 
-            <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
+            <Select value={departmentFilter} onValueChange={(value) => { setDepartmentFilter(value); setPage(1); setSelectedIds([]); }}>
               <SelectTrigger aria-label="Filter by department" className="w-full sm:w-44">
                 <SelectValue placeholder="All departments" />
               </SelectTrigger>
@@ -413,7 +440,7 @@ export function AllApplicantsView({ onSelectApplication }: AllApplicantsViewProp
               </SelectContent>
             </Select>
 
-            <Select value={sortBy} onValueChange={(v) => setSortBy(v as SortOption)}>
+            <Select value={sortBy} onValueChange={(v) => { setSortBy(v as SortOption); setPage(1); setSelectedIds([]); }}>
               <SelectTrigger aria-label="Sort applications" className="w-full sm:w-44">
                 <SelectValue />
               </SelectTrigger>
@@ -479,7 +506,9 @@ export function AllApplicantsView({ onSelectApplication }: AllApplicantsViewProp
         }
       />
 
-      {filteredApplications.length === 0 ? (
+      {pageLoading && !applicationsPage ? (
+        <ContextualLoading label="Loading applications" className="min-h-64" />
+      ) : filteredApplications.length === 0 ? (
         <EmptyState
           title={hasFilters ? "No applications match these filters" : "No applications yet"}
           description={
@@ -607,6 +636,20 @@ export function AllApplicantsView({ onSelectApplication }: AllApplicantsViewProp
           </section>
         </>
       )}
+
+      {applicationsPage ? (
+        <ServerPagination
+          page={applicationsPage.page}
+          pageSize={applicationsPage.page_size}
+          count={applicationsPage.count}
+          totalPages={applicationsPage.total_pages}
+          loading={pageLoading}
+          onPageChange={(nextPage) => {
+            setSelectedIds([]);
+            setPage(nextPage);
+          }}
+        />
+      ) : null}
 
       <CandidateComparisonDialog
         open={compareOpen}

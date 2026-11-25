@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowRight, CheckCircle2, Circle, Clock3, RefreshCw } from "lucide-react";
 import { useRecruiter } from "@/context/RecruiterContext";
-import { fetchApi } from "@/lib/api";
+import { fetchApi, type PaginatedTasksResponse } from "@/lib/api";
 import { Application, GlobalRecruiterTask } from "@/types/application";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,7 @@ import {
 import { toast } from "@/components/ui/sonner";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { CollectionToolbar } from "@/components/ui/toolbar";
+import { ServerPagination } from "@/components/ui/server-pagination";
 
 interface TasksHubViewProps {
   onSelectApplication: (app: Application) => void;
@@ -71,6 +72,17 @@ export function TasksHubView({ onSelectApplication }: TasksHubViewProps) {
   const [assigneeFilter, setAssigneeFilter] = useState("all");
   const [jobFilter, setJobFilter] = useState("all");
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageData, setPageData] = useState<PaginatedTasksResponse<GlobalRecruiterTask> | null>(null);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedQuery(query.trim());
+      setPage(1);
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [query]);
 
   const fetchTasks = useCallback(async () => {
     setLoading(true);
@@ -79,11 +91,12 @@ export function TasksHubView({ onSelectApplication }: TasksHubViewProps) {
       const params = new URLSearchParams({ status: statusTab, assigned_to: assigneeFilter });
       if (priorityFilter !== "ALL") params.set("priority", priorityFilter);
       if (jobFilter !== "all") params.set("job_id", jobFilter);
-      const data = await fetchApi<{
-        summary: { open: number; overdue: number; due_today: number };
-        tasks: GlobalRecruiterTask[];
-      }>(`/applications/tasks/?${params.toString()}`);
-      setTasks(data.tasks || []);
+      if (debouncedQuery) params.set("q", debouncedQuery);
+      params.set("page", String(page));
+      params.set("page_size", "20");
+      const data = await fetchApi<PaginatedTasksResponse<GlobalRecruiterTask>>(`/applications/tasks/?${params.toString()}`);
+      setTasks(data.results || []);
+      setPageData(data);
       setSummary(data.summary || { open: 0, overdue: 0, due_today: 0 });
       setFetchedAtMs(Date.now());
     } catch (err) {
@@ -91,7 +104,7 @@ export function TasksHubView({ onSelectApplication }: TasksHubViewProps) {
     } finally {
       setLoading(false);
     }
-  }, [assigneeFilter, jobFilter, priorityFilter, statusTab]);
+  }, [assigneeFilter, debouncedQuery, jobFilter, page, priorityFilter, statusTab]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -179,6 +192,7 @@ export function TasksHubView({ onSelectApplication }: TasksHubViewProps) {
     setPriorityFilter("ALL");
     setAssigneeFilter("all");
     setJobFilter("all");
+    setPage(1);
   };
 
   const nowMs = fetchedAtMs;
@@ -212,7 +226,7 @@ export function TasksHubView({ onSelectApplication }: TasksHubViewProps) {
           <FilterTabs
             label="Task status"
             value={statusTab}
-            onValueChange={(value) => setStatusTab(value as TaskStatusFilter)}
+            onValueChange={(value) => { setStatusTab(value as TaskStatusFilter); setPage(1); }}
             tabs={[
               { id: "open", label: "Open", count: summary.open },
               { id: "overdue", label: "Overdue", count: summary.overdue },
@@ -233,7 +247,7 @@ export function TasksHubView({ onSelectApplication }: TasksHubViewProps) {
         }
         filters={
           <>
-            <Select value={assigneeFilter} onValueChange={setAssigneeFilter}>
+            <Select value={assigneeFilter} onValueChange={(value) => { setAssigneeFilter(value); setPage(1); }}>
               <SelectTrigger aria-label="Filter by assignee" className="w-full sm:w-36">
                 <SelectValue />
               </SelectTrigger>
@@ -243,7 +257,7 @@ export function TasksHubView({ onSelectApplication }: TasksHubViewProps) {
               </SelectContent>
             </Select>
 
-            <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+            <Select value={priorityFilter} onValueChange={(value) => { setPriorityFilter(value); setPage(1); }}>
               <SelectTrigger aria-label="Filter by priority" className="w-full sm:w-36">
                 <SelectValue />
               </SelectTrigger>
@@ -255,7 +269,7 @@ export function TasksHubView({ onSelectApplication }: TasksHubViewProps) {
               </SelectContent>
             </Select>
 
-            <Select value={jobFilter} onValueChange={setJobFilter}>
+            <Select value={jobFilter} onValueChange={(value) => { setJobFilter(value); setPage(1); }}>
               <SelectTrigger aria-label="Filter by job" className="w-full sm:w-48">
                 <SelectValue placeholder="All requisitions" />
               </SelectTrigger>
@@ -373,6 +387,16 @@ export function TasksHubView({ onSelectApplication }: TasksHubViewProps) {
           })}
         </section>
       )}
+      {pageData ? (
+        <ServerPagination
+          page={pageData.page}
+          pageSize={pageData.page_size}
+          count={pageData.count}
+          totalPages={pageData.total_pages}
+          loading={loading}
+          onPageChange={setPage}
+        />
+      ) : null}
     </div>
   );
 }

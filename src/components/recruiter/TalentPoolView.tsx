@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link";
 import { ArrowRight, Scale, ShieldCheck, Sparkles, Tag } from "lucide-react";
 import { useRecruiter } from "@/context/RecruiterContext";
-import { fetchApi } from "@/lib/api";
+import { fetchApi, type PaginatedResponse } from "@/lib/api";
 import { getCandidateDisplayName } from "@/lib/candidate-identity";
 import {
   Application,
@@ -63,6 +63,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { CollectionToolbar, type ViewMode } from "@/components/ui/toolbar";
+import { ServerPagination } from "@/components/ui/server-pagination";
 
 type DisplayMode = ViewMode;
 type SortOption = "score_desc" | "exp_desc" | "newest";
@@ -132,6 +133,8 @@ export function TalentPoolView({ onSelectApplication }: TalentPoolViewProps) {
   const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
   const [bulkRejectionReason, setBulkRejectionReason] = useState<RejectionReason>("SKILLS_GAP");
   const searchAbortRef = useRef<AbortController | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageData, setPageData] = useState<PaginatedResponse<Application> | null>(null);
 
   const searchPool = useCallback(async () => {
     searchAbortRef.current?.abort();
@@ -146,11 +149,15 @@ export function TalentPoolView({ onSelectApplication }: TalentPoolViewProps) {
       if (minScore !== "any") params.set("min_score", minScore);
       if (minExp !== "any") params.set("min_exp", minExp);
       if (tagFilter !== "ALL") params.set("tag", tagFilter);
-      const data = await fetchApi<Application[]>(`/applications/talent-pool/?${params.toString()}`, {
+      params.set("page", String(page));
+      params.set("page_size", "20");
+      params.set("ordering", sortBy === "exp_desc" ? "-resume__extracted_experience_years" : sortBy === "newest" ? "-applied_at" : "-match_result__match_score");
+      const data = await fetchApi<PaginatedResponse<Application>>(`/applications/talent-pool/?${params.toString()}`, {
         signal: controller.signal,
       });
       if (!controller.signal.aborted) {
-        setResults(data || []);
+        setResults(data.results || []);
+        setPageData(data);
       }
     } catch (err) {
       if (err instanceof DOMException && err.name === "AbortError") {
@@ -164,7 +171,7 @@ export function TalentPoolView({ onSelectApplication }: TalentPoolViewProps) {
         setLoading(false);
       }
     }
-  }, [minExp, minScore, query, tagFilter]);
+  }, [minExp, minScore, page, query, sortBy, tagFilter]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void searchPool(), 250);
@@ -312,6 +319,8 @@ export function TalentPoolView({ onSelectApplication }: TalentPoolViewProps) {
     setMinScore("any");
     setMinExp("any");
     setTagFilter("ALL");
+    setPage(1);
+    setSelectedIds([]);
     setSelectedIds([]);
   };
 
@@ -472,7 +481,7 @@ export function TalentPoolView({ onSelectApplication }: TalentPoolViewProps) {
         }
         filters={
           <>
-            <Select value={minScore} onValueChange={setMinScore}>
+            <Select value={minScore} onValueChange={(value) => { setMinScore(value); setPage(1); setSelectedIds([]); }}>
               <SelectTrigger aria-label="Minimum match score" className="w-full sm:w-44">
                 <SelectValue />
               </SelectTrigger>
@@ -484,7 +493,7 @@ export function TalentPoolView({ onSelectApplication }: TalentPoolViewProps) {
               </SelectContent>
             </Select>
 
-            <Select value={minExp} onValueChange={setMinExp}>
+            <Select value={minExp} onValueChange={(value) => { setMinExp(value); setPage(1); setSelectedIds([]); }}>
               <SelectTrigger aria-label="Minimum experience" className="w-full sm:w-40">
                 <SelectValue />
               </SelectTrigger>
@@ -496,7 +505,7 @@ export function TalentPoolView({ onSelectApplication }: TalentPoolViewProps) {
               </SelectContent>
             </Select>
 
-            <Select value={tagFilter} onValueChange={setTagFilter}>
+            <Select value={tagFilter} onValueChange={(value) => { setTagFilter(value); setPage(1); setSelectedIds([]); }}>
               <SelectTrigger aria-label="Filter by tag" className="w-full sm:w-44">
                 <SelectValue />
               </SelectTrigger>
@@ -509,7 +518,7 @@ export function TalentPoolView({ onSelectApplication }: TalentPoolViewProps) {
               </SelectContent>
             </Select>
 
-            <Select value={sortBy} onValueChange={(value) => setSortBy(value as SortOption)}>
+            <Select value={sortBy} onValueChange={(value) => { setSortBy(value as SortOption); setPage(1); setSelectedIds([]); }}>
               <SelectTrigger aria-label="Sort talent pool" className="w-full sm:w-44">
                 <SelectValue />
               </SelectTrigger>
@@ -750,6 +759,20 @@ export function TalentPoolView({ onSelectApplication }: TalentPoolViewProps) {
           </section>
         </>
       )}
+
+      {pageData ? (
+        <ServerPagination
+          page={pageData.page}
+          pageSize={pageData.page_size}
+          count={pageData.count}
+          totalPages={pageData.total_pages}
+          loading={loading}
+          onPageChange={(nextPage) => {
+            setSelectedIds([]);
+            setPage(nextPage);
+          }}
+        />
+      ) : null}
 
       <CandidateComparisonDialog
         open={compareOpen}
