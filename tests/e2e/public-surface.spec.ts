@@ -22,6 +22,25 @@ test("responses enforce a nonce-based content security policy", async ({ request
   expect(policy).toContain("object-src 'none'");
 });
 
+test("public routes tolerate stale auth cookies and expose session recovery", async ({
+  request,
+}) => {
+  const staleCookie = "sb-127-auth-token.0=base64-stale-session";
+  const careers = await request.get("/careers", {
+    headers: { cookie: staleCookie },
+  });
+  expect(careers.ok()).toBeTruthy();
+
+  const reset = await request.get("/auth/reset-session", {
+    headers: { cookie: staleCookie },
+    maxRedirects: 0,
+  });
+  expect([307, 308]).toContain(reset.status());
+  expect(reset.headers()["location"]).toMatch(/\/careers$/);
+  expect(reset.headers()["set-cookie"]).toContain("sb-127-auth-token.0=");
+  expect(reset.headers()["set-cookie"]).toContain("Max-Age=0");
+});
+
 test("redirected users receive an actionable authentication message", async ({ page }) => {
   await page.goto("/login?error=unauthorized");
   const notice = page.getByRole("alert").filter({ hasText: "Authentication Required" });

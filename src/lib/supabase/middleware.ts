@@ -9,6 +9,27 @@ export async function updateSession(request: NextRequest, policy: string) {
   };
   let supabaseResponse = nextResponse();
 
+  const pathname = request.nextUrl.pathname;
+  const isRecruiterRoute =
+    (pathname.startsWith("/recruiter") &&
+      !["/recruiter/login", "/recruiter/signup"].includes(pathname)) ||
+    pathname.startsWith("/admin");
+  const isApplicantProtectedRoute =
+    pathname.startsWith("/applicant") &&
+    !["/applicant/login", "/applicant/signup"].includes(pathname);
+  const requiresUserLookup =
+    isRecruiterRoute ||
+    isApplicantProtectedRoute ||
+    pathname === "/recruiter/login" ||
+    pathname === "/applicant/login";
+
+  // Public pages must remain available even when a browser carries an expired,
+  // partially written, or otherwise unreadable Supabase session cookie. Client
+  // components can still read a healthy session after the page has loaded.
+  if (!requiresUserLookup) {
+    return supabaseResponse;
+  }
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -30,20 +51,21 @@ export async function updateSession(request: NextRequest, policy: string) {
     }
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user = null;
+  try {
+    const result = await supabase.auth.getUser();
+    user = result.data.user;
+  } catch {
+    // Treat an unreadable session as signed out. Protected routes still redirect
+    // to login, while the reset-session endpoint can clear the stale cookies.
+    user = null;
+  }
 
-  const pathname = request.nextUrl.pathname;
   // Read only server-controlled claims (app_metadata). Client user_metadata is never trusted.
   // Authoritative API permissions and RecruiterContext enforce database checks with the backend.
   const role = (user?.app_metadata?.role as string | undefined)?.toLowerCase();
 
   // 1. Recruiter Route Protection (/recruiter/*, /admin, /admin/*)
-  const isRecruiterRoute =
-    (pathname.startsWith("/recruiter") && !["/recruiter/login", "/recruiter/signup"].includes(pathname)) ||
-    pathname.startsWith("/admin");
-
   if (isRecruiterRoute) {
     if (!user) {
       const url = request.nextUrl.clone();
@@ -55,9 +77,6 @@ export async function updateSession(request: NextRequest, policy: string) {
   }
 
   // 2. Applicant Protected Routes (/applicant/* except /applicant/login)
-  const isApplicantProtectedRoute =
-    pathname.startsWith("/applicant") && !["/applicant/login", "/applicant/signup"].includes(pathname);
-
   if (isApplicantProtectedRoute) {
     if (!user) {
       const url = request.nextUrl.clone();
