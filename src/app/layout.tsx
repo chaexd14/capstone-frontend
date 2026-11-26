@@ -4,6 +4,7 @@ import { connection } from "next/server";
 import "./globals.css";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { SessionRecovery } from "@/components/auth/SessionRecovery";
 
 export const metadata: Metadata = {
   title: "TalentMatch · AI Resume Screening & Candidate Evaluation",
@@ -26,6 +27,7 @@ export default async function RootLayout({
         className="min-h-full flex flex-col font-sans bg-background text-foreground selection:bg-primary selection:text-primary-foreground"
         suppressHydrationWarning
       >
+        <SessionRecovery />
         <TooltipProvider delayDuration={250}>
           {children}
           <Toaster />

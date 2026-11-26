@@ -1,24 +1,39 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSupabaseAuthCookieName } from "@/lib/supabase/session-recovery";
 
-function getSupabaseCookiePrefix() {
+function getSafeNextPath(request: NextRequest) {
+  const requestedPath = request.nextUrl.searchParams.get("next");
+  if (!requestedPath?.startsWith("/") || requestedPath.startsWith("//")) {
+    return "/careers";
+  }
+
   try {
-    const projectReference = new URL(
-      process.env.NEXT_PUBLIC_SUPABASE_URL ?? ""
-    ).hostname.split(".")[0];
-    return projectReference ? `sb-${projectReference}-` : null;
+    const resolved = new URL(requestedPath, request.nextUrl.origin);
+    if (
+      resolved.origin !== request.nextUrl.origin ||
+      resolved.pathname === "/auth/reset-session"
+    ) {
+      return "/careers";
+    }
+    return `${resolved.pathname}${resolved.search}${resolved.hash}`;
   } catch {
-    return null;
+    return "/careers";
   }
 }
 
 export function GET(request: NextRequest) {
-  const redirectUrl = new URL("/careers", request.url);
+  const redirectUrl = new URL(getSafeNextPath(request), request.url);
   const response = NextResponse.redirect(redirectUrl);
-  const cookiePrefix = getSupabaseCookiePrefix();
+  const authCookieName = getSupabaseAuthCookieName();
 
-  if (cookiePrefix) {
+  if (authCookieName) {
     for (const cookie of request.cookies.getAll()) {
-      if (!cookie.name.startsWith(cookiePrefix)) continue;
+      if (
+        cookie.name !== authCookieName &&
+        !cookie.name.startsWith(`${authCookieName}.`)
+      ) {
+        continue;
+      }
       response.cookies.set({
         name: cookie.name,
         value: "",
