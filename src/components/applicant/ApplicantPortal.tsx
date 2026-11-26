@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useMemo, useEffect } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Job } from "@/types/job";
@@ -19,11 +20,7 @@ import {
   WifiOff,
   X,
 } from "lucide-react";
-import { ApplyModal } from "./ApplyModal";
-import { JobDetailSheet } from "./JobDetailSheet";
 import { ApplicantJobCard } from "./ApplicantJobCard";
-import { MyApplicationsView } from "./MyApplicationsView";
-import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { PublicFooter } from "@/components/layout/PublicFooter";
 import { formatSalary, matchesSalaryRange, SALARY_RANGES } from "@/lib/salary";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -51,6 +48,17 @@ import {
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/sonner";
 import { StatusBadge } from "@/components/ui/status-badge";
+
+const ApplyModal = dynamic(() => import("./ApplyModal").then((module) => module.ApplyModal));
+const JobDetailSheet = dynamic(() =>
+  import("./JobDetailSheet").then((module) => module.JobDetailSheet)
+);
+const MyApplicationsView = dynamic(() =>
+  import("./MyApplicationsView").then((module) => module.MyApplicationsView)
+);
+const NotificationBell = dynamic(() =>
+  import("@/components/notifications/NotificationBell").then((module) => module.NotificationBell)
+);
 
 interface ApplicantPortalProps {
   jobs: Job[];
@@ -873,7 +881,7 @@ export function ApplicantPortal({
       {/* ============================================================== */}
       {/* 3. MODALS & SHEET DRAWER                                       */}
       {/* ============================================================== */}
-      <JobDetailSheet
+      {selectedJobForSheet && <JobDetailSheet
         job={selectedJobForSheet}
         isOpen={isSheetOpen}
         onClose={handleCloseSheet}
@@ -889,9 +897,9 @@ export function ApplicantPortal({
         onNavigateJob={handleNavigateJob}
         hasPrevJob={hasPrevJob}
         hasNextJob={hasNextJob}
-      />
+      />}
 
-      <ApplyModal
+      {selectedJobForApply && <ApplyModal
         job={selectedJobForApply}
         isOpen={isApplyOpen}
         onClose={() => {
@@ -906,7 +914,7 @@ export function ApplicantPortal({
           setSelectedJobForApply(null);
           setNavTab("My Applications");
         }}
-      />
+      />}
 
       {/* ============================================================== */}
       {/* 4. SHARED CANONICAL PUBLIC FOOTER                              */}

@@ -1,21 +1,23 @@
 "use client";
 
 import React, { useState, useEffect, Suspense } from "react";
+import dynamic from "next/dynamic";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useRecruiter } from "@/context/RecruiterContext";
-import { DashboardOverview } from "@/components/recruiter/DashboardOverview";
-import { JobsView } from "@/components/recruiter/JobsView";
-import { AllApplicantsView } from "@/components/recruiter/AllApplicantsView";
-import { RecruitmentPipelineView } from "@/components/recruiter/RecruitmentPipelineView";
-import { TasksHubView } from "@/components/recruiter/TasksHubView";
-import { TalentPoolView } from "@/components/recruiter/TalentPoolView";
-import { MessageTemplatesView } from "@/components/recruiter/MessageTemplatesView";
-import { CreateJobModal } from "@/components/recruiter/CreateJobModal";
-import { CandidateAnalysisModal } from "@/components/recruiter/CandidateAnalysisModal";
 import { Application } from "@/types/application";
 import { ContextualLoading } from "@/components/ui/contextual-loading";
-import { PlatformManagement } from "@/components/recruiter/PlatformManagement";
-import { SystemMonitoring } from "@/components/recruiter/SystemMonitoring";
+
+const DashboardOverview = dynamic(() => import("@/components/recruiter/DashboardOverview").then((module) => module.DashboardOverview));
+const JobsView = dynamic(() => import("@/components/recruiter/JobsView").then((module) => module.JobsView));
+const AllApplicantsView = dynamic(() => import("@/components/recruiter/AllApplicantsView").then((module) => module.AllApplicantsView));
+const RecruitmentPipelineView = dynamic(() => import("@/components/recruiter/RecruitmentPipelineView").then((module) => module.RecruitmentPipelineView));
+const TasksHubView = dynamic(() => import("@/components/recruiter/TasksHubView").then((module) => module.TasksHubView));
+const TalentPoolView = dynamic(() => import("@/components/recruiter/TalentPoolView").then((module) => module.TalentPoolView));
+const MessageTemplatesView = dynamic(() => import("@/components/recruiter/MessageTemplatesView").then((module) => module.MessageTemplatesView));
+const CreateJobModal = dynamic(() => import("@/components/recruiter/CreateJobModal").then((module) => module.CreateJobModal));
+const CandidateAnalysisModal = dynamic(() => import("@/components/recruiter/CandidateAnalysisModal").then((module) => module.CandidateAnalysisModal));
+const PlatformManagement = dynamic(() => import("@/components/recruiter/PlatformManagement").then((module) => module.PlatformManagement));
+const SystemMonitoring = dynamic(() => import("@/components/recruiter/SystemMonitoring").then((module) => module.SystemMonitoring));
 
 function AdminPageContent() {
   const router = useRouter();
@@ -89,13 +91,13 @@ function AdminPageContent() {
       )}
 
       {/* Global Modals for Admin Workspace */}
-      <CreateJobModal
+      {isCreateJobOpen && <CreateJobModal
         isOpen={isCreateJobOpen}
         onClose={() => setIsCreateJobOpen(false)}
         onJobCreated={onJobCreated}
-      />
+      />}
 
-      <CandidateAnalysisModal
+      {selectedApplication && <CandidateAnalysisModal
         isOpen={selectedApplication !== null}
         application={
           selectedApplication
@@ -111,7 +113,7 @@ function AdminPageContent() {
         }}
         anonymize={anonymize}
         onStatusUpdated={onApplicationUpdated}
-      />
+      />}
     </>
   );
 }

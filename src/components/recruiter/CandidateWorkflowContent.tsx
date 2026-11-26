@@ -43,7 +43,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ContextualLoading } from "@/components/ui/contextual-loading";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { EmptyState } from "@/components/ui/feedback";
+import { EmptyState, ErrorState } from "@/components/ui/feedback";
 import { FormField } from "@/components/ui/form-field";
 import { IconButton } from "@/components/ui/icon-button";
 import { Input } from "@/components/ui/input";
@@ -165,6 +165,7 @@ export function CandidateWorkflowContent({
   const [interviews, setInterviews] = useState<InterviewSchedule[]>([]);
   const [scorecards, setScorecards] = useState<InterviewScorecard[]>([]);
   const [loadedSections, setLoadedSections] = useState<Set<WorkspaceSection>>(new Set());
+  const [sectionErrors, setSectionErrors] = useState<Partial<Record<WorkspaceSection, string>>>({});
   const [templatesLoaded, setTemplatesLoaded] = useState(false);
   const requestedSectionsRef = useRef<Set<WorkspaceSection>>(new Set());
   const [saving, setSaving] = useState(false);
@@ -251,6 +252,7 @@ export function CandidateWorkflowContent({
   };
 
   useEffect(() => {
+    const requestedSections = requestedSectionsRef.current;
     const sectionsByTab: Record<string, WorkspaceSection[]> = {
       tasks: ["tasks"],
       interviews: ["interviews", "scorecards"],
@@ -260,29 +262,59 @@ export function CandidateWorkflowContent({
     const sections = (sectionsByTab[workflowTab] || []).filter(
       (section) =>
         !loadedSections.has(section) &&
-        !requestedSectionsRef.current.has(section)
+        !requestedSections.has(section)
     );
     if (sections.length === 0) return;
     let active = true;
-    sections.forEach((section) => requestedSectionsRef.current.add(section));
+    sections.forEach((section) => requestedSections.add(section));
     void fetchWorkspace(application.id, sections)
       .then((workspace) => {
         if (!active) return;
         applyWorkspace(workspace);
+        setSectionErrors((current) => {
+          const next = { ...current };
+          sections.forEach((section) => delete next[section]);
+          return next;
+        });
         setLoadedSections((current) => new Set([...current, ...sections]));
       })
       .catch((error: unknown) => {
-        sections.forEach((section) => requestedSectionsRef.current.delete(section));
+        sections.forEach((section) => requestedSections.delete(section));
         if (active) {
+          const message = error instanceof Error ? error.message : "Could not load this workflow section.";
+          setSectionErrors((current) => {
+            const next = { ...current };
+            sections.forEach((section) => { next[section] = message; });
+            return next;
+          });
           setLoadedSections((current) => new Set([...current, ...sections]));
           toast.error("Workspace unavailable", {
-            description: error instanceof Error ? error.message : "Could not load this workflow section.",
+            description: message,
           });
         }
       })
       .finally(() => undefined);
-    return () => { active = false; };
+    return () => {
+      active = false;
+      // React Strict Mode replays effects. Release these markers so the replay can
+      // attach to the shared in-flight request instead of leaving the tab loading forever.
+      sections.forEach((section) => requestedSections.delete(section));
+    };
   }, [application.id, loadedSections, workflowTab]);
+
+  const retrySections = (sections: WorkspaceSection[]) => {
+    sections.forEach((section) => requestedSectionsRef.current.delete(section));
+    setSectionErrors((current) => {
+      const next = { ...current };
+      sections.forEach((section) => delete next[section]);
+      return next;
+    });
+    setLoadedSections((current) => {
+      const next = new Set(current);
+      sections.forEach((section) => next.delete(section));
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (workflowTab !== "message" || templatesLoaded) return;
@@ -750,7 +782,15 @@ export function CandidateWorkflowContent({
               </Button>
             </CardHeader>
             <CardContent className="p-3 sm:p-4" aria-label="Candidate tasks">
-              {tasksLoading ? (
+              {sectionErrors.tasks ? (
+                <ErrorState
+                  title="Tasks could not be loaded"
+                  description={sectionErrors.tasks}
+                  actionLabel="Try again"
+                  onAction={() => retrySections(["tasks"])}
+                  className="min-h-32 py-6"
+                />
+              ) : tasksLoading ? (
                 <ContextualLoading label="Loading candidate tasks" className="min-h-32" />
               ) : tasks.length === 0 ? (
                 <EmptyState title="No follow-up tasks" description="Create the next action to keep this candidate moving." className="min-h-32 py-6" />

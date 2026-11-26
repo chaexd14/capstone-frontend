@@ -40,6 +40,8 @@ jobs:
         run: npm run check:production-env
       - name: Build production bundle
         run: npm run build
+      - name: Enforce public-route bundle budgets
+        run: npm run check:bundle-budget
       - name: Install browser for end-to-end tests
         run: npx playwright install --with-deps chromium webkit
       - name: Run critical browser tests
