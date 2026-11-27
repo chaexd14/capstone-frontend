@@ -27,6 +27,7 @@ export function RecruiterTopBar({ onOpenMobileMenu }: RecruiterTopBarProps) {
     templates: "Message Templates",
     platform: "Companies & Team",
     system: "System Health",
+    account: "Account settings",
   };
 
   const title = labels[searchParams.get("view") || "dashboard"] || "Recruiter Workspace";

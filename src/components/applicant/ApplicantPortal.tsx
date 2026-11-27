@@ -524,6 +524,15 @@ export function ApplicantPortal({
                 <DropdownMenuSeparator />
 
                 {currentUser ? (
+                  <DropdownMenuItem asChild>
+                    <Link href="/account">
+                      <UserCheck aria-hidden="true" />
+                      <span>Account settings</span>
+                    </Link>
+                  </DropdownMenuItem>
+                ) : null}
+
+                {currentUser ? (
                   <DropdownMenuItem
                     onSelect={() => {
                       if (onLogout) onLogout();

@@ -18,6 +18,7 @@ const CreateJobModal = dynamic(() => import("@/components/recruiter/CreateJobMod
 const CandidateAnalysisModal = dynamic(() => import("@/components/recruiter/CandidateAnalysisModal").then((module) => module.CandidateAnalysisModal));
 const PlatformManagement = dynamic(() => import("@/components/recruiter/PlatformManagement").then((module) => module.PlatformManagement));
 const SystemMonitoring = dynamic(() => import("@/components/recruiter/SystemMonitoring").then((module) => module.SystemMonitoring));
+const AdminAccountSettings = dynamic(() => import("@/components/account/AdminAccountSettings").then((module) => module.AdminAccountSettings));
 
 function AdminPageContent() {
   const router = useRouter();
@@ -52,6 +53,10 @@ function AdminPageContent() {
 
   const activeView = searchParams.get("view") || "dashboard";
   const isSuperAdmin = currentUser?.role === "superadmin";
+
+  if (activeView === "account") {
+    return <AdminAccountSettings />;
+  }
 
   if (isSuperAdmin) {
     return activeView === "platform" ? <PlatformManagement /> : <SystemMonitoring />;

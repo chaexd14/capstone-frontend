@@ -7,10 +7,6 @@ import {
   Bell,
   CheckCheck,
   Check,
-  Clock,
-  Sparkles,
-  UserPlus,
-  FileCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -220,7 +216,7 @@ export function NotificationBell({ role, userId }: NotificationBellProps) {
 
     if (!bucket.onNewNotification) {
       bucket.onNewNotification = (newUnread: NotificationItem) => {
-        toast.info(newUnread.title, {
+        toast(newUnread.title, {
           description: newUnread.message,
           action: {
             label: "View",
@@ -420,21 +416,14 @@ export function NotificationBell({ role, userId }: NotificationBellProps) {
             {/* Sheet Header matching CandidateWorkflowPanel */}
           <div className="shrink-0 bg-card">
             <SheetHeader className="px-5 pb-3 pt-5 text-left sm:px-6 sm:pt-6">
-              <div className="flex min-w-0 items-start gap-3.5 pr-12">
-                <div
-                  aria-hidden="true"
-                  className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-primary/15 bg-secondary text-secondary-foreground"
-                >
-                  <Bell className="size-4" />
-                </div>
-
-                <div className="min-w-0 flex-1">
+              <div className="min-w-0 pr-12">
+                <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2.5">
                     <SheetTitle className="text-xl font-bold text-foreground">
                       Notifications
                     </SheetTitle>
                     {unreadCount > 0 ? (
-                      <StatusBadge status="info" dot className="shrink-0 tabular-nums">
+                      <StatusBadge status="info" className="shrink-0 tabular-nums">
                         {unreadCount} new
                       </StatusBadge>
                     ) : null}
@@ -494,46 +483,23 @@ export function NotificationBell({ role, userId }: NotificationBellProps) {
                         ? "You will be notified here when candidates apply or application statuses change."
                         : "Updates on your submitted applications will appear here."
                     }
+                    icon={null}
                     className="min-h-48 py-8"
                   />
                 </CardContent>
               </Card>
             ) : (
               <Card className="divide-y divide-border overflow-hidden">
-                {filteredNotifications.map((item) => {
-                  const isNewApp = item.notification_type === "NEW_APPLICATION";
-                  const isStatus = item.notification_type === "STATUS_UPDATE";
-
-                  return (
+                {filteredNotifications.map((item) => (
                     <div
                       key={item.id}
                       className={cn(
-                        "flex items-start gap-3 px-4 py-3.5 transition-colors sm:px-5",
+                        "flex items-start gap-2 px-4 py-3.5 transition-colors sm:px-5",
                         item.is_read
                           ? "bg-card hover:bg-muted/40"
                           : "bg-secondary/35 hover:bg-secondary/55"
                       )}
                     >
-                      <div
-                        aria-hidden="true"
-                        className={cn(
-                          "mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-xl border",
-                          isNewApp
-                            ? "border-success/20 bg-success/10 text-success"
-                            : isStatus
-                            ? "border-primary/15 bg-secondary text-secondary-foreground"
-                            : "border-border bg-muted text-muted-foreground"
-                        )}
-                      >
-                        {isNewApp ? (
-                          <UserPlus className="size-4" />
-                        ) : isStatus ? (
-                          <Sparkles className="size-4" />
-                        ) : (
-                          <FileCheck className="size-4" />
-                        )}
-                      </div>
-
                       <Button
                         type="button"
                         variant="ghost"
@@ -563,9 +529,8 @@ export function NotificationBell({ role, userId }: NotificationBellProps) {
                           {item.message}
                         </span>
 
-                        <span className="inline-flex items-center gap-1.5 pt-0.5 text-sm tabular-nums text-muted-foreground">
-                          <Clock className="size-3.5" aria-hidden="true" />
-                          <span>{formatRelativeTime(item.created_at)}</span>
+                        <span className="pt-0.5 text-sm tabular-nums text-muted-foreground">
+                          {formatRelativeTime(item.created_at)}
                         </span>
                       </Button>
 
@@ -587,8 +552,7 @@ export function NotificationBell({ role, userId }: NotificationBellProps) {
                         </Tooltip>
                       ) : null}
                     </div>
-                  );
-                })}
+                  ))}
               </Card>
             )}
           </div>

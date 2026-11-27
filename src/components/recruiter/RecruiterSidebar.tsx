@@ -17,6 +17,7 @@ import {
   Mail,
   Sparkles,
   HeartPulse,
+  UserRoundCog,
 } from "lucide-react";
 import { useRecruiter } from "@/context/RecruiterContext";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -346,6 +347,16 @@ export function RecruiterSidebar({ onCloseMobile }: RecruiterSidebarProps) {
                 </Badge>
               </div>
             </DropdownMenuLabel>
+
+            <DropdownMenuSeparator />
+
+            <DropdownMenuItem
+              onSelect={() => handleNavClick("/admin?view=account")}
+              className="cursor-pointer rounded-xl font-medium"
+            >
+              <UserRoundCog className="size-4" aria-hidden="true" />
+              <span>Account settings</span>
+            </DropdownMenuItem>
 
             <DropdownMenuSeparator />
 

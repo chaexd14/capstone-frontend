@@ -15,8 +15,9 @@ export async function updateSession(request: NextRequest, policy: string) {
       !["/recruiter/login", "/recruiter/signup"].includes(pathname)) ||
     pathname.startsWith("/admin");
   const isApplicantProtectedRoute =
-    pathname.startsWith("/applicant") &&
-    !["/applicant/login", "/applicant/signup"].includes(pathname);
+    pathname === "/account" ||
+    (pathname.startsWith("/applicant") &&
+      !["/applicant/login", "/applicant/signup"].includes(pathname));
   const requiresUserLookup =
     isRecruiterRoute ||
     isApplicantProtectedRoute ||

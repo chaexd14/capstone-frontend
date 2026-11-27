@@ -20,6 +20,7 @@ import {
 import { ApiError, clearResumeBlobCache, fetchApi, type PaginatedResponse } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
 import { removeChannelSafely, subscribeToChannelSafely } from "@/lib/supabase/realtime";
+import type { AccountIdentity } from "@/types/account";
 
 export interface RecruiterUserInfo {
   id: string;
@@ -125,6 +126,7 @@ interface RecruiterContextValue {
   ) => Promise<Job | null>;
   adjustTaskCounts: (openDelta: number, overdueDelta?: number) => void;
   handleLogout: () => Promise<void>;
+  updateCurrentUserIdentity: (identity: AccountIdentity) => void;
   isCreateJobOpen: boolean;
   setIsCreateJobOpen: (open: boolean) => void;
 }
@@ -412,6 +414,19 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
     router.replace("/recruiter/login");
     router.refresh();
   }, [clearRecruiterStorage, router, supabase]);
+
+  const updateCurrentUserIdentity = useCallback((identity: AccountIdentity) => {
+    setCurrentUser((current) =>
+      current
+        ? {
+            ...current,
+            firstName: identity.first_name,
+            lastName: identity.last_name,
+            name: identity.name || [identity.first_name, identity.last_name].filter(Boolean).join(" "),
+          }
+        : current
+    );
+  }, []);
 
   const onJobCreated = useCallback((newJob: Job) => {
     mutationEpochRef.current += 1;
@@ -854,6 +869,7 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
       updateJobStatusOptimistic,
       adjustTaskCounts,
       handleLogout,
+      updateCurrentUserIdentity,
       isCreateJobOpen,
       setIsCreateJobOpen,
     }),
@@ -882,6 +898,7 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
       updateJobStatusOptimistic,
       adjustTaskCounts,
       handleLogout,
+      updateCurrentUserIdentity,
       isCreateJobOpen,
     ]
   );
