@@ -19,6 +19,7 @@ import {
 } from "@/types/application";
 import { ApiError, clearResumeBlobCache, fetchApi, type PaginatedResponse } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
+import { removeChannelSafely, subscribeToChannelSafely } from "@/lib/supabase/realtime";
 
 export interface RecruiterUserInfo {
   id: string;
@@ -490,7 +491,7 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!currentUser || isPlatformAdmin) return;
-    const channel = supabase
+    const pendingChannel = supabase
       .channel(`recruiter-applications:${currentUser.id}`)
       .on(
         "postgres_changes",
@@ -520,8 +521,8 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
             .then(onApplicationUpdated)
             .catch(() => {});
         }
-      )
-      .subscribe((status) => {
+      );
+    const channel = subscribeToChannelSafely(supabase, pendingChannel, (status) => {
         applicationRealtimeConnectedRef.current = status === "SUBSCRIBED";
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
           void reconcileApplicationCollection();
@@ -538,11 +539,15 @@ export function RecruiterProvider({ children }: { children: React.ReactNode }) {
       }
     };
     document.addEventListener("visibilitychange", reconcileOnFocus);
+    const reconcileInterval = window.setInterval(() => {
+      if (!applicationRealtimeConnectedRef.current) reconcileOnFocus();
+    }, 30_000);
 
     return () => {
       applicationRealtimeConnectedRef.current = false;
       document.removeEventListener("visibilitychange", reconcileOnFocus);
-      void supabase.removeChannel(channel);
+      window.clearInterval(reconcileInterval);
+      removeChannelSafely(supabase, channel);
     };
   }, [
     currentUser,

@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/tooltip";
 import { fetchApi } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
+import { removeChannelSafely, subscribeToChannelSafely } from "@/lib/supabase/realtime";
 import { cn } from "@/lib/utils";
 import { NotificationItem, NotificationsResponse } from "@/types/notification";
 
@@ -291,7 +292,7 @@ export function NotificationBell({ role, userId }: NotificationBellProps) {
         ? `user_id=eq.${userId}`
         : `recipient_type=eq.RECRUITER`;
       bucket.realtimeClient = realtime;
-      bucket.realtimeChannel = realtime
+      const pendingChannel = realtime
         .channel(`notifications:${storeKey}`)
         .on(
           "postgres_changes",
@@ -311,20 +312,21 @@ export function NotificationBell({ role, userId }: NotificationBellProps) {
             notifyBucketListeners(bucket);
             bucket.onNewNotification?.(item);
           }
-        )
-        .subscribe((status) => {
+        );
+      bucket.realtimeChannel = subscribeToChannelSafely(realtime, pendingChannel, (status) => {
           bucket.realtimeConnected = status === "SUBSCRIBED";
           if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
             void fetchNotificationBucket(storeKey, isRecruiter, isApplicant, userId);
           }
         });
+      if (!bucket.realtimeChannel) bucket.realtimeClient = null;
     }
 
     return () => {
       bucket.realtimeRefCount = Math.max(0, bucket.realtimeRefCount - 1);
       if (bucket.realtimeRefCount === 0 && bucket.realtimeClient && bucket.realtimeChannel) {
         bucket.realtimeConnected = false;
-        void bucket.realtimeClient.removeChannel(bucket.realtimeChannel);
+        removeChannelSafely(bucket.realtimeClient, bucket.realtimeChannel);
         bucket.realtimeClient = null;
         bucket.realtimeChannel = null;
       }

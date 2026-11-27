@@ -7,6 +7,7 @@ import { Job } from "@/types/job";
 import { Application } from "@/types/application";
 import { fetchApi, type PaginatedResponse } from "@/lib/api";
 import { createClient } from "@/lib/supabase/client";
+import { removeChannelSafely, subscribeToChannelSafely } from "@/lib/supabase/realtime";
 import type { User } from "@supabase/supabase-js";
 
 interface CareersClientProps {
@@ -106,7 +107,7 @@ export function CareersClient({
 
   useEffect(() => {
     if (!currentUser) return;
-    const channel = supabase
+    const pendingChannel = supabase
       .channel(`applicant-applications:${currentUser.id}`)
       .on(
         "postgres_changes",
@@ -122,8 +123,8 @@ export function CareersClient({
             applyApplicationPatch(patch as Partial<Application> & { id: number });
           }
         }
-      )
-      .subscribe((status) => {
+      );
+    const channel = subscribeToChannelSafely(supabase, pendingChannel, (status) => {
         applicationRealtimeConnectedRef.current = status === "SUBSCRIBED";
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
           void refreshApplications(currentUser.id);
@@ -140,11 +141,15 @@ export function CareersClient({
       }
     };
     document.addEventListener("visibilitychange", reconcileOnFocus);
+    const reconcileInterval = window.setInterval(() => {
+      if (!applicationRealtimeConnectedRef.current) reconcileOnFocus();
+    }, 30_000);
 
     return () => {
       applicationRealtimeConnectedRef.current = false;
       document.removeEventListener("visibilitychange", reconcileOnFocus);
-      void supabase.removeChannel(channel);
+      window.clearInterval(reconcileInterval);
+      removeChannelSafely(supabase, channel);
     };
   }, [applyApplicationPatch, currentUser, refreshApplications, supabase]);
 

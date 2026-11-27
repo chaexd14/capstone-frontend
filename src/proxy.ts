@@ -4,13 +4,20 @@ import { type NextRequest } from "next/server";
 export async function proxy(request: NextRequest) {
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
   const development = process.env.NODE_ENV === "development";
-  const connectionOrigins = [
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api",
-  ].flatMap((value) => {
+  const configuredConnections = [
+    { value: process.env.NEXT_PUBLIC_SUPABASE_URL, realtime: true },
+    { value: process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000/api", realtime: false },
+  ];
+  const connectionOrigins = configuredConnections.flatMap(({ value, realtime }) => {
     try {
       const url = new URL(value ?? "");
-      return ["http:", "https:"].includes(url.protocol) ? [url.origin] : [];
+      if (!["http:", "https:"].includes(url.protocol)) return [];
+      const origins = [url.origin];
+      if (realtime) {
+        url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+        origins.push(url.origin);
+      }
+      return origins;
     } catch {
       return [];
     }
@@ -21,7 +28,7 @@ export async function proxy(request: NextRequest) {
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self'",
-    `connect-src 'self' ${connectionOrigins.join(" ")}${development ? " ws: wss:" : ""}`,
+    `connect-src 'self' ${[...new Set(connectionOrigins)].join(" ")}${development ? " ws: wss:" : ""}`,
     "frame-ancestors 'none'",
     "object-src 'none'",
     "base-uri 'none'",

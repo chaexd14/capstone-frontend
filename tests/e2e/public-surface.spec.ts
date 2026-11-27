@@ -20,6 +20,61 @@ test("responses enforce a nonce-based content security policy", async ({ request
   expect(policy).toContain("script-src 'self' 'nonce-");
   expect(policy).toContain("frame-ancestors 'none'");
   expect(policy).toContain("object-src 'none'");
+  expect(policy).toContain("http://127.0.0.1:54321");
+  expect(policy).toContain("ws://127.0.0.1:54321");
+});
+
+test("authenticated careers survives an unavailable WebSocket transport", async ({
+  context,
+  page,
+}) => {
+  const user = {
+    id: "00000000-0000-4000-8000-000000000001",
+    aud: "authenticated",
+    role: "authenticated",
+    email: "realtime-fallback@example.test",
+    app_metadata: { role: "applicant" },
+    user_metadata: {},
+    created_at: new Date().toISOString(),
+  };
+  const fakeSession = {
+    access_token: "valid-looking.access.token",
+    refresh_token: "test-refresh-token",
+    expires_at: Math.floor(Date.now() / 1000) + 3600,
+    expires_in: 3600,
+    token_type: "bearer",
+    user,
+  };
+  const encodedSession = Buffer.from(JSON.stringify(fakeSession)).toString("base64url");
+  await context.addCookies([{
+    name: "sb-127-auth-token",
+    value: `base64-${encodedSession}`,
+    url: "http://localhost:3100",
+  }]);
+  await page.addInitScript(() => {
+    class BlockedWebSocket {
+      constructor() {
+        throw new DOMException("The operation is insecure.", "SecurityError");
+      }
+    }
+    Object.defineProperty(window, "WebSocket", { configurable: true, value: BlockedWebSocket });
+  });
+  await page.route("http://127.0.0.1:54321/auth/v1/user", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(user) })
+  );
+  await page.route("http://127.0.0.1:8000/api/**", (route) => {
+    const body = route.request().url().includes("/notifications/")
+      ? { notifications: [], unread_count: 0 }
+      : { count: 0, page: 1, page_size: 20, total_pages: 0, next: null, previous: null, results: [] };
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  });
+
+  const pageErrors: Error[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error));
+  await page.goto("/careers");
+  await expect(page.getByRole("link", { name: "TalentMatch" })).toBeVisible();
+  await expect(page.getByText("No positions found")).toBeVisible();
+  expect(pageErrors).toEqual([]);
 });
 
 test("public routes tolerate stale auth cookies and expose session recovery", async ({
