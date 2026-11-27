@@ -22,6 +22,31 @@ test("UI lab remains within narrow viewport", async ({ page }) => {
   expect(overflow).toBe(false);
 });
 
+test("mobile collection filters stay compact and apply as one staged change", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/ui-lab/filters");
+
+  await expect(page.getByRole("searchbox", { name: "Search candidate collection" })).toBeVisible();
+  await expect(page.getByRole("tablist", { name: "Candidate status" })).toBeVisible();
+  await page.getByRole("button", { name: "Filters" }).click();
+
+  const sheet = page.getByRole("dialog");
+  await expect(sheet.getByRole("heading", { name: "Filters" })).toBeVisible();
+  await sheet.getByLabel("Application status").click();
+  await page.getByRole("option", { name: "Shortlisted" }).click();
+  await expect(page.getByText("Applied: ALL, any, newest")).toBeVisible();
+
+  await sheet.getByRole("button", { name: "Apply filters" }).click();
+  await expect(sheet).toBeHidden();
+  await expect(page.getByText("Applied: SHORTLISTED, any, newest")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Filters, 1 active" })).toBeVisible();
+
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth > document.documentElement.clientWidth
+  );
+  expect(overflow).toBe(false);
+});
+
 test("status badges preserve readable single-line labels", async ({ page }) => {
   await page.goto("/ui-lab");
   const status = page.getByText("Needs review", { exact: true });

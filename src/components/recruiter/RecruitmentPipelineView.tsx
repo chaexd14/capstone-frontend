@@ -186,6 +186,7 @@ export function RecruitmentPipelineView() {
   const clearFilters = () => {
     setQuery("");
     setJobFilter("all");
+    setSortMode("score");
     setSelectedIds([]);
     setPage(1);
   };
@@ -315,41 +316,36 @@ export function RecruitmentPipelineView() {
             containerClassName="w-full sm:w-72 lg:w-80"
           />
         }
-        filters={
-          <>
-            <Select
-              value={jobFilter}
-              onValueChange={(value) => {
-                setJobFilter(value);
-                setPage(1);
-                setSelectedIds([]);
-                setSelectedIds([]);
-              }}
-            >
-              <SelectTrigger className="w-full sm:w-56" aria-label="Filter by job">
-                <SelectValue placeholder="All job requisitions" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All job requisitions</SelectItem>
-                {jobs.map((job) => (
-                  <SelectItem key={job.id} value={String(job.id)}>
-                    {job.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={sortMode} onValueChange={(v) => { setSortMode(v as "score" | "newest"); setPage(1); setSelectedIds([]); }}>
-              <SelectTrigger className="w-full sm:w-44" aria-label="Sort pipeline cards">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="score">Highest AI match</SelectItem>
-                <SelectItem value="newest">Newest applied</SelectItem>
-              </SelectContent>
-            </Select>
-          </>
-        }
+        filterFields={[
+          {
+            id: "job",
+            label: "Job requisition",
+            value: jobFilter,
+            defaultValue: "all",
+            triggerClassName: "w-56",
+            options: [
+              { value: "all", label: "All job requisitions" },
+              ...jobs.map((job) => ({ value: String(job.id), label: job.title })),
+            ],
+          },
+          {
+            id: "sort",
+            label: "Sort pipeline cards",
+            value: sortMode,
+            defaultValue: "score",
+            triggerClassName: "w-44",
+            options: [
+              { value: "score", label: "Highest AI match" },
+              { value: "newest", label: "Newest applied" },
+            ],
+          },
+        ]}
+        onFilterValuesChange={(values) => {
+          setJobFilter(values.job);
+          setSortMode(values.sort as "score" | "newest");
+          setPage(1);
+          setSelectedIds([]);
+        }}
         hasActiveFilters={hasFilters}
         onClearFilters={clearFilters}
         actions={

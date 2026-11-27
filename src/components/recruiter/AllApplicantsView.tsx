@@ -206,6 +206,7 @@ export function AllApplicantsView({ onSelectApplication }: AllApplicantsViewProp
     setDepartmentFilter("ALL");
     setJobFilter("ALL");
     setBandFilter("ALL");
+    setSortBy("newest");
     setSelectedIds([]);
     setPage(1);
   };
@@ -373,6 +374,7 @@ export function AllApplicantsView({ onSelectApplication }: AllApplicantsViewProp
 
       <CollectionToolbar
         label="All applications controls"
+        filterBreakpoint="wide"
         search={
           <SearchInput
             aria-label="Search applications"
@@ -383,76 +385,75 @@ export function AllApplicantsView({ onSelectApplication }: AllApplicantsViewProp
             containerClassName="w-full sm:w-64 lg:w-72"
           />
         }
-        filters={
-          <>
-            <Select value={jobFilter} onValueChange={(value) => { setJobFilter(value); setPage(1); setSelectedIds([]); }}>
-              <SelectTrigger aria-label="Filter by requisition" className="w-full sm:w-44">
-                <SelectValue placeholder="All requisitions" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All requisitions</SelectItem>
-                {jobs.map((job) => (
-                  <SelectItem key={job.id} value={String(job.id)}>
-                    {job.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={statusFilter} onValueChange={(value) => { setStatusFilter(value); setPage(1); setSelectedIds([]); }}>
-              <SelectTrigger aria-label="Filter by status" className="w-full sm:w-40">
-                <SelectValue placeholder="All statuses" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All statuses</SelectItem>
-                {STATUS_OPTIONS.map((status) => (
-                  <SelectItem key={status} value={status}>
-                    {STATUS_META[status].label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={bandFilter} onValueChange={(value) => { setBandFilter(value); setPage(1); setSelectedIds([]); }}>
-              <SelectTrigger aria-label="Filter by match strength" className="w-full sm:w-40">
-                <SelectValue placeholder="All strengths" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All strengths</SelectItem>
-                <SelectItem value="Strong">Strong (85%+)</SelectItem>
-                <SelectItem value="Good">Good (70–84%)</SelectItem>
-                <SelectItem value="Partial">Partial (50–69%)</SelectItem>
-                <SelectItem value="Weak">Weak (&lt;50%)</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select value={departmentFilter} onValueChange={(value) => { setDepartmentFilter(value); setPage(1); setSelectedIds([]); }}>
-              <SelectTrigger aria-label="Filter by department" className="w-full sm:w-44">
-                <SelectValue placeholder="All departments" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All departments</SelectItem>
-                {departmentOptions.map((department) => (
-                  <SelectItem key={department} value={department}>
-                    {department}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={sortBy} onValueChange={(v) => { setSortBy(v as SortOption); setPage(1); setSelectedIds([]); }}>
-              <SelectTrigger aria-label="Sort applications" className="w-full sm:w-44">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="newest">Newest applied</SelectItem>
-                <SelectItem value="score_desc">Highest AI match</SelectItem>
-                <SelectItem value="score_asc">Lowest AI match</SelectItem>
-                <SelectItem value="activity">Recent activity</SelectItem>
-              </SelectContent>
-            </Select>
-          </>
-        }
+        filterFields={[
+          {
+            id: "job",
+            label: "Requisition",
+            value: jobFilter,
+            defaultValue: "ALL",
+            triggerClassName: "w-44",
+            options: [
+              { value: "ALL", label: "All requisitions" },
+              ...jobs.map((job) => ({ value: String(job.id), label: job.title })),
+            ],
+          },
+          {
+            id: "status",
+            label: "Application status",
+            value: statusFilter,
+            defaultValue: "ALL",
+            options: [
+              { value: "ALL", label: "All statuses" },
+              ...STATUS_OPTIONS.map((status) => ({ value: status, label: STATUS_META[status].label })),
+            ],
+          },
+          {
+            id: "band",
+            label: "Match strength",
+            value: bandFilter,
+            defaultValue: "ALL",
+            options: [
+              { value: "ALL", label: "All strengths" },
+              { value: "Strong", label: "Strong (85%+)" },
+              { value: "Good", label: "Good (70–84%)" },
+              { value: "Partial", label: "Partial (50–69%)" },
+              { value: "Weak", label: "Weak (below 50%)" },
+            ],
+          },
+          {
+            id: "department",
+            label: "Department",
+            value: departmentFilter,
+            defaultValue: "ALL",
+            triggerClassName: "w-44",
+            options: [
+              { value: "ALL", label: "All departments" },
+              ...departmentOptions.map((department) => ({ value: department, label: department })),
+            ],
+          },
+          {
+            id: "sort",
+            label: "Sort applications",
+            value: sortBy,
+            defaultValue: "newest",
+            triggerClassName: "w-44",
+            options: [
+              { value: "newest", label: "Newest applied" },
+              { value: "score_desc", label: "Highest AI match" },
+              { value: "score_asc", label: "Lowest AI match" },
+              { value: "activity", label: "Recent activity" },
+            ],
+          },
+        ]}
+        onFilterValuesChange={(values) => {
+          setJobFilter(values.job);
+          setStatusFilter(values.status);
+          setBandFilter(values.band);
+          setDepartmentFilter(values.department);
+          setSortBy(values.sort as SortOption);
+          setPage(1);
+          setSelectedIds([]);
+        }}
         hasActiveFilters={hasFilters}
         onClearFilters={clearFilters}
         viewMode={displayMode}

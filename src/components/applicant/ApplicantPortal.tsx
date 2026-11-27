@@ -14,7 +14,6 @@ import {
   Loader2,
   LogIn,
   LogOut,
-  RotateCcw,
   Search,
   UserCheck,
   WifiOff,
@@ -39,15 +38,9 @@ import { EmptyState } from "@/components/ui/feedback";
 import { IconButton } from "@/components/ui/icon-button";
 import { NavTabs, type NavTab } from "@/components/ui/nav-tabs";
 import { SearchInput } from "@/components/ui/search-input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { toast } from "@/components/ui/sonner";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { CollectionToolbar } from "@/components/ui/toolbar";
 
 const ApplyModal = dynamic(() => import("./ApplyModal").then((module) => module.ApplyModal));
 const JobDetailSheet = dynamic(() =>
@@ -588,88 +581,61 @@ export function ApplicantPortal({
         {/* Canonical Floating Search & Filter Card */}
         {navTab !== "My Applications" && (
           <Card className="p-3 sm:p-4 shadow-md">
-            <div
-              role="search"
-              aria-label="Filter open positions"
-              className="flex flex-col lg:flex-row items-stretch lg:items-center gap-3"
-            >
-              <SearchInput
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onClear={() => setSearchQuery("")}
-                placeholder="Search by job title, skill, or city..."
-                aria-label="Search by job title, skill, or city"
-                containerClassName="flex-1 min-w-0"
-              />
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 lg:flex lg:items-center gap-2.5">
-                <Select
-                  value={selectedJobType}
-                  onValueChange={(val) => setSelectedJobType(val || "All")}
-                >
-                  <SelectTrigger aria-label="Filter by job type" className="w-full lg:w-36">
-                    <SelectValue placeholder="Job Type">
-                      {selectedJobType === "All" ? "All Job Types" : selectedJobType}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {JOB_TYPES.map((type) => (
-                      <SelectItem key={type} value={type}>
-                        {type === "All" ? "All Job Types" : type}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Select
-                  value={selectedCategory}
-                  onValueChange={(val) => setSelectedCategory(val || "All")}
-                >
-                  <SelectTrigger aria-label="Filter by category" className="w-full lg:w-48">
-                    <SelectValue placeholder="Category">
-                      {selectedCategory === "All" ? "All Categories" : selectedCategory}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CATEGORIES.map((cat) => (
-                      <SelectItem key={cat} value={cat}>
-                        {cat === "All" ? "All Categories" : cat}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Select
-                  value={selectedSalary}
-                  onValueChange={(val) => setSelectedSalary(val || "All")}
-                >
-                  <SelectTrigger aria-label="Filter by salary range" className="w-full lg:w-44">
-                    <SelectValue placeholder="Salary range">
-                      {selectedSalary === "All" ? "All Salary Ranges" : selectedSalary}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SALARY_RANGES.map((sal) => (
-                      <SelectItem key={sal} value={sal}>
-                        {sal === "All" ? "All Salary Ranges" : sal}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {hasActiveFilters && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={resetFilters}
-                  className="shrink-0"
-                >
-                  <RotateCcw aria-hidden="true" />
-                  <span>Reset</span>
-                </Button>
-              )}
-            </div>
+            <CollectionToolbar
+              label="Open position filters"
+              search={
+                <SearchInput
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onClear={() => setSearchQuery("")}
+                  placeholder="Search by job title, skill, or city..."
+                  aria-label="Search by job title, skill, or city"
+                  containerClassName="w-full md:min-w-64 md:flex-1"
+                />
+              }
+              filterFields={[
+                {
+                  id: "jobType",
+                  label: "Job type",
+                  value: selectedJobType,
+                  defaultValue: "All",
+                  options: JOB_TYPES.map((type) => ({
+                    value: type,
+                    label: type === "All" ? "All job types" : type,
+                  })),
+                },
+                {
+                  id: "category",
+                  label: "Category",
+                  value: selectedCategory,
+                  defaultValue: "All",
+                  triggerClassName: "w-48",
+                  options: CATEGORIES.map((category) => ({
+                    value: category,
+                    label: category === "All" ? "All categories" : category,
+                  })),
+                },
+                {
+                  id: "salary",
+                  label: "Salary range",
+                  value: selectedSalary,
+                  defaultValue: "All",
+                  triggerClassName: "w-44",
+                  options: SALARY_RANGES.map((salary) => ({
+                    value: salary,
+                    label: salary === "All" ? "All salary ranges" : salary,
+                  })),
+                },
+              ]}
+              onFilterValuesChange={(values) => {
+                setSelectedJobType(values.jobType);
+                setSelectedCategory(values.category);
+                setSelectedSalary(values.salary);
+              }}
+              hasActiveFilters={hasActiveFilters}
+              onClearFilters={resetFilters}
+              clearLabel="Reset"
+            />
           </Card>
         )}
 

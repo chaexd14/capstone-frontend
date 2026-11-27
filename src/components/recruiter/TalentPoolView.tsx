@@ -321,7 +321,6 @@ export function TalentPoolView({ onSelectApplication }: TalentPoolViewProps) {
     setTagFilter("ALL");
     setPage(1);
     setSelectedIds([]);
-    setSelectedIds([]);
   };
 
   const renderTalentCards = () => (
@@ -479,57 +478,67 @@ export function TalentPoolView({ onSelectApplication }: TalentPoolViewProps) {
             containerClassName="w-full sm:w-72 lg:w-80"
           />
         }
-        filters={
-          <>
-            <Select value={minScore} onValueChange={(value) => { setMinScore(value); setPage(1); setSelectedIds([]); }}>
-              <SelectTrigger aria-label="Minimum match score" className="w-full sm:w-44">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="any">Any match score</SelectItem>
-                <SelectItem value="85">85%+ (Strong)</SelectItem>
-                <SelectItem value="70">70%+ (Good+)</SelectItem>
-                <SelectItem value="50">50%+ (Partial+)</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select value={minExp} onValueChange={(value) => { setMinExp(value); setPage(1); setSelectedIds([]); }}>
-              <SelectTrigger aria-label="Minimum experience" className="w-full sm:w-40">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="any">Any experience</SelectItem>
-                <SelectItem value="1">1+ years</SelectItem>
-                <SelectItem value="3">3+ years</SelectItem>
-                <SelectItem value="5">5+ years</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select value={tagFilter} onValueChange={(value) => { setTagFilter(value); setPage(1); setSelectedIds([]); }}>
-              <SelectTrigger aria-label="Filter by tag" className="w-full sm:w-44">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All tags</SelectItem>
-                <SelectItem value="Silver Medalist">Silver Medalist</SelectItem>
-                <SelectItem value="Strong Technical">Strong Technical</SelectItem>
-                <SelectItem value="Urgent">Urgent</SelectItem>
-                <SelectItem value="Culture Add">Culture Add</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select value={sortBy} onValueChange={(value) => { setSortBy(value as SortOption); setPage(1); setSelectedIds([]); }}>
-              <SelectTrigger aria-label="Sort talent pool" className="w-full sm:w-44">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="score_desc">Highest AI match</SelectItem>
-                <SelectItem value="exp_desc">Most experience</SelectItem>
-                <SelectItem value="newest">Newest applied</SelectItem>
-              </SelectContent>
-            </Select>
-          </>
-        }
+        filterFields={[
+          {
+            id: "score",
+            label: "Minimum match score",
+            value: minScore,
+            defaultValue: "any",
+            triggerClassName: "w-44",
+            options: [
+              { value: "any", label: "Any match score" },
+              { value: "85", label: "85%+ (Strong)" },
+              { value: "70", label: "70%+ (Good+)" },
+              { value: "50", label: "50%+ (Partial+)" },
+            ],
+          },
+          {
+            id: "experience",
+            label: "Minimum experience",
+            value: minExp,
+            defaultValue: "any",
+            options: [
+              { value: "any", label: "Any experience" },
+              { value: "1", label: "1+ years" },
+              { value: "3", label: "3+ years" },
+              { value: "5", label: "5+ years" },
+            ],
+          },
+          {
+            id: "tag",
+            label: "Candidate tag",
+            value: tagFilter,
+            defaultValue: "ALL",
+            triggerClassName: "w-44",
+            options: [
+              { value: "ALL", label: "All tags" },
+              { value: "Silver Medalist", label: "Silver Medalist" },
+              { value: "Strong Technical", label: "Strong Technical" },
+              { value: "Urgent", label: "Urgent" },
+              { value: "Culture Add", label: "Culture Add" },
+            ],
+          },
+          {
+            id: "sort",
+            label: "Sort talent pool",
+            value: sortBy,
+            defaultValue: "score_desc",
+            triggerClassName: "w-44",
+            options: [
+              { value: "score_desc", label: "Highest AI match" },
+              { value: "exp_desc", label: "Most experience" },
+              { value: "newest", label: "Newest applied" },
+            ],
+          },
+        ]}
+        onFilterValuesChange={(values) => {
+          setMinScore(values.score);
+          setMinExp(values.experience);
+          setTagFilter(values.tag);
+          setSortBy(values.sort as SortOption);
+          setPage(1);
+          setSelectedIds([]);
+        }}
         hasActiveFilters={hasFilters}
         onClearFilters={clearFilters}
         viewMode={displayMode}

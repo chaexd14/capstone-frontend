@@ -57,13 +57,6 @@ import {
   PageHeaderTitle,
 } from "@/components/ui/page-header";
 import { SearchInput } from "@/components/ui/search-input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { toast } from "@/components/ui/sonner";
 import { StatusBadge } from "@/components/ui/status-badge";
 import {
@@ -752,21 +745,23 @@ export function JobsView() {
                 containerClassName="w-full sm:w-64 lg:w-72"
               />
             }
-            filters={
-              <Select value={departmentFilter} onValueChange={(value) => { setDepartmentFilter(value); setPage(1); }}>
-                <SelectTrigger aria-label="Filter by department" className="w-full sm:w-44">
-                  <SelectValue placeholder="All departments" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">All departments</SelectItem>
-                  {departmentOptions.map((department) => (
-                    <SelectItem key={department} value={department}>
-                      {department}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            }
+            filterFields={[
+              {
+                id: "department",
+                label: "Department",
+                value: departmentFilter,
+                defaultValue: "ALL",
+                triggerClassName: "w-44",
+                options: [
+                  { value: "ALL", label: "All departments" },
+                  ...departmentOptions.map((department) => ({ value: department, label: department })),
+                ],
+              },
+            ]}
+            onFilterValuesChange={(values) => {
+              setDepartmentFilter(values.department);
+              setPage(1);
+            }}
             hasActiveFilters={hasActiveFilters}
             onClearFilters={clearFilters}
             viewMode={displayMode}

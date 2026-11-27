@@ -786,40 +786,35 @@ export function JobProfileView({
                 containerClassName="w-full sm:w-56 lg:w-64"
               />
             }
-            filters={
-              <>
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger aria-label="Filter by status" className="w-full sm:w-40">
-                    <SelectValue placeholder="All statuses" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">All statuses</SelectItem>
-                    {STATUS_OPTIONS.map((status) => (
-                      <SelectItem key={status} value={status}>
-                        {STATUS_META[status].label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
-                <Select value={bandFilter} onValueChange={setBandFilter}>
-                  <SelectTrigger
-                    id="match-strength-filter"
-                    aria-label="Filter by match strength"
-                    className="w-full sm:w-40"
-                  >
-                    <SelectValue placeholder="All strengths" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">All strengths</SelectItem>
-                    <SelectItem value="Strong">Strong (85%+)</SelectItem>
-                    <SelectItem value="Good">Good (70–84%)</SelectItem>
-                    <SelectItem value="Partial">Partial (50–69%)</SelectItem>
-                    <SelectItem value="Weak">Weak (below 50%)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </>
-            }
+            filterFields={[
+              {
+                id: "status",
+                label: "Application status",
+                value: statusFilter,
+                defaultValue: "ALL",
+                options: [
+                  { value: "ALL", label: "All statuses" },
+                  ...STATUS_OPTIONS.map((status) => ({ value: status, label: STATUS_META[status].label })),
+                ],
+              },
+              {
+                id: "band",
+                label: "Match strength",
+                value: bandFilter,
+                defaultValue: "ALL",
+                options: [
+                  { value: "ALL", label: "All strengths" },
+                  { value: "Strong", label: "Strong (85%+)" },
+                  { value: "Good", label: "Good (70–84%)" },
+                  { value: "Partial", label: "Partial (50–69%)" },
+                  { value: "Weak", label: "Weak (below 50%)" },
+                ],
+              },
+            ]}
+            onFilterValuesChange={(values) => {
+              setStatusFilter(values.status);
+              setBandFilter(values.band);
+            }}
             hasActiveFilters={hasActiveFilters}
             onClearFilters={clearFilters}
             actions={

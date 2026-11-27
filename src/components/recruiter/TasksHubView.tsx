@@ -19,13 +19,6 @@ import {
   PageHeaderTitle,
 } from "@/components/ui/page-header";
 import { SearchInput } from "@/components/ui/search-input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { toast } from "@/components/ui/sonner";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { CollectionToolbar } from "@/components/ui/toolbar";
@@ -245,45 +238,47 @@ export function TasksHubView({ onSelectApplication }: TasksHubViewProps) {
             containerClassName="w-full sm:w-64"
           />
         }
-        filters={
-          <>
-            <Select value={assigneeFilter} onValueChange={(value) => { setAssigneeFilter(value); setPage(1); }}>
-              <SelectTrigger aria-label="Filter by assignee" className="w-full sm:w-36">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All owners</SelectItem>
-                <SelectItem value="me">Assigned to me</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select value={priorityFilter} onValueChange={(value) => { setPriorityFilter(value); setPage(1); }}>
-              <SelectTrigger aria-label="Filter by priority" className="w-full sm:w-36">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All priorities</SelectItem>
-                <SelectItem value="HIGH">High priority</SelectItem>
-                <SelectItem value="MEDIUM">Medium</SelectItem>
-                <SelectItem value="LOW">Low</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select value={jobFilter} onValueChange={(value) => { setJobFilter(value); setPage(1); }}>
-              <SelectTrigger aria-label="Filter by job" className="w-full sm:w-48">
-                <SelectValue placeholder="All requisitions" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All requisitions</SelectItem>
-                {jobs.map((job) => (
-                  <SelectItem key={job.id} value={String(job.id)}>
-                    {job.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </>
-        }
+        filterFields={[
+          {
+            id: "assignee",
+            label: "Task owner",
+            value: assigneeFilter,
+            defaultValue: "all",
+            options: [
+              { value: "all", label: "All owners" },
+              { value: "me", label: "Assigned to me" },
+            ],
+          },
+          {
+            id: "priority",
+            label: "Priority",
+            value: priorityFilter,
+            defaultValue: "ALL",
+            options: [
+              { value: "ALL", label: "All priorities" },
+              { value: "HIGH", label: "High priority" },
+              { value: "MEDIUM", label: "Medium" },
+              { value: "LOW", label: "Low" },
+            ],
+          },
+          {
+            id: "job",
+            label: "Job requisition",
+            value: jobFilter,
+            defaultValue: "all",
+            triggerClassName: "w-48",
+            options: [
+              { value: "all", label: "All requisitions" },
+              ...jobs.map((job) => ({ value: String(job.id), label: job.title })),
+            ],
+          },
+        ]}
+        onFilterValuesChange={(values) => {
+          setAssigneeFilter(values.assignee);
+          setPriorityFilter(values.priority);
+          setJobFilter(values.job);
+          setPage(1);
+        }}
         hasActiveFilters={hasFilters}
         onClearFilters={clearFilters}
       />

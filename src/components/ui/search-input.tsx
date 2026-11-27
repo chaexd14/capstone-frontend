@@ -15,7 +15,18 @@ const SearchInput = React.forwardRef<HTMLInputElement, SearchInputProps>(
     return (
       <div className={cn("relative", containerClassName)}>
         <Search aria-hidden="true" className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input ref={ref} type="search" value={value} defaultValue={defaultValue} className={cn("pl-10", onClear && "pr-10", className)} {...props} />
+        <Input
+          ref={ref}
+          type="search"
+          value={value}
+          defaultValue={defaultValue}
+          className={cn(
+            "pl-10 [&::-webkit-search-cancel-button]:hidden [&::-webkit-search-decoration]:hidden",
+            onClear && "pr-10",
+            className
+          )}
+          {...props}
+        />
         {onClear && hasValue ? (
           <IconButton type="button" label="Clear search" variant="ghost" size="icon-sm" onClick={onClear} className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground">
             <X aria-hidden="true" />
