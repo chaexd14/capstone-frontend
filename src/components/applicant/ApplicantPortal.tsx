@@ -10,7 +10,6 @@ import type { User } from "@supabase/supabase-js";
 import {
   Bookmark,
   ChevronDown,
-  ExternalLink,
   Loader2,
   LogIn,
   LogOut,
@@ -68,6 +67,13 @@ interface ApplicantPortalProps {
 }
 
 type NavTabValue = "Explore" | "Bookmark" | "My Applications";
+
+function sentenceCase(value: string) {
+  const trimmedValue = value.trim();
+  return trimmedValue
+    ? `${trimmedValue.charAt(0).toLocaleUpperCase()}${trimmedValue.slice(1)}`
+    : trimmedValue;
+}
 
 const CATEGORIES = [
   "All",
@@ -353,8 +359,9 @@ export function ApplicantPortal({
     setIsApplyOpen(true);
   };
 
-  const displayName =
-    currentUser?.user_metadata?.full_name || currentUser?.email?.split("@")[0] || "Applicant";
+  const displayName = sentenceCase(
+    currentUser?.user_metadata?.full_name || currentUser?.email?.split("@")[0] || "Applicant"
+  );
   const userInitial = displayName.charAt(0).toUpperCase();
 
   const shortlistedCount = useMemo(
@@ -472,24 +479,18 @@ export function ApplicantPortal({
               </DropdownMenuTrigger>
 
               <DropdownMenuContent align="end" className="w-64 p-2">
-                <DropdownMenuLabel className="p-2.5 rounded-lg bg-muted/60 font-normal space-y-1">
+                <DropdownMenuLabel className="space-y-0.5 rounded-lg bg-muted/60 p-2.5 font-normal">
                   <p className="font-bold text-sm text-foreground truncate">{displayName}</p>
                   <p className="text-sm text-muted-foreground truncate">
                     {currentUser?.email || "Guest Session"}
                   </p>
-                  <div className="pt-1">
-                    <Badge variant="secondary" className="gap-1">
-                      <UserCheck className="size-3.5" aria-hidden="true" />
-                      <span>Candidate Profile</span>
-                    </Badge>
-                  </div>
                 </DropdownMenuLabel>
 
                 <DropdownMenuSeparator />
 
                 <DropdownMenuItem
                   onSelect={() => setNavTab("My Applications")}
-                  className="justify-between"
+                  className="h-10 justify-between"
                 >
                   <span>Submitted Applications</span>
                   <span className="font-semibold text-muted-foreground tabular-nums">
@@ -499,7 +500,7 @@ export function ApplicantPortal({
 
                 <DropdownMenuItem
                   onSelect={() => setNavTab("Bookmark")}
-                  className="justify-between"
+                  className="h-10 justify-between"
                 >
                   <span>Saved Positions</span>
                   <span className="font-semibold text-muted-foreground tabular-nums">
@@ -507,19 +508,12 @@ export function ApplicantPortal({
                   </span>
                 </DropdownMenuItem>
 
-                <DropdownMenuItem asChild>
-                  <Link href="/admin" className="justify-between">
-                    <span>Switch to Recruiter Portal</span>
-                    <ExternalLink className="size-4 text-muted-foreground" aria-hidden="true" />
-                  </Link>
-                </DropdownMenuItem>
-
                 <DropdownMenuSeparator />
 
                 {currentUser ? (
                   <DropdownMenuItem asChild>
-                    <Link href="/account">
-                      <UserCheck aria-hidden="true" />
+                    <Link href="/account" className="h-10">
+                      <UserCheck className="size-4" aria-hidden="true" />
                       <span>Account settings</span>
                     </Link>
                   </DropdownMenuItem>
@@ -530,15 +524,15 @@ export function ApplicantPortal({
                     onSelect={() => {
                       if (onLogout) onLogout();
                     }}
-                    className="text-destructive focus:text-destructive focus:bg-destructive/10 font-semibold"
+                    className="h-10 font-semibold text-destructive focus:bg-destructive/10 focus:text-destructive"
                   >
-                    <LogOut aria-hidden="true" />
+                    <LogOut className="size-4" aria-hidden="true" />
                     <span>Sign Out</span>
                   </DropdownMenuItem>
                 ) : (
-                  <DropdownMenuItem asChild className="text-primary font-semibold">
+                  <DropdownMenuItem asChild className="h-10 font-semibold text-primary">
                     <Link href="/applicant/login">
-                      <LogIn aria-hidden="true" />
+                      <LogIn className="size-4" aria-hidden="true" />
                       <span>Sign In to Account</span>
                     </Link>
                   </DropdownMenuItem>

@@ -30,12 +30,6 @@ interface AccountSettingsProps {
   onIdentityUpdated?: (identity: AccountIdentity) => void;
 }
 
-function roleLabel(role: string) {
-  if (role.toLowerCase() === "superadmin") return "Platform Admin";
-  if (role.toLowerCase() === "recruiter") return "Hiring Team";
-  return "Applicant";
-}
-
 function initials(firstName: string, lastName: string, email: string) {
   const first = firstName.trim().charAt(0);
   const last = lastName.trim().charAt(0);
@@ -157,12 +151,11 @@ export function AccountSettings({ identity, onIdentityUpdated }: AccountSettings
               {fullName}
             </h2>
             <p className="mt-1 truncate text-sm text-muted-foreground">{currentIdentity.email}</p>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Badge variant="secondary">{roleLabel(currentIdentity.role)}</Badge>
-              {currentIdentity.company_name ? (
+            {currentIdentity.company_name ? (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
                 <Badge variant="outline">{currentIdentity.company_name}</Badge>
-              ) : null}
-            </div>
+              </div>
+            ) : null}
           </div>
         </div>
       </Section>
